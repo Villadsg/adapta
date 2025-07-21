@@ -1,0 +1,7 @@
+{
+  "userInputWeight": 3,
+  "assistantOutputWeight": 1,
+  "recencyDecay": 0.5,
+  "similarityThreshold": 0.7,
+  "maxInterests": 1000
+}
