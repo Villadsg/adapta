@@ -771,6 +771,41 @@ Keep it personal, insightful, and encouraging. Focus on their intellectual curio
 			modelUsed: EMBEDDING_MODEL
 		};
 	}
+
+	/**
+	 * Search for personalized news based on user interests
+	 * Returns top 3 news articles with highest probability of interest
+	 */
+	async searchPersonalizedNews(newsApiKey: string): Promise<{
+		articles: Array<{
+			title: string;
+			snippet: string;
+			url: string;
+			source: string;
+			publishDate: string;
+			relevanceScore: number;
+			matchedInterests: string[];
+		}>;
+		summary: string;
+	}> {
+		try {
+			// Import the news search function dynamically to avoid circular imports
+			const { searchNewsWithInterests, formatNewsSearchResults } = await import('./newsSearch.js');
+			
+			const results = await searchNewsWithInterests(newsApiKey, {
+				maxArticles: 20,
+				topInterestsCount: 5
+			});
+
+			return {
+				articles: results.articles,
+				summary: formatNewsSearchResults(results)
+			};
+		} catch (error) {
+			console.error('Error searching personalized news:', error);
+			throw new Error(`Failed to search news: ${error instanceof Error ? error.message : 'Unknown error'}`);
+		}
+	}
 }
 
 // Export singleton instance
