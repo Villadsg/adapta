@@ -32,7 +32,11 @@
 		"vite": "^7.0.4"
 	},
 	"dependencies": {
-		"@langchain/community": "^0.3.49",
-		"@langchain/core": "^0.3.66"
+		"@langchain/core": "^0.3.66",
+		"@supabase/supabase-js": "^2.52.1",
+		"brave-search": "^0.9.0",
+		"duck-duck-scrape": "^2.2.7",
+		"langchain": "^0.3.30",
+		"ollama": "^0.5.16"
 	}
 }
