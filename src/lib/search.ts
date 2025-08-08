@@ -2,6 +2,7 @@ import { BraveSearch } from 'brave-search';
 import { createClient } from '@supabase/supabase-js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { TreeManager, type TreeNode, type TreeFeedback, type NodeSelectionResult } from './tree';
+import { EmbeddingService, createEmbeddingService, type CombinationSuggestion, type EmbeddingAnalysis } from './embeddings';
 
 export interface LLMConfig {
   apiUrl: string;
@@ -15,34 +16,20 @@ export interface SearchResult {
   url: string;
   snippet: string;
   relevanceScore?: number;
-  contributingSentenceIds?: string[]; // Track which sentences led to this result (legacy)
-  contributingNodeIds?: string[]; // Track which tree nodes led to this result (new)
+  contributingNodeIds?: string[]; // Track which tree nodes led to this result
   qualityScore?: number; // Content quality score based on negative keyword matching
   searchQuery?: string; // The query that found this result
 }
 
-export interface KeySentence {
-  id: string;
-  text: string;
-  source: 'user' | 'feedback' | 'llm';
-  createdAt: Date;
-  timesUsed: number;
-  positiveReactions: number;
-  negativeReactions: number;
-  avgFeedback: number;
-  keywords: string[];
-}
 
 export interface UserFeedback {
   resultId: string;
   reaction: 'positive' | 'negative';
   timestamp: Date;
   extractedKeywords?: string[];
-  contributingSentenceIds?: string[];
 }
 
 export interface SearchSession {
-  selectedSentences: KeySentence[];
   results: SearchResult[];
   feedback: UserFeedback[];
   timestamp: Date;
@@ -52,7 +39,6 @@ export interface SearchSession {
  * Enhanced search system with key sentences, feedback learning, and LLM integration
  */
 export class AdaptiveSearchSystem {
-  private keySentences: KeySentence[] = [];
   private searchHistory: SearchSession[] = [];
   private totalSearches = 0;
   private llmConfig: LLMConfig;
@@ -61,6 +47,7 @@ export class AdaptiveSearchSystem {
   private userId: string | null = null;
   private initialInterests: string[] = [];
   private treeManager: TreeManager | null = null;
+  private embeddingService: EmbeddingService | null = null;
 
   /**
    * Initialize with user's initial interests and LLM configuration
@@ -82,78 +69,10 @@ export class AdaptiveSearchSystem {
     this.supabase = supabase || null;
     this.userId = userId || null;
     this.initialInterests = initialInterests;
-    
-    // Initialize with basic sentences from interests (will be enhanced with loaded sentences)
-    this.initializeKeySentences(initialInterests);
   }
 
-  /**
-   * Create initial key sentences from user interests
-   */
-  private initializeKeySentences(interests: string[]): void {
-    this.keySentences = interests.map((interest, index) => ({
-      id: `init_${index}`,
-      text: `Latest news and developments in ${interest}`,
-      source: 'user',
-      createdAt: new Date(),
-      timesUsed: 0,
-      positiveReactions: 1, // Start with prior
-      negativeReactions: 1, // Start with prior
-      avgFeedback: 0.5,
-      keywords: [interest]
-    }));
-  }
 
-  /**
-   * Calculate time-based exponential decay weight
-   */
-  private calculateTimeWeight(timestamp: Date, decayRate: number = 0.95): number {
-    const daysOld = (Date.now() - timestamp.getTime()) / (1000 * 60 * 60 * 24);
-    return Math.pow(decayRate, daysOld);
-  }
 
-  /**
-   * Thompson Sampling for key sentence selection
-   */
-  private sampleSentenceScore(sentence: KeySentence): number {
-    // Beta distribution sampling approximation
-    const alpha = sentence.positiveReactions;
-    const beta = sentence.negativeReactions;
-    
-    // Simple beta distribution approximation using normal distribution
-    const mean = alpha / (alpha + beta);
-    const variance = (alpha * beta) / ((alpha + beta) ** 2 * (alpha + beta + 1));
-    const stdDev = Math.sqrt(variance);
-    
-    // Box-Muller transform for normal distribution
-    const u1 = Math.random();
-    const u2 = Math.random();
-    const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-    
-    return Math.max(0, Math.min(1, mean + z * stdDev));
-  }
-
-  /**
-   * Select key sentences using Thompson Sampling with time decay
-   */
-  private selectKeySentences(count: number = 3): KeySentence[] {
-    const scoredSentences = this.keySentences.map(sentence => {
-      const timeWeight = this.calculateTimeWeight(sentence.createdAt);
-      const thompsonScore = this.sampleSentenceScore(sentence);
-      const diversityPenalty = sentence.timesUsed > 5 ? 0.8 : 1.0; // Reduce overuse
-      
-      return {
-        sentence,
-        finalScore: thompsonScore * timeWeight * diversityPenalty
-      };
-    });
-
-    // Sort by score and select top N
-    return scoredSentences
-      .sort((a, b) => b.finalScore - a.finalScore)
-      .slice(0, count)
-      .map(item => item.sentence);
-  }
 
   /**
    * Communicate with local DeepSeek LLM via Ollama API
@@ -282,117 +201,8 @@ Return 5-8 keywords/phrases, comma-separated, no explanations:`;
   }
 
 
-  /**
-   * Generate contextual search queries using LLM
-   */
-  private async generateLLMSearchQueries(
-    selectedSentences: KeySentence[],
-    maxQueries: number = 2
-  ): Promise<string[]> {
-    const sentenceTexts = selectedSentences.map(s => s.text).join('\n- ');
-    
-    const prompt = `Based on these key interest areas:
-- ${sentenceTexts}
 
-Generate ${maxQueries} specific, effective search queries for finding current news. Each query should:
-- Be 3-6 words long
-- Focus on recent/current events
-- Use news-friendly keywords
-- Target different aspects of the interests
 
-Format: One query per line, no quotes or formatting.
-
-Examples:
-- "AI chip shortage latest"
-- "robotics startup funding news"
-- "stock market tech trends"
-
-Your queries:`;
-
-    const llmResponse = await this.callLocalLLM(prompt);
-    
-    if (!llmResponse) {
-      // Fallback to keyword extraction method
-      return this.generateFallbackSearchQueries(selectedSentences);
-    }
-
-    const queries = llmResponse
-      .split('\n')
-      .map(line => line.trim().replace(/^[-"'•]\s*/, '').replace(/["']$/, ''))
-      .filter(line => line.length > 5 && line.length < 50)
-      .slice(0, maxQueries);
-
-    return queries.length > 0 ? queries : this.generateFallbackSearchQueries(selectedSentences);
-  }
-
-  /**
-   * Enhanced key sentence generation using LLM
-   */
-  async generateEnhancedKeySentences(count: number = 2): Promise<void> {
-    console.log('🧠 Generating enhanced key sentences with LLM...');
-    
-    // Collect current interests and recent positive feedback
-    const currentInterests = [...new Set(
-      this.keySentences.flatMap(s => s.keywords)
-    )].slice(0, 5);
-    
-    const recentPositiveFeedback = this.searchHistory
-      .slice(-3) // Last 3 sessions
-      .flatMap(session => 
-        session.feedback
-          .filter(fb => fb.reaction === 'positive')
-          .flatMap(fb => fb.extractedKeywords || [])
-      );
-
-    // Generate new sentences using LLM
-    const llmSentences = await this.generateLLMKeySentences(
-      currentInterests,
-      recentPositiveFeedback,
-      count
-    );
-
-    // Add each generated sentence to the system
-    for (const sentenceText of llmSentences) {
-      const keywords = await this.extractKeywordsWithLLM(sentenceText);
-      
-      const newSentence: KeySentence = {
-        id: `llm_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
-        text: sentenceText,
-        source: 'llm',
-        createdAt: new Date(),
-        timesUsed: 0,
-        positiveReactions: 1, // Start with neutral prior
-        negativeReactions: 1,
-        avgFeedback: 0.5,
-        keywords: keywords
-      };
-
-      this.keySentences.push(newSentence);
-      console.log(`➕ Added LLM sentence: "${sentenceText}"`);
-    }
-
-    // Trim old low-performing sentences
-    this.trimKeySentences();
-  }
-
-  /**
-   * Remove old or poorly performing key sentences
-   */
-  private trimKeySentences(maxSentences: number = 25): void {
-    if (this.keySentences.length <= maxSentences) return;
-
-    // Score sentences by performance and recency
-    const scoredSentences = this.keySentences.map(sentence => ({
-      sentence,
-      score: sentence.avgFeedback * this.calculateTimeWeight(sentence.createdAt, 0.9)
-    }));
-
-    // Keep the best performing sentences
-    this.keySentences = scoredSentences
-      .sort((a, b) => b.score - a.score)
-      .slice(0, maxSentences)
-      .map(item => item.sentence);
-  }
 
   /**
    * Search with Brave Search API
@@ -426,22 +236,20 @@ Your queries:`;
   /**
    * Main search function with tree-based content discovery and LLM integration
    */
-  async searchBasedOnKeySentences(useLLM: boolean = true): Promise<{ results: SearchResult[], selectedSentences: KeySentence[], selectedNodes?: TreeNode[] }> {
+  async searchBasedOnKeySentences(useLLM: boolean = true): Promise<{ results: SearchResult[], selectedNodes: TreeNode[] }> {
     this.totalSearches++;
     
-    // Use tree-based search if available, otherwise fall back to legacy system
-    if (this.treeManager) {
-      return this.searchWithTreeStructure(useLLM);
+    if (!this.treeManager) {
+      throw new Error('Tree manager not initialized. Tree-based search is required.');
     }
     
-    // Legacy search system (keep for backward compatibility)
-    return this.legacySearchBasedOnKeySentences(useLLM);
+    return this.searchWithTreeStructure(useLLM);
   }
 
   /**
    * Tree-based search implementation
    */
-  private async searchWithTreeStructure(useLLM: boolean = true): Promise<{ results: SearchResult[], selectedSentences: KeySentence[], selectedNodes: TreeNode[] }> {
+  private async searchWithTreeStructure(useLLM: boolean = true): Promise<{ results: SearchResult[], selectedNodes: TreeNode[] }> {
     console.log('🌳 Using tree-based content discovery');
     
     // Load negative keywords for quality scoring
@@ -459,8 +267,11 @@ Your queries:`;
     console.log(`🎯 Selected ${selectedNodes.length} tree nodes for content discovery`);
     
     if (selectedNodes.length === 0) {
-      console.log('⚠️ No suitable tree nodes found, falling back to legacy system');
-      return this.legacySearchBasedOnKeySentences(useLLM);
+      console.log('⚠️ No suitable tree nodes found, returning empty results');
+      return {
+        results: [],
+        selectedNodes: []
+      };
     }
 
     // Generate search queries based on selected nodes
@@ -486,7 +297,6 @@ Your queries:`;
         
         return {
           ...result,
-          contributingSentenceIds: [], // Will be populated by tree node IDs instead
           contributingNodeIds: selectedNodes.map(n => n.nodeId),
           qualityScore,
           searchQuery: query
@@ -513,470 +323,46 @@ Your queries:`;
 
     console.log(`📊 Tree-based search found ${rankedResults.length} results`);
     
-    // Convert selected nodes to legacy sentence format for compatibility
-    const selectedSentences: KeySentence[] = selectedNodes.map(node => ({
-      id: node.nodeId,
-      text: node.title,
-      source: node.nodeType === 'interest' ? 'user' : 'feedback',
-      createdAt: node.createdAt,
-      timesUsed: node.timesSelected,
-      positiveReactions: node.positiveReactions,
-      negativeReactions: node.negativeReactions,
-      avgFeedback: node.qualityScore,
-      keywords: node.keywords
-    }));
-    
     return {
       results: rankedResults,
-      selectedSentences,
       selectedNodes
     };
   }
 
-  /**
-   * Legacy search system (for backward compatibility)
-   */
-  private async legacySearchBasedOnKeySentences(useLLM: boolean = true): Promise<{ results: SearchResult[], selectedSentences: KeySentence[] }> {
-    // Load negative keywords for quality scoring
-    const negativeKeywords = await this.loadNegativeKeywords();
-    
-    // Optionally generate new LLM sentences before search
-    if (useLLM && this.totalSearches % 3 === 1) { // Every 3rd search
-      await this.generateEnhancedKeySentences(2);
-    }
-
-    // Select key sentences using Thompson Sampling
-    const selectedSentences = this.selectKeySentences(3);
-    
-    // Mark sentences as used
-    selectedSentences.forEach(sentence => {
-      sentence.timesUsed++;
-    });
-
-    // Generate search queries (with LLM if enabled)
-    const queries = useLLM 
-      ? await this.generateLLMSearchQueries(selectedSentences, 2)
-      : this.generateFallbackSearchQueries(selectedSentences);
-    
-    console.log('🔍 Using legacy search queries:', queries);
-    
-    const allResults: SearchResult[] = [];
-    const selectedSentenceIds = selectedSentences.map(s => s.id);
-    
-    // Search for each query
-    for (let i = 0; i < queries.length; i++) {
-      const query = queries[i];
-      console.log(`🔍 Processing query ${i + 1}/${queries.length}: "${query}"`);
-      
-      const results = await this.searchWithBrave(query, 3);
-      
-      // Add contributing sentence IDs and quality scores to each result
-      const resultsWithScoring = results.map(result => {
-        const contentText = `${result.title} ${result.snippet}`;
-        const qualityScore = this.calculateContentQualityScore(contentText, negativeKeywords);
-        
-        return {
-          ...result,
-          contributingSentenceIds: selectedSentenceIds,
-          qualityScore
-        };
-      });
-      
-      allResults.push(...resultsWithScoring);
-      
-      // Add delay between requests
-      if (i < queries.length - 1) {
-        console.log('⏳ Waiting 2 seconds before next search...');
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
-    }
-
-    // Sort results by quality score with exponential weighting (higher quality first)
-    const rankedResults = allResults.sort((a, b) => {
-      // Square the quality score to exponentially penalize low quality content
-      const qualityA = Math.pow(a.qualityScore || 1.0, 2);
-      const qualityB = Math.pow(b.qualityScore || 1.0, 2);
-      const scoreA = qualityA * (a.relevanceScore || 1.0);
-      const scoreB = qualityB * (b.relevanceScore || 1.0);
-      return scoreB - scoreA;
-    });
-
-    console.log(`📊 Ranked ${rankedResults.length} results by quality score`);
-    
-    // Store search session
-    const session: SearchSession = {
-      selectedSentences,
-      results: rankedResults,
-      feedback: [],
-      timestamp: new Date()
-    };
-    
-    this.searchHistory.push(session);
-    
-    return {
-      results: rankedResults,
-      selectedSentences
-    };
-  }
 
   /**
-   * Fallback search query generation (original method)
-   */
-  private generateFallbackSearchQueries(selectedSentences: KeySentence[]): string[] {
-    const allKeywords: string[] = [];
-    
-    selectedSentences.forEach(sentence => {
-      allKeywords.push(...sentence.keywords);
-      
-      const words = sentence.text.toLowerCase()
-        .split(/\s+/)
-        .filter(word => 
-          word.length > 3 && 
-          !['latest', 'news', 'developments', 'about', 'regarding'].includes(word)
-        );
-      allKeywords.push(...words);
-    });
-
-    const uniqueKeywords = [...new Set(allKeywords)].slice(0, 8);
-    
-    if (uniqueKeywords.length === 0) {
-      return ['latest news and trending topics'];
-    }
-
-    const queries: string[] = [];
-    
-    if (uniqueKeywords.length >= 2) {
-      queries.push(`${uniqueKeywords.slice(0, 2).join(' ')} latest news`);
-    }
-    
-    if (uniqueKeywords.length >= 4) {
-      queries.push(`${uniqueKeywords.slice(2, 4).join(' ')} recent developments`);
-    }
-    
-    if (queries.length === 0) {
-      queries.push(`${uniqueKeywords[0]} news`);
-    }
-
-    return queries.slice(0, 2);
-  }
-
-  /**
-   * Enhanced feedback processing with targeted sentence updates
+   * Tree-based feedback processing
    */
   async processFeedback(feedback: UserFeedback[]): Promise<void> {
     console.log(`🔄 Processing ${feedback.length} feedback items...`);
 
-    // Update ONLY the sentences that contributed to each result
-    feedback.forEach(fb => {
-      const contributingIds = fb.contributingSentenceIds || [];
-      
-      if (contributingIds.length === 0) {
-        console.log('⚠️ No contributing sentence IDs found - falling back to updating all sentences');
-        // Fallback: update all sentences (old behavior)
-        this.keySentences.forEach(sentence => {
-          if (fb.reaction === 'positive') {
-            sentence.positiveReactions++;
-          } else {
-            sentence.negativeReactions++;
-          }
-          sentence.avgFeedback = sentence.positiveReactions / 
-            (sentence.positiveReactions + sentence.negativeReactions);
-        });
-        return;
-      }
-
-      // Update only the contributing sentences
-      contributingIds.forEach(sentenceId => {
-        const sentence = this.keySentences.find(s => s.id === sentenceId);
-        if (sentence) {
-          if (fb.reaction === 'positive') {
-            sentence.positiveReactions++;
-            console.log(`➕ Increased positive reactions for sentence "${sentence.text}" (${sentence.positiveReactions}/${sentence.negativeReactions})`);
-          } else {
-            sentence.negativeReactions++;
-            console.log(`➖ Increased negative reactions for sentence "${sentence.text}" (${sentence.positiveReactions}/${sentence.negativeReactions})`);
-          }
-          
-          sentence.avgFeedback = sentence.positiveReactions / 
-            (sentence.positiveReactions + sentence.negativeReactions);
-        } else {
-          console.log(`⚠️ Could not find sentence with ID: ${sentenceId}`);
-        }
-      });
-    });
-
-    // Process positive feedback to create new key sentences
-    const positiveFeedback = feedback.filter(fb => fb.reaction === 'positive');
-    
-    for (const fb of positiveFeedback) {
-      if (fb.extractedKeywords && fb.extractedKeywords.length > 0) {
-        await this.addKeySentenceFromFeedback(fb.extractedKeywords);
-      }
+    if (!this.treeManager) {
+      console.error('❌ Tree manager not initialized');
+      return;
     }
 
-    // Process negative feedback keywords and save them for quality scoring
+    // Process feedback through tree structure
+    if (feedback.length > 0) {
+      await this.processTreeFeedback(feedback);
+    }
+
+    // Process negative feedback keywords for quality scoring
     const negativeFeedback = feedback.filter(fb => fb.reaction === 'negative');
     
     for (const fb of negativeFeedback) {
       if (fb.extractedKeywords && fb.extractedKeywords.length > 0) {
         console.log(`🚫 Processing negative keywords: ${fb.extractedKeywords.join(', ')}`);
-        // Save negative keywords to database for content quality scoring
         await this.saveNegativeKeywords(fb.extractedKeywords);
       }
     }
 
-    console.log('✅ Feedback processed and system updated');
+    console.log('✅ Tree-based feedback processed and system updated');
   }
 
-  /**
-   * Enhanced key sentence creation from feedback using LLM
-   */
-  private async addKeySentenceFromFeedback(keywords: string[]): Promise<void> {
-    // Use LLM to create a more natural sentence from keywords
-    const prompt = `Create a natural, search-friendly sentence that incorporates these keywords: ${keywords.join(', ')}
 
-The sentence should be suitable for finding current news and developments. Make it specific and informative.
 
-Format: Single sentence, no quotes or explanations.
 
-Example: "Recent blockchain technology adoption in financial services and banking"
 
-Your sentence:`;
-
-    const llmResponse = await this.callLocalLLM(prompt);
-    
-    let sentenceText: string;
-    if (llmResponse && llmResponse.trim().length > 10) {
-      sentenceText = llmResponse.trim().replace(/^["']|["']$/g, ''); // Remove quotes
-    } else {
-      // Fallback to template
-      sentenceText = `Recent developments in ${keywords.join(', ')}`;
-    }
-
-    const newSentence: KeySentence = {
-      id: `feedback_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
-      text: sentenceText,
-      source: 'feedback',
-      createdAt: new Date(),
-      timesUsed: 0,
-      positiveReactions: 2, // Higher prior for feedback-derived sentences
-      negativeReactions: 1,
-      avgFeedback: 0.67,
-      keywords
-    };
-
-    this.keySentences.push(newSentence);
-    console.log(`➕ Added feedback sentence: "${sentenceText}"`);
-
-    // Trim if needed
-    this.trimKeySentences();
-  }
-
-  /**
-   * Get current key sentences with their performance metrics
-   */
-  getKeySentencesStatus(): KeySentence[] {
-    return this.keySentences.map(sentence => ({
-      ...sentence,
-      currentWeight: this.calculateTimeWeight(sentence.createdAt)
-    }));
-  }
-
-  /**
-   * Add new key sentence manually (e.g., from LLM generation)
-   */
-  addKeySentence(text: string, keywords: string[], source: 'user' | 'llm' = 'user'): void {
-    const newSentence: KeySentence = {
-      id: `manual_${Date.now()}`,
-      text,
-      source,
-      createdAt: new Date(),
-      timesUsed: 0,
-      positiveReactions: 1,
-      negativeReactions: 1,
-      avgFeedback: 0.5,
-      keywords
-    };
-
-    this.keySentences.push(newSentence);
-  }
-
-  /**
-   * Load user's learned key sentences from database
-   */
-  async loadUserKeySentences(): Promise<void> {
-    if (!this.supabase || !this.userId) {
-      console.log('⚠️ No database connection or user ID - skipping sentence loading');
-      return;
-    }
-
-    try {
-      console.log('📚 Loading user key sentences from database...');
-      
-      const { data, error } = await this.supabase
-        .from('user_key_sentences')
-        .select('*')
-        .eq('user_id', this.userId)
-        .order('updated_at', { ascending: false });
-
-      if (error) {
-        console.error('❌ Error loading key sentences:', error);
-        return;
-      }
-
-      if (data && data.length > 0) {
-        // Convert database records to KeySentence objects
-        const loadedSentences: KeySentence[] = data.map(row => ({
-          id: row.sentence_id,
-          text: row.text,
-          source: row.source as 'user' | 'feedback' | 'llm',
-          createdAt: new Date(row.created_at),
-          timesUsed: row.times_used,
-          positiveReactions: row.positive_reactions,
-          negativeReactions: row.negative_reactions,
-          avgFeedback: row.positive_reactions / (row.positive_reactions + row.negative_reactions),
-          keywords: Array.isArray(row.keywords) ? row.keywords : []
-        }));
-
-        // Replace initial sentences with loaded ones
-        this.keySentences = loadedSentences;
-        console.log(`✅ Loaded ${loadedSentences.length} key sentences from database`);
-      } else {
-        console.log('📝 No existing key sentences found - using initial sentences');
-      }
-    } catch (error) {
-      console.error('❌ Failed to load key sentences:', error);
-    }
-  }
-
-  /**
-   * Save user's key sentences to database
-   */
-  async saveUserKeySentences(): Promise<void> {
-    if (!this.supabase || !this.userId) {
-      console.log('⚠️ No database connection or user ID - skipping sentence saving');
-      return;
-    }
-
-    try {
-      console.log('💾 Saving key sentences to database...');
-
-      // Prepare data for upsert
-      const sentencesToSave = this.keySentences.map(sentence => ({
-        user_id: this.userId,
-        sentence_id: sentence.id,
-        text: sentence.text,
-        source: sentence.source,
-        positive_reactions: sentence.positiveReactions,
-        negative_reactions: sentence.negativeReactions,
-        times_used: sentence.timesUsed,
-        keywords: sentence.keywords,
-        created_at: sentence.createdAt.toISOString(),
-        updated_at: new Date().toISOString()
-      }));
-
-      // Use upsert to insert new or update existing sentences
-      const { error } = await this.supabase
-        .from('user_key_sentences')
-        .upsert(sentencesToSave, {
-          onConflict: 'user_id,sentence_id',
-          ignoreDuplicates: false
-        });
-
-      if (error) {
-        console.error('❌ Error saving key sentences:', error);
-      } else {
-        console.log(`✅ Saved ${sentencesToSave.length} key sentences to database`);
-      }
-    } catch (error) {
-      console.error('❌ Failed to save key sentences:', error);
-    }
-  }
-
-  /**
-   * Synchronize key sentences with current interests
-   * Removes sentences for interests that no longer exist and adds sentences for new interests
-   */
-  async syncWithCurrentInterests(): Promise<void> {
-    if (!this.supabase || !this.userId) {
-      console.log('⚠️ No database connection or user ID - skipping interest sync');
-      return;
-    }
-
-    try {
-      // Use the current interests from constructor
-      const currentInterests = new Set(this.initialInterests);
-      console.log('🔄 Syncing key sentences with current interests:', Array.from(currentInterests));
-
-      // Remove sentences for interests that no longer exist
-      const initialSentencesToRemove = this.keySentences.filter(sentence => 
-        sentence.source === 'user' && 
-        sentence.id.startsWith('init') &&
-        sentence.keywords.some(keyword => !currentInterests.has(keyword))
-      );
-
-      if (initialSentencesToRemove.length > 0) {
-        console.log(`🗑️ Removing ${initialSentencesToRemove.length} sentences for old interests:`, 
-          initialSentencesToRemove.map(s => s.text));
-        
-        this.keySentences = this.keySentences.filter(sentence => 
-          !initialSentencesToRemove.includes(sentence)
-        );
-
-        // Delete from database
-        for (const sentence of initialSentencesToRemove) {
-          await this.supabase
-            .from('user_key_sentences')
-            .delete()
-            .eq('user_id', this.userId)
-            .eq('sentence_id', sentence.id);
-        }
-      }
-
-      // Check if we need to add sentences for new interests
-      const existingInterestKeywords = new Set(
-        this.keySentences
-          .filter(s => s.source === 'user' && s.id.startsWith('init'))
-          .flatMap(s => s.keywords)
-      );
-
-      const newInterests = Array.from(currentInterests).filter(
-        interest => !existingInterestKeywords.has(interest)
-      );
-
-      if (newInterests.length > 0) {
-        console.log(`➕ Adding sentences for new interests: ${newInterests.join(', ')}`);
-        
-        // Add new initial sentences for new interests
-        for (const [index, interest] of newInterests.entries()) {
-          const newSentence: KeySentence = {
-            id: `init_new_${Date.now()}_${index}`,
-            text: `Latest news and developments in ${interest}`,
-            source: 'user',
-            createdAt: new Date(),
-            timesUsed: 0,
-            positiveReactions: 1,
-            negativeReactions: 1,
-            avgFeedback: 0.5,
-            keywords: [interest]
-          };
-
-          this.keySentences.push(newSentence);
-        }
-      }
-
-      // Save updated sentences to database
-      if (initialSentencesToRemove.length > 0 || newInterests.length > 0) {
-        await this.saveUserKeySentences();
-        console.log('✅ Interest synchronization completed');
-      } else {
-        console.log('✅ Key sentences already in sync with interests');
-      }
-
-    } catch (error) {
-      console.error('❌ Failed to sync interests with key sentences:', error);
-    }
-  }
 
   /**
    * Initialize the system with database persistence and tree structure
@@ -986,20 +372,31 @@ Your sentence:`;
     if (this.supabase && this.userId) {
       this.treeManager = new TreeManager(this.supabase, this.userId);
       
+      // Initialize embedding service
+      this.embeddingService = createEmbeddingService(
+        this.supabase, 
+        this.userId,
+        'http://localhost:11434',
+        'nomic-embed-text'
+      );
+      
       // Create or sync interest nodes in the tree
       await this.syncInterestsWithTree();
+      
+      // Generate embeddings for interests if they don't exist
+      await this.generateEmbeddingsForInterests();
+      
+      // Analyze embeddings and create combinations
+      await this.analyzeAndCreateCombinations();
     }
-    
-    // Keep legacy system for backward compatibility
-    await this.loadUserKeySentences();
-    await this.syncWithCurrentInterests();
   }
 
   /**
    * Persist changes after feedback processing
    */
   async persistAfterFeedback(): Promise<void> {
-    await this.saveUserKeySentences();
+    // Tree-based system handles persistence automatically
+    console.log('✅ Tree-based feedback persisted to database');
   }
 
   /**
@@ -1205,26 +602,155 @@ Your queries:`;
   }
 
   /**
-   * Synchronize user interests with tree structure
+   * Enhanced interest change handler with semantic cleanup
+   */
+  async handleInterestChange(oldInterests: string[], newInterests: string[]): Promise<void> {
+    if (!this.treeManager || !this.embeddingService) {
+      console.log('⚠️ TreeManager or EmbeddingService not available for interest change handling');
+      return;
+    }
+
+    try {
+      console.log('🔄 Handling interest change...');
+      console.log(`  Old interests: [${oldInterests.join(', ')}]`);
+      console.log(`  New interests: [${newInterests.join(', ')}]`);
+
+      // Identify changes
+      const removed = oldInterests.filter(i => !newInterests.includes(i));
+      const added = newInterests.filter(i => !oldInterests.includes(i));
+      const unchanged = oldInterests.filter(i => newInterests.includes(i));
+
+      console.log(`📊 Change analysis:`);
+      console.log(`  • Removed: [${removed.join(', ')}]`);
+      console.log(`  • Added: [${added.join(', ')}]`);
+      console.log(`  • Unchanged: [${unchanged.join(', ')}]`);
+
+      // Phase 1: Enhanced cleanup for removed interests
+      if (removed.length > 0) {
+        console.log('🧹 Phase 1: Cleaning up removed interests...');
+        for (const removedInterest of removed) {
+          const result = await this.treeManager.removeInterestWithSemanticCleanup(
+            removedInterest,
+            unchanged.concat(added), // All remaining interests
+            this.embeddingService
+          );
+          
+          if (result.success) {
+            console.log(`✅ Successfully cleaned up interest: ${removedInterest}`);
+          } else {
+            console.error(`❌ Failed to clean up interest: ${removedInterest}`, result.error);
+          }
+        }
+      }
+
+      // Phase 2: Add new interests
+      if (added.length > 0) {
+        console.log('➕ Phase 2: Adding new interests...');
+        for (const newInterest of added) {
+          const result = await this.treeManager.createInterestNode(newInterest, [newInterest]);
+          
+          if (result.success) {
+            console.log(`✅ Created new interest: ${newInterest}`);
+          } else if (result.error?.includes('duplicate') || result.error?.includes('unique')) {
+            console.log(`ℹ️ Interest already exists: ${newInterest}`);
+          } else {
+            console.error(`❌ Failed to create interest: ${newInterest}`, result.error);
+          }
+        }
+      }
+
+      // Phase 3: Generate embeddings for new interests
+      if (added.length > 0) {
+        console.log('🧠 Phase 3: Generating embeddings for new interests...');
+        await this.generateEmbeddingsForInterests();
+      }
+
+      // Phase 4: Refresh combinations with new interest set
+      if (removed.length > 0 || added.length > 0) {
+        console.log('🎨 Phase 4: Refreshing combinations...');
+        await this.refreshCombinations(newInterests);
+      }
+
+      console.log('✅ Interest change handling complete!');
+    } catch (error) {
+      console.error('❌ Interest change handling failed:', error);
+    }
+  }
+
+  /**
+   * Refresh combinations after interest changes
+   */
+  private async refreshCombinations(currentInterests: string[]): Promise<void> {
+    if (!this.treeManager || !this.embeddingService) return;
+
+    try {
+      // Get all nodes with embeddings for current interests
+      const nodesWithEmbeddings = await this.treeManager.getNodesWithEmbeddings(['interest']);
+      
+      // Filter to only include current interests
+      const relevantNodes = nodesWithEmbeddings.filter(node => 
+        currentInterests.some(interest => 
+          node.title.toLowerCase().includes(interest.toLowerCase()) ||
+          interest.toLowerCase().includes(node.title.toLowerCase())
+        )
+      );
+
+      if (relevantNodes.length < 2) {
+        console.log('ℹ️ Need at least 2 relevant interests for combinations');
+        return;
+      }
+
+      console.log(`🎯 Generating new combinations from ${relevantNodes.length} relevant interests`);
+
+      // Generate new combinations
+      const analysis = await this.embeddingService.analyzeInterestEmbeddings(relevantNodes);
+      
+      // Create combination nodes from top suggestions
+      const topCombinations = analysis.combinationSuggestions.slice(0, 3); // Reduced to 3 for faster processing
+      
+      for (const combination of topCombinations) {
+        console.log(`🎨 Creating refreshed combination: "${combination.combinedTitle}" (confidence: ${combination.confidenceScore.toFixed(2)})`);
+        
+        const result = await this.treeManager.createCombinationNode(combination, this.embeddingService);
+        
+        if (result.success) {
+          console.log(`✅ Created refreshed combination: ${result.nodeId}`);
+        } else {
+          console.log(`⚠️ Failed to create combination: ${result.error}`);
+        }
+      }
+
+      console.log(`✅ Combination refresh complete: ${topCombinations.length} new combinations created`);
+    } catch (error) {
+      console.error('❌ Failed to refresh combinations:', error);
+    }
+  }
+
+  /**
+   * Synchronize user interests with tree structure (now calls enhanced handler)
    */
   private async syncInterestsWithTree(): Promise<void> {
     if (!this.treeManager) return;
 
     try {
-      console.log('🌳 Syncing interests with tree structure...');
-      
-      // Create interest nodes for each custom interest
-      for (const interest of this.initialInterests) {
-        const result = await this.treeManager.createInterestNode(interest, [interest]);
-        
-        if (result.success) {
-          console.log(`✅ Created interest node: ${interest}`);
-        } else if (result.error?.includes('duplicate') || result.error?.includes('unique')) {
-          console.log(`ℹ️ Interest node already exists: ${interest}`);
-        } else {
-          console.error(`❌ Failed to create interest node for "${interest}":`, result.error);
-        }
+      // Get current interests from the tree database
+      const { data: existingInterests, error: fetchError } = await this.supabase
+        ?.from('news_interest_tree')
+        .select('title, node_id')
+        .eq('user_id', this.userId)
+        .eq('node_type', 'interest')
+        .eq('status', 'active') || { data: null, error: null };
+
+      if (fetchError) {
+        console.error('❌ Failed to fetch existing interests:', fetchError);
+        return;
       }
+
+      const existingInterestNames = existingInterests?.map(i => i.title) || [];
+      
+      // Use enhanced interest change handler
+      await this.handleInterestChange(existingInterestNames, this.initialInterests);
+
     } catch (error) {
       console.error('❌ Failed to sync interests with tree:', error);
     }
@@ -1241,8 +767,6 @@ Your queries:`;
       await this.processTreeFeedback(feedback);
     }
 
-    // Also process through legacy system for backward compatibility
-    await this.processLegacyFeedback(feedback);
   }
 
   /**
@@ -1256,7 +780,6 @@ Your queries:`;
         reaction: fb.reaction,
         timestamp: fb.timestamp,
         metadata: {
-          contributingSentenceIds: fb.contributingSentenceIds,
           searchQuery: (fb as any).searchQuery
         }
       };
@@ -1279,7 +802,6 @@ Your queries:`;
             fb.extractedKeywords,
             {
               searchQuery: (fb as any).searchQuery,
-              contributingSentenceIds: fb.contributingSentenceIds,
               originalFeedback: fb
             }
           );
@@ -1300,74 +822,331 @@ Your queries:`;
   }
 
   /**
-   * Legacy feedback processing (renamed for clarity)
+   * Generate embeddings for interest nodes that don't have them yet
    */
-  private async processLegacyFeedback(feedback: UserFeedback[]): Promise<void> {
-    // Update ONLY the sentences that contributed to each result
-    feedback.forEach(fb => {
-      const contributingIds = fb.contributingSentenceIds || [];
+  private async generateEmbeddingsForInterests(): Promise<void> {
+    if (!this.treeManager || !this.embeddingService) {
+      return;
+    }
+
+    console.log('🧠 Checking if interest nodes need embeddings...');
+    
+    try {
+      const result = await this.treeManager.generateEmbeddingsForAllNodes(
+        this.embeddingService, 
+        ['interest']
+      );
       
-      if (contributingIds.length === 0) {
-        console.log('⚠️ No contributing sentence IDs found - falling back to updating all sentences');
-        // Fallback: update all sentences (old behavior)
-        this.keySentences.forEach(sentence => {
-          if (fb.reaction === 'positive') {
-            sentence.positiveReactions++;
-          } else {
-            sentence.negativeReactions++;
-          }
-          sentence.avgFeedback = sentence.positiveReactions / 
-            (sentence.positiveReactions + sentence.negativeReactions);
-        });
+      if (result.success && result.affectedNodes?.length) {
+        console.log(`✅ Generated embeddings for ${result.affectedNodes.length} interest nodes`);
+      }
+    } catch (error) {
+      console.error('❌ Failed to generate embeddings for interests:', error);
+    }
+  }
+
+  /**
+   * Analyze embeddings and create combination suggestions
+   */
+  private async analyzeAndCreateCombinations(): Promise<void> {
+    if (!this.treeManager || !this.embeddingService) {
+      return;
+    }
+
+    console.log('🎨 Analyzing embeddings for creative combinations...');
+    
+    try {
+      // Get all nodes with embeddings
+      const nodesWithEmbeddings = await this.treeManager.getNodesWithEmbeddings(['interest']);
+      
+      if (nodesWithEmbeddings.length < 2) {
+        console.log('ℹ️ Need at least 2 interests with embeddings for combinations');
         return;
       }
 
-      // Update only the contributing sentences
-      contributingIds.forEach(sentenceId => {
-        const sentence = this.keySentences.find(s => s.id === sentenceId);
-        if (sentence) {
-          if (fb.reaction === 'positive') {
-            sentence.positiveReactions++;
-            console.log(`➕ Increased positive reactions for sentence "${sentence.text}" (${sentence.positiveReactions}/${sentence.negativeReactions})`);
-          } else {
-            sentence.negativeReactions++;
-            console.log(`➖ Increased negative reactions for sentence "${sentence.text}" (${sentence.positiveReactions}/${sentence.negativeReactions})`);
-          }
-          
-          sentence.avgFeedback = sentence.positiveReactions / 
-            (sentence.positiveReactions + sentence.negativeReactions);
+      // Analyze embeddings and generate combinations
+      const analysis = await this.embeddingService.analyzeInterestEmbeddings(nodesWithEmbeddings);
+      
+      // Create combination nodes from the best suggestions
+      const topCombinations = analysis.combinationSuggestions.slice(0, 5); // Top 5 combinations
+      
+      for (const combination of topCombinations) {
+        console.log(`🎯 Creating combination: "${combination.combinedTitle}" (confidence: ${combination.confidenceScore.toFixed(2)})`);
+        
+        const result = await this.treeManager.createCombinationNode(combination, this.embeddingService);
+        
+        if (result.success) {
+          console.log(`✅ Created combination node: ${result.nodeId}`);
         } else {
-          console.log(`⚠️ Could not find sentence with ID: ${sentenceId}`);
+          console.log(`⚠️ Failed to create combination: ${result.error}`);
         }
+      }
+
+      console.log(`✅ Embedding analysis complete: ${analysis.combinationSuggestions.length} combinations analyzed, ${topCombinations.length} created`);
+    } catch (error) {
+      console.error('❌ Failed to analyze embeddings:', error);
+    }
+  }
+
+  /**
+   * Enhanced tree-based search with combination node support
+   */
+  private async searchWithTreeAndCombinations(useLLM: boolean = true): Promise<{ results: SearchResult[], selectedNodes: TreeNode[] }> {
+    console.log('🌳 Using enhanced tree-based content discovery with combinations');
+    
+    // Load negative keywords for quality scoring
+    const negativeKeywords = await this.loadNegativeKeywords();
+    
+    // Select nodes using Interest-Aware Selection - include combination nodes
+    const nodeSelection = await this.treeManager!.selectNodesForDiscovery({
+      approvalStatuses: ['approved'],
+      statuses: ['active'],
+      nodeTypes: ['interest', 'combination'], // Include combination nodes
+      minQualityScore: 0.2,
+      sortBy: 'quality'
+    }, 5, this.initialInterests, this.embeddingService); // Pass current interests and embedding service
+
+    const selectedNodes = nodeSelection.selectedNodes;
+    console.log(`🎯 Selected ${selectedNodes.length} tree nodes (including combinations) for content discovery`);
+    
+    if (selectedNodes.length === 0) {
+      console.log('⚠️ No suitable tree nodes found, returning empty results');
+      return {
+        results: [],
+        selectedNodes: []
+      };
+    }
+
+    // Generate search queries based on selected nodes (including combinations)
+    const queries = useLLM 
+      ? await this.generateEnhancedLLMQueries(selectedNodes, 3)
+      : this.generateEnhancedFallbackQueries(selectedNodes);
+    
+    console.log('🔍 Using enhanced search queries:', queries);
+    
+    const allResults: SearchResult[] = [];
+    
+    // Search for each query
+    for (let i = 0; i < queries.length; i++) {
+      const query = queries[i];
+      console.log(`🔍 Processing query ${i + 1}/${queries.length}: "${query}"`);
+      
+      const results = await this.searchWithBrave(query, 3);
+      
+      // Add enhanced metadata to results
+      const resultsWithEnhancedData = results.map(result => {
+        const contentText = `${result.title} ${result.snippet}`;
+        const qualityScore = this.calculateContentQualityScore(contentText, negativeKeywords);
+        
+        return {
+          ...result,
+          contributingNodeIds: selectedNodes.map(n => n.nodeId),
+          qualityScore,
+          searchQuery: query,
+          searchMethod: 'enhanced_tree_with_combinations'
+        };
       });
+      
+      allResults.push(...resultsWithEnhancedData);
+      
+      // Add delay between requests
+      if (i < queries.length - 1) {
+        console.log('⏳ Waiting 2 seconds before next search...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
+
+    // Sort results by quality score
+    const rankedResults = allResults.sort((a, b) => {
+      const qualityA = Math.pow(a.qualityScore || 1.0, 2);
+      const qualityB = Math.pow(b.qualityScore || 1.0, 2);
+      const scoreA = qualityA * (a.relevanceScore || 1.0);
+      const scoreB = qualityB * (b.relevanceScore || 1.0);
+      return scoreB - scoreA;
     });
 
-    // Process positive feedback to create new key sentences
-    const positiveFeedback = feedback.filter(fb => fb.reaction === 'positive');
+    console.log(`📊 Enhanced search found ${rankedResults.length} results`);
     
-    for (const fb of positiveFeedback) {
-      if (fb.extractedKeywords && fb.extractedKeywords.length > 0) {
-        await this.addKeySentenceFromFeedback(fb.extractedKeywords);
-      }
-    }
-
-    // Process negative feedback keywords and save them for quality scoring
-    const negativeFeedback = feedback.filter(fb => fb.reaction === 'negative');
-    
-    for (const fb of negativeFeedback) {
-      if (fb.extractedKeywords && fb.extractedKeywords.length > 0) {
-        console.log(`🚫 Processing negative keywords: ${fb.extractedKeywords.join(', ')}`);
-        // Save negative keywords to database for content quality scoring
-        await this.saveNegativeKeywords(fb.extractedKeywords);
-      }
-    }
-
-    console.log('✅ Legacy feedback processed and system updated');
+    return {
+      results: rankedResults,
+      selectedNodes
+    };
   }
+
+  /**
+   * Generate enhanced LLM queries including combination nodes
+   */
+  private async generateEnhancedLLMQueries(selectedNodes: TreeNode[], maxQueries: number = 3): Promise<string[]> {
+    const nodeDescriptions = selectedNodes.map(node => {
+      if (node.nodeType === 'interest') {
+        return `Interest: ${node.title}`;
+      } else if (node.nodeType === 'combination') {
+        return `Creative combination: ${node.title} (confidence: ${(node as any).confidenceScore || 'N/A'})`;
+      } else {
+        return `Approved news: ${node.title} (keywords: ${node.keywords.join(', ')})`;
+      }
+    }).join('\n- ');
+    
+    const prompt = `Based on these selected content nodes including creative combinations:
+- ${nodeDescriptions}
+
+Generate ${maxQueries} specific search queries for finding current news. Mix traditional and creative queries:
+- Use creative combinations when available
+- Be 3-6 words long
+- Focus on recent/current events
+- Use effective news search keywords
+- Build upon both individual interests and their combinations
+
+Format: One query per line, no quotes or formatting.
+
+Examples:
+- "drone jobs spain" (from combination)
+- "AI startup funding news"
+- "remote work blockchain"
+
+Your queries:`;
+
+    const llmResponse = await this.callLocalLLM(prompt);
+    
+    if (!llmResponse) {
+      return this.generateEnhancedFallbackQueries(selectedNodes);
+    }
+
+    const queries = llmResponse
+      .split('\n')
+      .map(line => line.trim().replace(/^[-"'•]\s*/, '').replace(/["']$/, ''))
+      .filter(line => line.length > 5 && line.length < 50)
+      .slice(0, maxQueries);
+
+    return queries.length > 0 ? queries : this.generateEnhancedFallbackQueries(selectedNodes);
+  }
+
+  /**
+   * Generate enhanced fallback queries including combination nodes
+   */
+  private generateEnhancedFallbackQueries(selectedNodes: TreeNode[]): string[] {
+    const queries: string[] = [];
+    
+    // Process combination nodes first (they have pre-generated queries)
+    const combinationNodes = selectedNodes.filter(node => node.nodeType === 'combination');
+    for (const combo of combinationNodes) {
+      const comboData = combo as any;
+      if (comboData.potentialQueries && comboData.potentialQueries.length > 0) {
+        queries.push(comboData.potentialQueries[0]); // Use the first suggested query
+      }
+    }
+    
+    // Add queries from regular interests
+    const interestNodes = selectedNodes.filter(node => node.nodeType === 'interest');
+    const allKeywords: string[] = [];
+    
+    interestNodes.forEach(node => {
+      allKeywords.push(...node.keywords);
+      
+      // Extract additional keywords from title
+      const titleWords = node.title.toLowerCase()
+        .split(/\s+/)
+        .filter(word => 
+          word.length > 3 && 
+          !['latest', 'news', 'developments', 'about', 'regarding', 'recent'].includes(word)
+        );
+      allKeywords.push(...titleWords);
+    });
+
+    const uniqueKeywords = [...new Set(allKeywords)].slice(0, 6);
+    
+    if (uniqueKeywords.length >= 2) {
+      queries.push(`${uniqueKeywords.slice(0, 2).join(' ')} latest news`);
+    }
+    
+    if (uniqueKeywords.length >= 4) {
+      queries.push(`${uniqueKeywords.slice(2, 4).join(' ')} recent developments`);
+    }
+    
+    if (queries.length === 0 && uniqueKeywords.length > 0) {
+      queries.push(`${uniqueKeywords[0]} news`);
+    }
+
+    return queries.slice(0, 3);
+  }
+
+  /**
+   * Update the main search method to use enhanced search
+   */
+  private async searchWithTreeStructure(useLLM: boolean = true): Promise<{ results: SearchResult[], selectedNodes: TreeNode[] }> {
+    // Use enhanced search if embedding service is available
+    if (this.embeddingService) {
+      return this.searchWithTreeAndCombinations(useLLM);
+    }
+    
+    // Fall back to original tree search
+    console.log('🌳 Using basic tree-based content discovery (no embeddings)');
+    
+    const negativeKeywords = await this.loadNegativeKeywords();
+    
+    const nodeSelection = await this.treeManager!.selectNodesForDiscovery({
+      approvalStatuses: ['approved'],
+      statuses: ['active'],
+      minQualityScore: 0.3,
+      sortBy: 'quality'
+    }, 3);
+
+    const selectedNodes = nodeSelection.selectedNodes;
+    console.log(`🎯 Selected ${selectedNodes.length} tree nodes for basic content discovery`);
+    
+    if (selectedNodes.length === 0) {
+      return { results: [], selectedNodes: [] };
+    }
+
+    const queries = useLLM 
+      ? await this.generateTreeBasedLLMQueries(selectedNodes, 2)
+      : this.generateTreeBasedFallbackQueries(selectedNodes);
+    
+    console.log('🔍 Using basic tree search queries:', queries);
+    
+    const allResults: SearchResult[] = [];
+    
+    for (let i = 0; i < queries.length; i++) {
+      const query = queries[i];
+      const results = await this.searchWithBrave(query, 3);
+      
+      const resultsWithTreeData = results.map(result => {
+        const contentText = `${result.title} ${result.snippet}`;
+        const qualityScore = this.calculateContentQualityScore(contentText, negativeKeywords);
+        
+        return {
+          ...result,
+          contributingNodeIds: selectedNodes.map(n => n.nodeId),
+          qualityScore,
+          searchQuery: query
+        };
+      });
+      
+      allResults.push(...resultsWithTreeData);
+      
+      if (i < queries.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
+
+    const rankedResults = allResults.sort((a, b) => {
+      const qualityA = Math.pow(a.qualityScore || 1.0, 2);
+      const qualityB = Math.pow(b.qualityScore || 1.0, 2);
+      const scoreA = qualityA * (a.relevanceScore || 1.0);
+      const scoreB = qualityB * (b.relevanceScore || 1.0);
+      return scoreB - scoreA;
+    });
+
+    return {
+      results: rankedResults,
+      selectedNodes
+    };
+  }
+
 }
 
 /**
- * Legacy function for backward compatibility - now uses adaptive search
+ * Legacy function for backward compatibility - now uses tree-based search
  */
 export async function discoverInterestingContent(
   commonInterests: string[],
@@ -1375,6 +1154,9 @@ export async function discoverInterestingContent(
 ): Promise<SearchResult[]> {
   const allInterests = [...commonInterests, ...customInterests];
   const searchSystem = new AdaptiveSearchSystem(allInterests);
+  
+  // Initialize with tree structure (this will throw if no database connection)
+  await searchSystem.initializeWithPersistence();
   
   const { results } = await searchSystem.searchBasedOnKeySentences(true);
   return results;

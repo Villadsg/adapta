@@ -91,31 +91,23 @@ export const POST: RequestHandler = async ({ request }) => {
     await searchSystem.initializeWithPersistence();
     
     const searchResult = await searchSystem.searchBasedOnKeySentences(true);
-    const { results, selectedSentences, selectedNodes } = searchResult;
+    const { results, selectedNodes } = searchResult;
     
     return json({
       success: true,
       results,
-      selectedSentences: selectedSentences.map(s => ({
-        id: s.id,
-        text: s.text,
-        source: s.source,
-        avgFeedback: s.avgFeedback,
-        timesUsed: s.timesUsed
-      })),
-      // Include tree node information if available
-      selectedNodes: selectedNodes?.map(n => ({
+      selectedNodes: selectedNodes.map(n => ({
         nodeId: n.nodeId,
         title: n.title,
         nodeType: n.nodeType,
         qualityScore: n.qualityScore,
         depth: n.depth,
         keywords: n.keywords
-      })) || [],
+      })),
       interestsUsed: {
         custom: customInterests
       },
-      searchMode: selectedNodes ? 'tree-based' : 'legacy',
+      searchMode: 'tree-based',
       timestamp: new Date().toISOString()
     });
 
@@ -201,13 +193,13 @@ export const GET: RequestHandler = async ({ url, request }) => {
       success: true,
       results: results.slice(0, maxResults),
       query,
-      searchMode: selectedNodes ? 'tree-based' : 'legacy',
-      selectedNodes: selectedNodes?.map(n => ({
+      searchMode: 'tree-based',
+      selectedNodes: selectedNodes.map(n => ({
         nodeId: n.nodeId,
         title: n.title,
         nodeType: n.nodeType,
         qualityScore: n.qualityScore
-      })) || [],
+      })),
       timestamp: new Date().toISOString()
     });
 
