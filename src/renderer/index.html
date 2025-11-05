@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Adapta Browser</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Tab Bar with Window Controls -->
+  <div id="tab-bar">
+    <div class="drag-region"></div>
+    <div id="tabs-container"></div>
+    <button id="btn-new-tab" class="new-tab-btn" title="New Tab">+</button>
+    <div class="window-controls">
+      <button id="btn-minimize" class="window-btn" title="Minimize">−</button>
+      <button id="btn-maximize" class="window-btn" title="Maximize">□</button>
+      <button id="btn-close" class="window-btn close-btn" title="Close">×</button>
+    </div>
+  </div>
+
+  <div id="toolbar">
+    <!-- Navigation controls -->
+    <div class="nav-controls">
+      <button id="btn-back" class="nav-btn" title="Back">←</button>
+      <button id="btn-forward" class="nav-btn" title="Forward">→</button>
+      <button id="btn-reload" class="nav-btn" title="Reload">⟳</button>
+    </div>
+
+    <!-- URL bar -->
+    <div class="url-container">
+      <input type="text" id="url-bar" placeholder="Enter URL..." />
+    </div>
+
+    <!-- Stats display -->
+    <div class="stats-display">
+      <span id="stats-text">Not Good: 0</span>
+    </div>
+
+    <!-- Similarity display (auto-shown on navigation) -->
+    <div id="similarity-display" style="display: none;">
+      <span id="similarity-text"></span>
+    </div>
+
+    <!-- Ticker scraper -->
+    <div class="ticker-controls">
+      <input type="text" id="ticker-input" placeholder="Ticker (e.g., AAPL)" maxlength="10" />
+      <button id="btn-scrape-ticker" class="action-btn btn-scrape">📰 Scrape Press Releases</button>
+    </div>
+
+    <!-- Action buttons -->
+    <div class="action-controls">
+      <button id="btn-not-good" class="action-btn btn-not-good">Mark as "Not Good"</button>
+      <button id="btn-settings" class="action-btn btn-settings">⚙️ Settings</button>
+    </div>
+  </div>
+
+  <!-- Status/info bar -->
+  <div id="status-bar">
+    <span id="status-text">Ready</span>
+  </div>
+
+  <!-- The browser view will be positioned here by Electron -->
+
+  <script src="renderer.js"></script>
+</body>
+</html>

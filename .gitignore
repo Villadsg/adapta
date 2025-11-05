@@ -1,23 +1,38 @@
-node_modules
+# Dependencies
+node_modules/
 
-# Output
-.output
-.vercel
-.netlify
-.wrangler
-/.svelte-kit
-/build
+# Database files
+*.db
+*.db.wal
 
-# OS
+# OS files
 .DS_Store
 Thumbs.db
 
-# Env
-.env
-.env.*
-!.env.example
-!.env.test
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
-# Vite
-vite.config.js.timestamp-*
-vite.config.ts.timestamp-*
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.local
+
+# Build outputs
+dist/
+build/
+out/
+
+# Cache
+.cache/
+*.log
+
+# Electron specific
+# (allow package-lock.json for reproducible builds)
