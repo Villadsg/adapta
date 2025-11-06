@@ -1,12 +1,10 @@
 const { app, BrowserWindow, BrowserView, ipcMain } = require('electron');
 const path = require('path');
 const ArticleDatabase = require('./src/services/database');
-const { chunkText, chunkTextByParagraph } = require('./src/services/chunking');
-const WebScraper = require('./src/services/scraper');
+const nativeTabScraper = require('./src/services/nativeTabScraper');
 
 let mainWindow;
 let database;
-let scraper;
 
 // Tab management
 const tabs = new Map(); // tabId -> BrowserView
@@ -32,6 +30,20 @@ function createWindow() {
   // Update browser view bounds when window resizes
   mainWindow.on('resize', () => {
     if (activeTabId) {
+      const browserView = tabs.get(activeTabId);
+      updateBrowserViewBounds(browserView);
+    }
+  });
+
+  // Also handle maximize/unmaximize events
+  mainWindow.on('maximize', () => {
+    if (activeTabId) {
+      updateBrowserViewBounds(tabs.get(activeTabId));
+    }
+  });
+
+  mainWindow.on('unmaximize', () => {
+    if (activeTabId) {
       updateBrowserViewBounds(tabs.get(activeTabId));
     }
   });
@@ -43,7 +55,12 @@ function createWindow() {
 // Position the browser view (leave space for tab bar + toolbar at top)
 function updateBrowserViewBounds(browserView) {
   if (!browserView || !mainWindow) return;
+
   const { width, height } = mainWindow.getContentBounds();
+
+  // Log for debugging
+  console.log(`Updating browser view bounds: ${width}x${height}, content area: ${width}x${height - 116}`);
+
   browserView.setBounds({
     x: 0,
     y: 116, // Space for tab bar (36px) + toolbar (60px) + status bar (20px)
@@ -329,26 +346,13 @@ ipcMain.handle('save-article', async (event, category) => {
       document.body.innerText;
     `);
 
-    // Save article to database
+    // Save article to database with embedding for full article
     const result = await database.saveArticle(url, title, text, category);
-    console.log(`✓ Article saved (ID: ${result.id}) - ${result.title}`);
-
-    // Get chunking settings
-    const settings = await database.getChunkingSettings();
-    console.log(`  Using settings: ${settings.chunkSize} tokens, ${settings.chunkOverlap} overlap, ${settings.chunkStrategy} strategy`);
-
-    // Choose chunking function based on strategy
-    const chunkFunction = settings.chunkStrategy === 'paragraph' ? chunkTextByParagraph : chunkText;
-    const chunks = chunkFunction(text, title, settings.chunkSize, settings.chunkOverlap);
-    console.log(`  Chunking into ${chunks.length} chunks...`);
-
-    // Save chunks to database (with title for embedding context)
-    await database.saveChunks(result.id, chunks, category, { title: title });
+    console.log(`✓ Article saved with full-text embedding (ID: ${result.id}) - ${result.title}`);
 
     return {
       success: true,
-      article: result,
-      chunkCount: chunks.length
+      article: result
     };
   } catch (error) {
     console.error('Error saving article:', error);
@@ -476,86 +480,92 @@ ipcMain.handle('get-embedding-stats', async (event) => {
   }
 });
 
-// Scrape Yahoo Finance press releases for a ticker
-ipcMain.handle('scrape-ticker-press-releases', async (event, ticker, topN = 5) => {
+// Scrape news from current page using native tabs
+ipcMain.handle('scrape-current-page-news', async (event, topN = 5) => {
   try {
-    console.log(`\n🚀 Starting scrape for ticker: ${ticker}`);
+    console.log(`\n🚀 Starting native tab scrape from current page (top ${topN})`);
 
-    if (!scraper) {
-      scraper = new WebScraper();
+    const browserView = getActiveBrowserView();
+    if (!browserView) {
+      return { success: false, error: 'No active tab' };
     }
 
-    const results = await scraper.scrapeYahooFinancePressReleases(
-      ticker,
-      topN,
-      (progress) => {
+    const currentUrl = browserView.webContents.getURL();
+    const currentTitle = browserView.webContents.getTitle();
+
+    console.log(`   Current page: ${currentTitle}`);
+    console.log(`   URL: ${currentUrl}`);
+
+    // Use native tab scraper
+    const articles = await nativeTabScraper.scrapeNewsFromCurrentPage({
+      currentWebContents: browserView.webContents,
+      createTab: (url) => {
+        return new Promise((resolve) => {
+          const tabId = createTab(url);
+          const newBrowserView = tabs.get(tabId);
+          resolve({ browserView: newBrowserView, tabId });
+        });
+      },
+      closeTab: (tabId) => {
+        return new Promise((resolve) => {
+          closeTab(tabId);
+          resolve();
+        });
+      },
+      onProgress: (current, total, message) => {
         // Send progress updates to renderer
-        mainWindow.webContents.send('scrape-progress', progress);
-      }
-    );
+        mainWindow.webContents.send('scrape-progress', {
+          current,
+          total,
+          message,
+          progress: Math.round((current / total) * 100)
+        });
+        console.log(`   [${current}/${total}] ${message}`);
+      },
+      topN
+    });
 
-    // Save successful scrapes to database
+    // Save scraped articles to database
     const savedArticles = [];
-    const settings = await database.getChunkingSettings();
 
-    for (const result of results) {
-      if (result.success && result.text && result.text.length > 100) {
-        try {
-          // Save article with ticker as category
-          const article = await database.saveArticle(
-            result.url,
-            result.title,
-            result.text,
-            `ticker:${ticker.toUpperCase()}`
-          );
+    for (const article of articles) {
+      try {
+        // Extract domain from URL for category
+        const urlObj = new URL(article.url);
+        const domain = urlObj.hostname.replace('www.', '');
 
-          console.log(`✓ Saved: ${article.title} (ID: ${article.id})`);
+        // Save article with domain as category
+        const saved = await database.saveArticle(
+          article.url,
+          article.title,
+          article.text,
+          `news:${domain}`
+        );
 
-          // Choose chunking function based on strategy
-          const chunkFunction = settings.chunkStrategy === 'paragraph'
-            ? chunkTextByParagraph
-            : chunkText;
+        console.log(`✓ Saved: ${saved.title} (ID: ${saved.id})`);
 
-          const chunks = chunkFunction(
-            result.text,
-            result.title,
-            settings.chunkSize,
-            settings.chunkOverlap
-          );
-
-          console.log(`  Chunking into ${chunks.length} chunks...`);
-
-          // Save chunks to database
-          await database.saveChunks(
-            article.id,
-            chunks,
-            `ticker:${ticker.toUpperCase()}`,
-            { title: result.title }
-          );
-
-          savedArticles.push({
-            id: article.id,
-            title: article.title,
-            chunkCount: chunks.length
-          });
-        } catch (error) {
-          console.error(`Error saving article ${result.url}:`, error.message);
-        }
+        savedArticles.push({
+          id: saved.id,
+          title: saved.title,
+          url: saved.url
+        });
+      } catch (error) {
+        console.error(`Error saving article ${article.url}:`, error.message);
       }
     }
 
-    console.log(`\n✅ Scraping complete: ${savedArticles.length}/${results.length} articles saved`);
+    console.log(`\n✅ Scraping complete: ${savedArticles.length}/${articles.length} articles saved`);
 
     return {
       success: true,
-      ticker: ticker,
-      total: results.length,
+      sourceUrl: currentUrl,
+      sourceTitle: currentTitle,
+      total: articles.length,
       saved: savedArticles.length,
-      articles: savedArticles,
-      results: results
+      articles: savedArticles
     };
   } catch (error) {
-    console.error('Error scraping ticker press releases:', error);
+    console.error('Error scraping current page news:', error);
     return {
       success: false,
       error: error.message
@@ -574,9 +584,6 @@ app.whenReady().then(async () => {
     console.error('Failed to initialize database:', error);
   }
 
-  // Initialize scraper
-  scraper = new WebScraper();
-
   createWindow();
 });
 
@@ -584,11 +591,6 @@ app.on('window-all-closed', async () => {
   // Close database connection
   if (database) {
     await database.close();
-  }
-
-  // Close scraper
-  if (scraper) {
-    await scraper.close();
   }
 
   if (process.platform !== 'darwin') {

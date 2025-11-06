@@ -19,7 +19,6 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^3.7.6",
-    "duckdb": "^1.4.1",
-    "playwright": "^1.56.1"
+    "duckdb": "^1.4.1"
   }
 }

@@ -27,14 +27,18 @@ body {
 /* Prevent dragging on interactive elements */
 #tab-bar button,
 #tab-bar .tab,
-#tabs-container,
 .window-controls {
   -webkit-app-region: no-drag;
 }
 
+/* Allow dragging in the tabs container (empty space between tabs) */
+#tabs-container {
+  -webkit-app-region: drag;
+}
+
 .drag-region {
   flex-shrink: 0;
-  width: 10px;
+  width: 100px;
   height: 36px;
   -webkit-app-region: drag;
 }
@@ -193,33 +197,11 @@ body {
   border-color: #0078d4;
 }
 
-/* Ticker controls */
-.ticker-controls {
+/* Scraper controls */
+.scraper-controls {
   display: flex;
   gap: 8px;
   align-items: center;
-}
-
-#ticker-input {
-  width: 100px;
-  height: 36px;
-  background: #1e1e1e;
-  border: 1px solid #404040;
-  border-radius: 4px;
-  color: #ffffff;
-  padding: 0 12px;
-  font-size: 14px;
-  text-transform: uppercase;
-}
-
-#ticker-input:focus {
-  outline: none;
-  border-color: #0078d4;
-}
-
-#ticker-input::placeholder {
-  color: #666666;
-  text-transform: none;
 }
 
 .btn-scrape {

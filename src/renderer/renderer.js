@@ -14,8 +14,7 @@ const btnNewTab = document.getElementById('btn-new-tab');
 const btnMinimize = document.getElementById('btn-minimize');
 const btnMaximize = document.getElementById('btn-maximize');
 const btnClose = document.getElementById('btn-close');
-const tickerInput = document.getElementById('ticker-input');
-const btnScrapeTicker = document.getElementById('btn-scrape-ticker');
+const btnScrapeNews = document.getElementById('btn-scrape-news');
 
 // Tab management
 let currentTabId = null;
@@ -347,63 +346,45 @@ btnClose.addEventListener('click', async () => {
   await window.electronAPI.windowClose();
 });
 
-// Ticker scraping functionality
-btnScrapeTicker.addEventListener('click', async () => {
-  const ticker = tickerInput.value.trim().toUpperCase();
-
-  if (!ticker) {
-    setStatus('Please enter a ticker symbol', 'error');
-    return;
-  }
-
+// News scraping functionality (from current page)
+btnScrapeNews.addEventListener('click', async () => {
   try {
-    btnScrapeTicker.disabled = true;
-    btnScrapeTicker.textContent = '⏳ Scraping...';
-    setStatus(`Scraping press releases for ${ticker}...`, 'info');
+    btnScrapeNews.disabled = true;
+    btnScrapeNews.textContent = '⏳ Scraping...';
+    setStatus('Extracting news links from current page...', 'info');
 
-    const result = await window.electronAPI.scrapeTickerPressReleases(ticker, 5);
+    const result = await window.electronAPI.scrapeCurrentPageNews(5);
 
     if (!result.success) {
       setStatus(`Error: ${result.error}`, 'error');
-      btnScrapeTicker.disabled = false;
-      btnScrapeTicker.textContent = '📰 Scrape Press Releases';
+      btnScrapeNews.disabled = false;
+      btnScrapeNews.textContent = '📰 Scrape News (Top 5)';
       return;
     }
 
     setStatus(
-      `✓ Scraped ${result.saved}/${result.total} press releases for ${ticker}`,
+      `✓ Scraped ${result.saved}/${result.total} articles from ${result.sourceTitle}`,
       'success'
     );
 
     // Update stats
     await updateStats();
 
-    // Clear ticker input
-    tickerInput.value = '';
-
-    btnScrapeTicker.disabled = false;
-    btnScrapeTicker.textContent = '📰 Scrape Press Releases';
+    btnScrapeNews.disabled = false;
+    btnScrapeNews.textContent = '📰 Scrape News (Top 5)';
   } catch (error) {
-    console.error('Error scraping ticker:', error);
+    console.error('Error scraping news:', error);
     setStatus(`Error: ${error.message}`, 'error');
-    btnScrapeTicker.disabled = false;
-    btnScrapeTicker.textContent = '📰 Scrape Press Releases';
-  }
-});
-
-// Allow Enter key in ticker input
-tickerInput.addEventListener('keypress', (e) => {
-  if (e.key === 'Enter') {
-    btnScrapeTicker.click();
+    btnScrapeNews.disabled = false;
+    btnScrapeNews.textContent = '📰 Scrape News (Top 5)';
   }
 });
 
 // Listen for scrape progress updates
 window.electronAPI.onScrapeProgress((progress) => {
-  setStatus(
-    `Scraping ${progress.ticker}: ${progress.current}/${progress.total} - ${progress.linkText.substring(0, 60)}...`,
-    'info'
-  );
+  if (progress.message) {
+    setStatus(`[${progress.current}/${progress.total}] ${progress.message}`, 'info');
+  }
 });
 
 // Initialize

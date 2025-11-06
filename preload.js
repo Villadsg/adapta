@@ -41,7 +41,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onUrlChanged: (callback) => ipcRenderer.on('url-changed', (event, data) => callback(data)),
 
   // Scraping operations
-  scrapeTickerPressReleases: (ticker, topN) => ipcRenderer.invoke('scrape-ticker-press-releases', ticker, topN),
+  scrapeCurrentPageNews: (topN) => ipcRenderer.invoke('scrape-current-page-news', topN),
   onScrapeProgress: (callback) => ipcRenderer.on('scrape-progress', (event, data) => callback(data)),
 
   // Window controls

@@ -14,14 +14,24 @@ class ArticleDatabase {
   async initialize() {
     return new Promise((resolve, reject) => {
       // Create database instance
-      this.db = new duckdb.Database(this.dbPath, (err) => {
+      this.db = new duckdb.Database(this.dbPath, {
+        access_mode: 'READ_WRITE'
+      }, (err) => {
         if (err) {
           reject(err);
           return;
         }
 
-        // Create connection
+        // Create connection - store reference to prevent garbage collection
         this.connection = this.db.connect();
+
+        // Keep connection alive by storing it
+        if (!this.connection) {
+          reject(new Error('Failed to create database connection'));
+          return;
+        }
+
+        console.log('✓ Database connection established');
 
         // Create tables
         this.createTables()
@@ -51,7 +61,8 @@ class ArticleDatabase {
         category TEXT,
         domain TEXT,
         saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        word_count INTEGER
+        word_count INTEGER,
+        embedding FLOAT[]
       )
     `;
 
@@ -118,9 +129,14 @@ class ArticleDatabase {
                 // Initialize default settings
                 this.initializeSettings()
                   .then(() => {
-                    // Create indexes
-                    this.createIndexes()
-                      .then(resolve)
+                    // Run migrations
+                    this.runMigrations()
+                      .then(() => {
+                        // Create indexes
+                        this.createIndexes()
+                          .then(resolve)
+                          .catch(reject);
+                      })
                       .catch(reject);
                   })
                   .catch(reject);
@@ -154,24 +170,83 @@ class ArticleDatabase {
     }
   }
 
+  /**
+   * Run database migrations to handle schema changes
+   */
+  async runMigrations() {
+    try {
+      // Migration 1: Add embedding column to articles table if it doesn't exist
+      await this.addColumnIfNotExists('articles', 'embedding', 'FLOAT[]');
+
+      console.log('✓ Database migrations completed');
+    } catch (error) {
+      console.error('Error running migrations:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ensure database connection is active and reconnect if necessary
+   */
+  ensureConnection() {
+    if (!this.connection && this.db) {
+      console.log('⚠️  Reconnecting to database...');
+      this.connection = this.db.connect();
+    }
+    if (!this.connection) {
+      throw new Error('Database connection is not available');
+    }
+  }
+
+  /**
+   * Add a column to a table if it doesn't already exist
+   * @param {string} tableName - Name of the table
+   * @param {string} columnName - Name of the column to add
+   * @param {string} columnType - SQL type of the column
+   */
+  async addColumnIfNotExists(tableName, columnName, columnType) {
+    return new Promise((resolve) => {
+      // Attempt to select the column - if it works, column exists
+      const testSQL = `SELECT ${columnName} FROM ${tableName} LIMIT 0`;
+
+      this.connection.all(testSQL, (testErr) => {
+        if (testErr) {
+          // Column doesn't exist, try to add it
+          const alterSQL = `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnType}`;
+
+          this.connection.run(alterSQL, (alterErr) => {
+            if (alterErr) {
+              // If error contains "already exists", that's fine
+              if (alterErr.message && alterErr.message.includes('already exists')) {
+                console.log(`✓ Column '${columnName}' already exists in table '${tableName}'`);
+                resolve();
+              } else {
+                console.error(`⚠️  Error adding column ${columnName} to ${tableName}:`, alterErr.message);
+                // Don't reject - just resolve to allow app to continue
+                resolve();
+              }
+            } else {
+              console.log(`✓ Added column '${columnName}' to table '${tableName}'`);
+              resolve();
+            }
+          });
+        } else {
+          // Column already exists
+          console.log(`✓ Column '${columnName}' already exists in table '${tableName}'`);
+          resolve();
+        }
+      });
+    });
+  }
+
   // ===== Settings methods =====
 
   /**
    * Initialize default settings if they don't exist
    */
   async initializeSettings() {
-    const defaults = {
-      'chunk_size': '256',
-      'chunk_overlap': '25',
-      'chunk_strategy': 'paragraph'
-    };
-
-    for (const [key, value] of Object.entries(defaults)) {
-      const exists = await this.getSetting(key);
-      if (exists === null) {
-        await this.setSetting(key, value);
-      }
-    }
+    // No default settings needed anymore (chunking removed)
+    // This method is kept for backward compatibility
   }
 
   /**
@@ -215,22 +290,26 @@ class ArticleDatabase {
   }
 
   /**
-   * Get all chunking settings
+   * Get all chunking settings (DEPRECATED - chunking removed)
    *
+   * @deprecated Chunking has been removed. This method is kept for backward compatibility.
    * @returns {Promise<Object>} Chunking settings object
    */
   async getChunkingSettings() {
+    // Return dummy values for backward compatibility
     return {
-      chunkSize: parseInt(await this.getSetting('chunk_size', '256')),
-      chunkOverlap: parseInt(await this.getSetting('chunk_overlap', '25')),
-      chunkStrategy: await this.getSetting('chunk_strategy', 'paragraph')
+      chunkSize: 512,
+      chunkOverlap: 50,
+      chunkStrategy: 'paragraph'
     };
   }
 
   /**
-   * Save an article to the database
+   * Save an article to the database with embedding
    */
-  async saveArticle(url, title, content, category) {
+  async saveArticle(url, title, content, category, options = {}) {
+    const { generateEmbedding = true } = options;
+
     // Extract domain from URL
     let domain = '';
     try {
@@ -243,14 +322,28 @@ class ArticleDatabase {
     // Calculate word count
     const wordCount = content.split(/\s+/).length;
 
+    // Generate embedding for full article if enabled
+    let embedding = null;
+    if (generateEmbedding) {
+      const embeddingService = require('./embeddings');
+      console.log(`  Generating embedding for full article...`);
+      embedding = await embeddingService.embed(content, {
+        task: 'search_document',
+        title: title,
+      });
+    }
+
+    // Convert embedding array to DuckDB array format
+    const embeddingValue = embedding ? `[${embedding.join(',')}]` : null;
+
     const sql = `
-      INSERT INTO articles (url, title, content, category, domain, word_count)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO articles (url, title, content, category, domain, word_count, embedding)
+      VALUES ($1, $2, $3, $4, $5, $6, $7::FLOAT[])
       RETURNING id
     `;
 
     return new Promise((resolve, reject) => {
-      this.connection.all(sql, url, title, content, category, domain, wordCount, (err, result) => {
+      this.connection.all(sql, url, title, content, category, domain, wordCount, embeddingValue, (err, result) => {
         if (err) {
           reject(err);
           return;
@@ -301,7 +394,7 @@ class ArticleDatabase {
    */
   async getArticleById(articleId) {
     const sql = `
-      SELECT id, url, title, content, category, domain, saved_at, word_count
+      SELECT id, url, title, content, category, domain, saved_at, word_count, embedding
       FROM articles
       WHERE id = ?
     `;
@@ -413,11 +506,12 @@ class ArticleDatabase {
     });
   }
 
-  // ===== Chunk-related methods =====
+  // ===== Chunk-related methods (DEPRECATED - kept for backward compatibility) =====
 
   /**
-   * Save text chunks for an article with embeddings
+   * Save text chunks for an article with embeddings (DEPRECATED)
    *
+   * @deprecated Chunking has been removed. Articles now store full-text embeddings.
    * @param {number} articleId - Article ID
    * @param {string[]} chunks - Array of chunk texts
    * @param {string} category - Article category
@@ -564,14 +658,14 @@ class ArticleDatabase {
   }
 
   /**
-   * Search chunks by semantic similarity using embeddings
+   * Search articles by semantic similarity using embeddings
    *
    * @param {string} queryText - Query text to search for
    * @param {Object} options - Search options
    * @param {string} options.categoryFilter - Filter by category ('good', 'not_good', or null for all)
    * @param {number} options.limit - Maximum number of results (default: 10)
    * @param {number} options.minSimilarity - Minimum similarity threshold 0-1 (default: 0.5)
-   * @returns {Promise<Array>} Array of chunks with similarity scores
+   * @returns {Promise<Array>} Array of articles with similarity scores
    */
   async searchBySimilarity(queryText, options = {}) {
     const {
@@ -579,6 +673,9 @@ class ArticleDatabase {
       limit = 10,
       minSimilarity = 0.5
     } = options;
+
+    // Ensure connection is active
+    this.ensureConnection();
 
     const embeddingService = require('./embeddings');
 
@@ -588,10 +685,13 @@ class ArticleDatabase {
       task: 'search_query'
     });
 
-    // Get all chunks with embeddings
+    // Ensure connection is still active after async operation
+    this.ensureConnection();
+
+    // Get all articles with embeddings
     let sql = `
-      SELECT chunk_id, article_id, chunk_text, chunk_index, embedding, category
-      FROM article_chunks
+      SELECT id, url, title, content, category, domain, saved_at, word_count, embedding
+      FROM articles
       WHERE embedding IS NOT NULL
     `;
 
@@ -599,37 +699,41 @@ class ArticleDatabase {
       sql += ` AND category = '${categoryFilter}'`;
     }
 
-    const chunks = await new Promise((resolve, reject) => {
+    const articles = await new Promise((resolve, reject) => {
       this.connection.all(sql, (err, rows) => {
         if (err) reject(err);
         else resolve(rows);
       });
     });
 
-    if (chunks.length === 0) {
-      console.log('⚠️  No chunks with embeddings found in database.');
+    if (articles.length === 0) {
+      console.log('⚠️  No articles with embeddings found in database.');
       return [];
     }
 
-    console.log(`   Comparing against ${chunks.length} chunks...`);
+    console.log(`   Comparing against ${articles.length} articles...`);
 
-    // Calculate similarity for each chunk (skip mismatched dimensions)
-    const results = chunks
-      .filter(chunk => {
-        // Skip chunks with different embedding dimensions
-        if (chunk.embedding.length !== queryEmbedding.length) {
+    // Calculate similarity for each article (skip mismatched dimensions)
+    const results = articles
+      .filter(article => {
+        // Skip articles with different embedding dimensions
+        if (article.embedding.length !== queryEmbedding.length) {
           return false;
         }
         return true;
       })
-      .map(chunk => {
-        const similarity = embeddingService.cosineSimilarity(queryEmbedding, chunk.embedding);
+      .map(article => {
+        const similarity = embeddingService.cosineSimilarity(queryEmbedding, article.embedding);
         return {
-          chunk_id: chunk.chunk_id,
-          article_id: chunk.article_id,
-          chunk_text: chunk.chunk_text,
-          chunk_index: chunk.chunk_index,
-          category: chunk.category,
+          id: article.id,
+          article_id: article.id,
+          url: article.url,
+          article_url: article.url,
+          title: article.title,
+          article_title: article.title,
+          category: article.category,
+          domain: article.domain,
+          word_count: article.word_count,
           similarity: similarity
         };
       });
@@ -651,37 +755,37 @@ class ArticleDatabase {
    * @returns {Promise<Object>} Embedding statistics
    */
   async getEmbeddingStats() {
-    const totalChunks = await new Promise((resolve, reject) => {
-      this.connection.all('SELECT COUNT(*) as count FROM article_chunks', (err, rows) => {
+    const totalArticles = await new Promise((resolve, reject) => {
+      this.connection.all('SELECT COUNT(*) as count FROM articles', (err, rows) => {
         if (err) reject(err);
         else resolve(Number(rows[0]?.count || 0));
       });
     });
 
-    const chunksWithEmbeddings = await new Promise((resolve, reject) => {
-      this.connection.all('SELECT COUNT(*) as count FROM article_chunks WHERE embedding IS NOT NULL', (err, rows) => {
+    const articlesWithEmbeddings = await new Promise((resolve, reject) => {
+      this.connection.all('SELECT COUNT(*) as count FROM articles WHERE embedding IS NOT NULL', (err, rows) => {
         if (err) reject(err);
         else resolve(Number(rows[0]?.count || 0));
       });
     });
 
     return {
-      totalChunks,
-      chunksWithEmbeddings,
-      chunksWithoutEmbeddings: totalChunks - chunksWithEmbeddings,
-      embeddingCoverage: totalChunks > 0 ? ((chunksWithEmbeddings / totalChunks) * 100).toFixed(1) : '0.0'
+      totalArticles,
+      articlesWithEmbeddings,
+      articlesWithoutEmbeddings: totalArticles - articlesWithEmbeddings,
+      embeddingCoverage: totalArticles > 0 ? ((articlesWithEmbeddings / totalArticles) * 100).toFixed(1) : '0.0'
     };
   }
 
   /**
-   * Clear all embeddings (vectors only, keep articles and chunks)
+   * Clear all embeddings (vectors only, keep articles)
    */
   async clearVectors() {
     console.log('\n🗑️  Clearing all embeddings...');
 
     return new Promise((resolve, reject) => {
       this.connection.run(
-        'UPDATE article_chunks SET embedding = NULL',
+        'UPDATE articles SET embedding = NULL',
         (err) => {
           if (err) {
             console.error('❌ Error clearing vectors:', err);
