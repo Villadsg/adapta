@@ -31,6 +31,11 @@ class ArticleDatabase {
           return;
         }
 
+        // Prevent garbage collection of connection and database
+        // This is critical for DuckDB to maintain the connection
+        global.__duckdb_instance = this.db;
+        global.__duckdb_connection = this.connection;
+
         console.log('✓ Database connection established');
 
         // Create tables
@@ -62,7 +67,9 @@ class ArticleDatabase {
         domain TEXT,
         saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         word_count INTEGER,
-        embedding FLOAT[]
+        embedding FLOAT[],
+        published_date TIMESTAMP,
+        tickers TEXT[]
       )
     `;
 
@@ -87,6 +94,21 @@ class ArticleDatabase {
       CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
+      )
+    `;
+
+    const createNewsVolumeSequence = `
+      CREATE SEQUENCE IF NOT EXISTS news_volume_id_seq START 1
+    `;
+
+    const createNewsVolumeTable = `
+      CREATE TABLE IF NOT EXISTS news_volume (
+        id INTEGER PRIMARY KEY DEFAULT nextval('news_volume_id_seq'),
+        ticker TEXT NOT NULL,
+        recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        article_count INTEGER NOT NULL,
+        source TEXT,
+        page_url TEXT
       )
     `;
 
@@ -126,20 +148,36 @@ class ArticleDatabase {
                   return;
                 }
 
-                // Initialize default settings
-                this.initializeSettings()
-                  .then(() => {
-                    // Run migrations
-                    this.runMigrations()
+                // Create news_volume sequence
+                this.connection.run(createNewsVolumeSequence, (err) => {
+                  if (err) {
+                    reject(err);
+                    return;
+                  }
+
+                  // Create news_volume table
+                  this.connection.run(createNewsVolumeTable, (err) => {
+                    if (err) {
+                      reject(err);
+                      return;
+                    }
+
+                    // Initialize default settings
+                    this.initializeSettings()
                       .then(() => {
-                        // Create indexes
-                        this.createIndexes()
-                          .then(resolve)
+                        // Run migrations
+                        this.runMigrations()
+                          .then(() => {
+                            // Create indexes
+                            this.createIndexes()
+                              .then(resolve)
+                              .catch(reject);
+                          })
                           .catch(reject);
                       })
                       .catch(reject);
-                  })
-                  .catch(reject);
+                  });
+                });
               });
             });
           });
@@ -156,8 +194,11 @@ class ArticleDatabase {
       'CREATE INDEX IF NOT EXISTS idx_category ON articles(category)',
       'CREATE INDEX IF NOT EXISTS idx_domain ON articles(domain)',
       'CREATE INDEX IF NOT EXISTS idx_saved_at ON articles(saved_at)',
+      'CREATE INDEX IF NOT EXISTS idx_published_date ON articles(published_date)',
       'CREATE INDEX IF NOT EXISTS idx_chunks_article_id ON article_chunks(article_id)',
-      'CREATE INDEX IF NOT EXISTS idx_chunks_category ON article_chunks(category)'
+      'CREATE INDEX IF NOT EXISTS idx_chunks_category ON article_chunks(category)',
+      'CREATE INDEX IF NOT EXISTS idx_news_volume_ticker ON news_volume(ticker)',
+      'CREATE INDEX IF NOT EXISTS idx_news_volume_recorded_at ON news_volume(recorded_at)'
     ];
 
     for (const indexSQL of indexes) {
@@ -178,6 +219,12 @@ class ArticleDatabase {
       // Migration 1: Add embedding column to articles table if it doesn't exist
       await this.addColumnIfNotExists('articles', 'embedding', 'FLOAT[]');
 
+      // Migration 2: Add published_date column for article publication dates
+      await this.addColumnIfNotExists('articles', 'published_date', 'TIMESTAMP');
+
+      // Migration 3: Add tickers column for stock ticker associations
+      await this.addColumnIfNotExists('articles', 'tickers', 'TEXT[]');
+
       console.log('✓ Database migrations completed');
     } catch (error) {
       console.error('Error running migrations:', error);
@@ -186,15 +233,11 @@ class ArticleDatabase {
   }
 
   /**
-   * Ensure database connection is active and reconnect if necessary
+   * Ensure database connection is active
    */
   ensureConnection() {
-    if (!this.connection && this.db) {
-      console.log('⚠️  Reconnecting to database...');
-      this.connection = this.db.connect();
-    }
-    if (!this.connection) {
-      throw new Error('Database connection is not available');
+    if (!this.connection || !this.db) {
+      throw new Error('Database connection is not available. Please restart the application.');
     }
   }
 
@@ -308,7 +351,7 @@ class ArticleDatabase {
    * Save an article to the database with embedding
    */
   async saveArticle(url, title, content, category, options = {}) {
-    const { generateEmbedding = true } = options;
+    const { generateEmbedding = true, publishedDate = null, tickers = [] } = options;
 
     // Extract domain from URL
     let domain = '';
@@ -336,14 +379,17 @@ class ArticleDatabase {
     // Convert embedding array to DuckDB array format
     const embeddingValue = embedding ? `[${embedding.join(',')}]` : null;
 
+    // Convert tickers array to DuckDB array format
+    const tickersValue = tickers && tickers.length > 0 ? `[${tickers.map(t => `'${t}'`).join(',')}]` : null;
+
     const sql = `
-      INSERT INTO articles (url, title, content, category, domain, word_count, embedding)
-      VALUES ($1, $2, $3, $4, $5, $6, $7::FLOAT[])
+      INSERT INTO articles (url, title, content, category, domain, word_count, embedding, published_date, tickers)
+      VALUES ($1, $2, $3, $4, $5, $6, $7::FLOAT[], $8, $9::TEXT[])
       RETURNING id
     `;
 
     return new Promise((resolve, reject) => {
-      this.connection.all(sql, url, title, content, category, domain, wordCount, embeddingValue, (err, result) => {
+      this.connection.all(sql, url, title, content, category, domain, wordCount, embeddingValue, publishedDate, tickersValue, (err, result) => {
         if (err) {
           reject(err);
           return;
@@ -356,7 +402,9 @@ class ArticleDatabase {
           title,
           category,
           domain,
-          wordCount
+          wordCount,
+          publishedDate,
+          tickers
         });
       });
     });
@@ -367,7 +415,7 @@ class ArticleDatabase {
    */
   async getAllArticles(categoryFilter = null, limit = 100) {
     let sql = `
-      SELECT id, url, title, category, domain, saved_at, word_count
+      SELECT id, url, title, category, domain, saved_at, word_count, published_date, tickers
       FROM articles
     `;
 
@@ -394,7 +442,7 @@ class ArticleDatabase {
    */
   async getArticleById(articleId) {
     const sql = `
-      SELECT id, url, title, content, category, domain, saved_at, word_count, embedding
+      SELECT id, url, title, content, category, domain, saved_at, word_count, embedding, published_date, tickers
       FROM articles
       WHERE id = ?
     `;
@@ -412,7 +460,7 @@ class ArticleDatabase {
    */
   async searchArticles(searchTerm, categoryFilter = null) {
     let sql = `
-      SELECT id, url, title, category, domain, saved_at, word_count
+      SELECT id, url, title, category, domain, saved_at, word_count, published_date, tickers
       FROM articles
       WHERE (title ILIKE ? OR content ILIKE ?)
     `;
@@ -428,6 +476,79 @@ class ArticleDatabase {
 
     return new Promise((resolve, reject) => {
       this.connection.all(sql, params, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      });
+    });
+  }
+
+  /**
+   * Search articles by ticker symbol
+   * @param {string} ticker - Stock ticker symbol (e.g., 'AAPL', 'TSLA')
+   * @param {Object} options - Search options
+   * @param {string} options.categoryFilter - Filter by category
+   * @param {string} options.startDate - Start date for published_date filter (ISO string)
+   * @param {string} options.endDate - End date for published_date filter (ISO string)
+   * @param {number} options.limit - Maximum number of results (default: 100)
+   * @returns {Promise<Array>} Array of articles containing the ticker
+   */
+  async searchByTicker(ticker, options = {}) {
+    const {
+      categoryFilter = null,
+      startDate = null,
+      endDate = null,
+      limit = 100
+    } = options;
+
+    let sql = `
+      SELECT id, url, title, category, domain, saved_at, word_count, published_date, tickers
+      FROM articles
+      WHERE list_contains(tickers, ?)
+    `;
+
+    const params = [ticker];
+
+    if (categoryFilter) {
+      sql += ' AND category = ?';
+      params.push(categoryFilter);
+    }
+
+    if (startDate) {
+      sql += ' AND published_date >= ?';
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      sql += ' AND published_date <= ?';
+      params.push(endDate);
+    }
+
+    sql += ' ORDER BY published_date DESC NULLS LAST LIMIT ?';
+    params.push(limit);
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, params, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      });
+    });
+  }
+
+  /**
+   * Get all unique tickers in the database with article counts
+   * @returns {Promise<Array>} Array of {ticker, count} objects
+   */
+  async getAllTickers() {
+    const sql = `
+      SELECT UNNEST(tickers) as ticker, COUNT(*) as count
+      FROM articles
+      WHERE tickers IS NOT NULL AND array_length(tickers) > 0
+      GROUP BY ticker
+      ORDER BY count DESC
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, (err, rows) => {
         if (err) reject(err);
         else resolve(rows);
       });
@@ -493,6 +614,98 @@ class ArticleDatabase {
   }
 
   /**
+   * Get detailed statistics for enhanced dashboard
+   * @returns {Promise<Object>} Comprehensive statistics object
+   */
+  async getDetailedStats() {
+    // Total articles
+    const total = await new Promise((resolve, reject) => {
+      this.connection.all('SELECT COUNT(*) as count FROM articles', (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    // Word count statistics
+    const wordStats = await new Promise((resolve, reject) => {
+      this.connection.all(
+        'SELECT AVG(word_count) as avg, MIN(word_count) as min, MAX(word_count) as max FROM articles',
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows[0] || { avg: 0, min: 0, max: 0 });
+        }
+      );
+    });
+
+    // Unique domains count
+    const uniqueDomains = await new Promise((resolve, reject) => {
+      this.connection.all(
+        'SELECT COUNT(DISTINCT domain) as count FROM articles',
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(Number(rows[0]?.count || 0));
+        }
+      );
+    });
+
+    // Date range (first and last saved)
+    const dateRange = await new Promise((resolve, reject) => {
+      this.connection.all(
+        'SELECT MIN(saved_at) as first, MAX(saved_at) as last FROM articles',
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows[0] || { first: null, last: null });
+        }
+      );
+    });
+
+    // Top 5 domains
+    const topDomains = await new Promise((resolve, reject) => {
+      this.connection.all(
+        `SELECT domain, COUNT(*) as count
+         FROM articles
+         GROUP BY domain
+         ORDER BY count DESC
+         LIMIT 5`,
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows || []);
+        }
+      );
+    });
+
+    // Get embedding stats
+    const embeddingStats = await this.getEmbeddingStats();
+
+    // Get database file size
+    const fs = require('fs');
+    const path = require('path');
+    let dbSize = 0;
+    try {
+      const stats = fs.statSync(this.dbPath);
+      dbSize = stats.size;
+    } catch (err) {
+      console.error('Error getting database size:', err);
+    }
+
+    return {
+      total,
+      avgWordCount: Math.round(wordStats.avg || 0),
+      minWordCount: wordStats.min || 0,
+      maxWordCount: wordStats.max || 0,
+      uniqueDomains,
+      firstSaved: dateRange.first,
+      lastSaved: dateRange.last,
+      topDomains,
+      embeddingCoverage: embeddingStats.embeddingCoverage,
+      articlesWithEmbeddings: embeddingStats.articlesWithEmbeddings,
+      articlesWithoutEmbeddings: embeddingStats.articlesWithoutEmbeddings,
+      dbSizeBytes: dbSize,
+      dbSizeMB: (dbSize / (1024 * 1024)).toFixed(2)
+    };
+  }
+
+  /**
    * Delete an article by ID
    */
   async deleteArticle(articleId) {
@@ -502,6 +715,67 @@ class ArticleDatabase {
       this.connection.run(sql, [articleId], (err) => {
         if (err) reject(err);
         else resolve();
+      });
+    });
+  }
+
+  /**
+   * Execute raw SQL query
+   * @param {string} sqlQuery - SQL query to execute
+   * @returns {Promise<Object>} Query results with metadata
+   */
+  async executeRawSQL(sqlQuery) {
+    // Check connection
+    if (!this.connection || !this.db) {
+      throw new Error('Database connection is not available');
+    }
+
+    // Trim and validate query
+    const query = sqlQuery.trim();
+    if (!query) {
+      throw new Error('Empty query');
+    }
+
+    return new Promise((resolve, reject) => {
+      const startTime = Date.now();
+
+      this.connection.all(query, (err, rows) => {
+        const executionTime = Date.now() - startTime;
+
+        if (err) {
+          reject({
+            error: err.message,
+            executionTime
+          });
+          return;
+        }
+
+        // Determine query type
+        const queryType = query.toUpperCase().trim().split(/\s+/)[0];
+        const isSelectQuery = queryType === 'SELECT' ||
+                             queryType === 'SHOW' ||
+                             queryType === 'DESCRIBE' ||
+                             queryType === 'EXPLAIN';
+
+        if (isSelectQuery) {
+          // Return rows with column metadata
+          const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+          resolve({
+            type: 'select',
+            rows: rows,
+            columns: columns,
+            rowCount: rows.length,
+            executionTime
+          });
+        } else {
+          // For INSERT/UPDATE/DELETE/etc.
+          resolve({
+            type: 'mutation',
+            success: true,
+            message: `Query executed successfully`,
+            executionTime
+          });
+        }
       });
     });
   }
@@ -674,8 +948,10 @@ class ArticleDatabase {
       minSimilarity = 0.5
     } = options;
 
-    // Ensure connection is active
-    this.ensureConnection();
+    // Check connection before starting
+    if (!this.connection || !this.db) {
+      throw new Error('Database connection is not available');
+    }
 
     const embeddingService = require('./embeddings');
 
@@ -684,9 +960,6 @@ class ArticleDatabase {
     const queryEmbedding = await embeddingService.embed(queryText, {
       task: 'search_query'
     });
-
-    // Ensure connection is still active after async operation
-    this.ensureConnection();
 
     // Get all articles with embeddings
     let sql = `
@@ -700,6 +973,12 @@ class ArticleDatabase {
     }
 
     const articles = await new Promise((resolve, reject) => {
+      // Check connection again right before query
+      if (!this.connection) {
+        reject(new Error('Database connection lost'));
+        return;
+      }
+
       this.connection.all(sql, (err, rows) => {
         if (err) reject(err);
         else resolve(rows);
@@ -800,41 +1079,307 @@ class ArticleDatabase {
   }
 
   /**
-   * Clear all data (articles, chunks, embeddings)
+   * Clear comparison data only (good/not_good categories)
+   * Does NOT delete scraped news articles
    */
   async clearAllData() {
-    console.log('\n🗑️  Clearing ALL database data...');
+    console.log('\n🗑️  Clearing comparison data (good/not_good articles)...');
+
+    // Ensure connection is active
+    this.ensureConnection();
 
     try {
-      // Delete all chunks first
-      await new Promise((resolve, reject) => {
-        this.connection.run('DELETE FROM article_chunks', (err) => {
-          if (err) {
-            console.error('❌ Error clearing chunks:', err);
-            return reject(err);
+      // Get IDs of comparison articles first
+      const comparisonArticleIds = await new Promise((resolve, reject) => {
+        this.connection.all(
+          "SELECT id FROM articles WHERE category IN ('good', 'not_good')",
+          (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows.map(r => r.id));
           }
-          console.log('  ✓ Chunks deleted');
-          resolve();
-        });
+        );
       });
 
-      // Delete all articles
-      await new Promise((resolve, reject) => {
-        this.connection.run('DELETE FROM articles', (err) => {
-          if (err) {
-            console.error('❌ Error clearing articles:', err);
-            return reject(err);
-          }
-          console.log('  ✓ Articles deleted');
-          resolve();
+      if (comparisonArticleIds.length === 0) {
+        console.log('  No comparison articles to delete');
+        return;
+      }
+
+      console.log(`  Found ${comparisonArticleIds.length} comparison articles to delete`);
+
+      // Delete chunks for these articles (if any exist)
+      if (comparisonArticleIds.length > 0) {
+        await new Promise((resolve, reject) => {
+          const placeholders = comparisonArticleIds.map(() => '?').join(',');
+          const sql = `DELETE FROM article_chunks WHERE article_id IN (${placeholders})`;
+
+          this.connection.run(sql, comparisonArticleIds, (err) => {
+            if (err) {
+              console.error('❌ Error clearing chunks:', err);
+              return reject(err);
+            }
+            console.log('  ✓ Comparison chunks deleted');
+            resolve();
+          });
         });
+      }
+
+      // Delete comparison articles only
+      await new Promise((resolve, reject) => {
+        this.connection.run(
+          "DELETE FROM articles WHERE category IN ('good', 'not_good')",
+          (err) => {
+            if (err) {
+              console.error('❌ Error clearing comparison articles:', err);
+              return reject(err);
+            }
+            console.log('  ✓ Comparison articles deleted');
+            resolve();
+          }
+        );
       });
 
-      console.log('✓ All data cleared from database\n');
+      console.log('✓ Comparison data cleared (scraped news preserved)\n');
     } catch (err) {
       console.error('❌ Error clearing data:', err);
       throw err;
     }
+  }
+
+  // ===== News Volume Tracking Methods =====
+
+  /**
+   * Save news count for a ticker
+   * @param {string} ticker - Stock ticker symbol
+   * @param {number} articleCount - Number of articles found
+   * @param {string} source - Source of the count (e.g., 'yahoo_finance')
+   * @param {string} pageUrl - URL of the page where count was taken
+   * @returns {Promise<Object>} Saved record with id
+   */
+  async saveNewsCount(ticker, articleCount, source, pageUrl) {
+    const sql = `
+      INSERT INTO news_volume (ticker, article_count, source, page_url)
+      VALUES ($1, $2, $3, $4)
+      RETURNING id, recorded_at
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ticker.toUpperCase(), articleCount, source, pageUrl, (err, result) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+
+        resolve({
+          id: result[0]?.id,
+          ticker: ticker.toUpperCase(),
+          articleCount: articleCount,
+          recordedAt: result[0]?.recorded_at,
+          source: source
+        });
+      });
+    });
+  }
+
+  /**
+   * Get news count history for a ticker
+   * @param {string} ticker - Stock ticker symbol
+   * @param {number} days - Number of days to look back (default: 30)
+   * @returns {Promise<Array>} Array of news count records
+   */
+  async getNewsCountHistory(ticker, days = 30) {
+    const sql = `
+      SELECT id, ticker, recorded_at, article_count, source, page_url
+      FROM news_volume
+      WHERE ticker = $1
+        AND recorded_at >= datetime('now', '-${days} days')
+      ORDER BY recorded_at DESC
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ticker.toUpperCase(), (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      });
+    });
+  }
+
+  /**
+   * Get all news count stats (for dashboard/overview)
+   * @returns {Promise<Object>} Statistics about news volume tracking
+   */
+  async getAllNewsCountStats() {
+    const totalRecords = await new Promise((resolve, reject) => {
+      this.connection.all('SELECT COUNT(*) as count FROM news_volume', (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    const uniqueTickers = await new Promise((resolve, reject) => {
+      this.connection.all('SELECT COUNT(DISTINCT ticker) as count FROM news_volume', (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    const recentCounts = await new Promise((resolve, reject) => {
+      this.connection.all(
+        `SELECT ticker, recorded_at, article_count, source
+         FROM news_volume
+         ORDER BY recorded_at DESC
+         LIMIT 10`,
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows);
+        }
+      );
+    });
+
+    return {
+      totalRecords,
+      uniqueTickers,
+      recentCounts
+    };
+  }
+
+  /**
+   * Get comprehensive stock statistics for settings page
+   * @returns {Promise<Object>} Stock news statistics
+   */
+  async getStockStats() {
+    // Get basic article counts
+    const total = await new Promise((resolve, reject) => {
+      this.connection.all('SELECT COUNT(*) as count FROM articles', (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    const stockNews = await new Promise((resolve, reject) => {
+      this.connection.all("SELECT COUNT(*) as count FROM articles WHERE category = 'stock_news'", (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    const notGood = await new Promise((resolve, reject) => {
+      this.connection.all("SELECT COUNT(*) as count FROM articles WHERE category = 'not_good'", (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    // Get ticker statistics
+    const uniqueTickers = await new Promise((resolve, reject) => {
+      this.connection.all(`
+        SELECT COUNT(DISTINCT UNNEST(tickers)) as count
+        FROM articles
+        WHERE tickers IS NOT NULL AND array_length(tickers) > 0
+      `, (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    const articlesWithTickers = await new Promise((resolve, reject) => {
+      this.connection.all(`
+        SELECT COUNT(*) as count
+        FROM articles
+        WHERE tickers IS NOT NULL AND array_length(tickers) > 0
+      `, (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    const articlesWithDates = await new Promise((resolve, reject) => {
+      this.connection.all(`
+        SELECT COUNT(*) as count
+        FROM articles
+        WHERE published_date IS NOT NULL
+      `, (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    // Get top tickers
+    const topTickers = await new Promise((resolve, reject) => {
+      this.connection.all(`
+        SELECT UNNEST(tickers) as ticker, COUNT(*) as count
+        FROM articles
+        WHERE tickers IS NOT NULL AND array_length(tickers) > 0
+        GROUP BY ticker
+        ORDER BY count DESC
+        LIMIT 10
+      `, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+
+    // Get news volume records count
+    const newsVolumeRecords = await new Promise((resolve, reject) => {
+      this.connection.all('SELECT COUNT(*) as count FROM news_volume', (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    // Get database size
+    const dbSizeMB = await this.getDatabaseSize();
+
+    return {
+      total,
+      stockNews,
+      notGood,
+      uniqueTickers,
+      articlesWithTickers,
+      articlesWithDates,
+      topTickers,
+      newsVolumeRecords,
+      dbSizeMB
+    };
+  }
+
+  /**
+   * Get recent news volume records
+   * @param {number} limit - Number of records to return (default: 20)
+   * @returns {Promise<Array>} Recent news volume records
+   */
+  async getRecentNewsVolume(limit = 20) {
+    const sql = `
+      SELECT ticker, recorded_at, article_count, source, page_url
+      FROM news_volume
+      ORDER BY recorded_at DESC
+      LIMIT $1
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, limit, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  /**
+   * Clear all news volume records
+   * @returns {Promise<void>}
+   */
+  async clearNewsVolume() {
+    const sql = 'DELETE FROM news_volume';
+
+    return new Promise((resolve, reject) => {
+      this.connection.run(sql, (err) => {
+        if (err) reject(err);
+        else {
+          console.log('✓ News volume data cleared');
+          resolve();
+        }
+      });
+    });
   }
 
   /**

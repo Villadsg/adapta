@@ -138,6 +138,57 @@
       background: #7a0000;
     }
 
+    .btn-secondary {
+      background: #404040;
+      color: #ffffff;
+    }
+
+    .btn-secondary:hover {
+      background: #505050;
+    }
+
+    /* SQL Results Table */
+    #sql-results-container table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    #sql-results-container th {
+      position: sticky;
+      top: 0;
+      background: #2d2d2d;
+      color: #ffffff;
+      font-weight: 600;
+      text-align: left;
+      padding: 12px;
+      border-bottom: 2px solid #404040;
+      z-index: 1;
+    }
+
+    #sql-results-container td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #2a2a2a;
+      color: #cccccc;
+      max-width: 400px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #sql-results-container tr:nth-child(even) {
+      background: #252525;
+    }
+
+    #sql-results-container tr:hover {
+      background: #2d2d2d;
+    }
+
+    #sql-results-container td.null-value {
+      color: #666666;
+      font-style: italic;
+    }
+
     .stats {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -164,6 +215,106 @@
       color: #888888;
       text-transform: uppercase;
       letter-spacing: 0.5px;
+    }
+
+    .stat-sublabel {
+      font-size: 11px;
+      color: #666666;
+      margin-top: 4px;
+    }
+
+    /* Stat card color variants */
+    .stat-card.stat-blue .stat-value {
+      color: #0078d4;
+    }
+
+    .stat-card.stat-green .stat-value {
+      color: #4caf50;
+    }
+
+    .stat-card.stat-red .stat-value {
+      color: #f44336;
+    }
+
+    .stat-card.stat-purple .stat-value {
+      color: #9c27b0;
+    }
+
+    .stat-card.stat-orange .stat-value {
+      color: #ff9800;
+    }
+
+    .stat-card.stat-wide {
+      grid-column: span 2;
+    }
+
+    /* Progress bar */
+    .progress-bar-container {
+      width: 100%;
+      height: 20px;
+      background: #1e1e1e;
+      border: 1px solid #404040;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #4caf50 0%, #8bc34a 100%);
+      border-radius: 10px;
+      transition: width 0.3s ease;
+      width: 0%;
+    }
+
+    .progress-bar.low {
+      background: linear-gradient(90deg, #f44336 0%, #e57373 100%);
+    }
+
+    .progress-bar.medium {
+      background: linear-gradient(90deg, #ff9800 0%, #ffb74d 100%);
+    }
+
+    .progress-bar.high {
+      background: linear-gradient(90deg, #4caf50 0%, #8bc34a 100%);
+    }
+
+    /* Domain list */
+    .domain-list {
+      background: #1e1e1e;
+      border: 1px solid #404040;
+      border-radius: 6px;
+      padding: 16px;
+    }
+
+    .domain-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid #2a2a2a;
+    }
+
+    .domain-item:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .domain-item:first-child {
+      padding-top: 0;
+    }
+
+    .domain-name {
+      color: #ffffff;
+      font-size: 14px;
+      font-weight: 500;
+      flex: 1;
+    }
+
+    .domain-count {
+      color: #0078d4;
+      font-size: 14px;
+      font-weight: 700;
+      margin-left: 16px;
     }
 
     .message {
@@ -211,54 +362,64 @@
     <!-- Database Statistics -->
     <div class="section">
       <h2>Database Statistics</h2>
+
+      <!-- Overview Stats -->
       <div class="stats">
-        <div class="stat-card">
-          <div class="stat-value" id="stat-good">0</div>
-          <div class="stat-label">Good Articles</div>
+        <div class="stat-card stat-blue">
+          <div class="stat-value" id="stat-total">0</div>
+          <div class="stat-label">Total Articles</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card stat-green">
+          <div class="stat-value" id="stat-stock-news">0</div>
+          <div class="stat-label">Stock News</div>
+        </div>
+        <div class="stat-card stat-red">
           <div class="stat-value" id="stat-not-good">0</div>
           <div class="stat-label">Not Good Articles</div>
         </div>
-        <div class="stat-card">
-          <div class="stat-value" id="stat-chunks">0</div>
-          <div class="stat-label">Total Chunks</div>
+        <div class="stat-card stat-purple">
+          <div class="stat-value" id="stat-news-volume">0</div>
+          <div class="stat-label">News Volume Records</div>
         </div>
-        <div class="stat-card">
-          <div class="stat-value" id="stat-embeddings">0</div>
-          <div class="stat-label">Embeddings</div>
+      </div>
+
+      <!-- Stock News Metrics -->
+      <h3 style="margin-top: 30px; margin-bottom: 15px; color: #cccccc;">Stock News Metrics</h3>
+      <div class="stats">
+        <div class="stat-card stat-green">
+          <div class="stat-value" id="stat-unique-tickers">0</div>
+          <div class="stat-label">Unique Tickers</div>
         </div>
+        <div class="stat-card stat-green">
+          <div class="stat-value" id="stat-articles-with-tickers">0</div>
+          <div class="stat-label">Articles with Tickers</div>
+        </div>
+        <div class="stat-card stat-orange">
+          <div class="stat-value" id="stat-articles-with-dates">0</div>
+          <div class="stat-label">Articles with Dates</div>
+        </div>
+        <div class="stat-card stat-orange">
+          <div class="stat-value" id="stat-db-size">0 MB</div>
+          <div class="stat-label">Database Size</div>
+        </div>
+      </div>
+
+      <!-- Top Tickers -->
+      <h3 style="margin-top: 30px; margin-bottom: 15px; color: #cccccc;">Top 10 Tickers</h3>
+      <div class="domain-list" id="ticker-list">
+        <div style="color: #666; font-style: italic;">Loading...</div>
       </div>
     </div>
 
-    <!-- Chunking Settings -->
+    <!-- News Volume Tracking -->
     <div class="section">
-      <h2>Text Chunking Settings</h2>
+      <h2>Recent News Volume Counts</h2>
+      <p style="color: #888888; margin-bottom: 20px; font-size: 14px;">
+        Track news volume over time using the "📊 Count News" button on ticker news pages.
+      </p>
 
-      <div class="form-group">
-        <label for="chunk-size">Chunk Size (tokens):</label>
-        <input type="number" id="chunk-size" min="50" max="2048" step="1" value="256">
-        <small>Target size for each text chunk (recommended: 256-1024)</small>
-      </div>
-
-      <div class="form-group">
-        <label for="chunk-overlap">Overlap (tokens):</label>
-        <input type="number" id="chunk-overlap" min="0" max="500" step="1" value="25">
-        <small>Tokens to overlap between chunks (recommended: 10-15% of chunk size)</small>
-      </div>
-
-      <div class="form-group">
-        <label for="chunk-strategy">Chunking Strategy:</label>
-        <select id="chunk-strategy">
-          <option value="sentence">Sentence-based</option>
-          <option value="paragraph" selected>Paragraph-based</option>
-        </select>
-        <small>Paragraph-based preserves natural document structure</small>
-      </div>
-
-      <div class="button-group">
-        <button id="btn-save" class="btn-primary">Save Settings</button>
-        <button id="btn-rechunk" class="btn-warning">Save & Re-chunk All Articles</button>
+      <div id="news-volume-container" style="max-height: 400px; overflow-y: auto; background: #1e1e1e; border: 1px solid #404040; border-radius: 6px; padding: 16px;">
+        <div style="color: #666; font-style: italic;">Loading...</div>
       </div>
     </div>
 
@@ -267,13 +428,46 @@
       <h2>Database Management</h2>
 
       <div class="button-group">
-        <button id="btn-clear-vectors" class="btn-danger">Clear Vectors Only</button>
-        <button id="btn-clear-all" class="btn-danger-dark">Clear All Data</button>
+        <button id="btn-clear-all" class="btn-danger-dark">Clear All Articles</button>
+        <button id="btn-clear-news-volume" class="btn-danger">Clear News Volume Data</button>
       </div>
 
       <div class="warning-text">
-        <strong>Clear Vectors:</strong> Removes all embeddings but keeps articles and text chunks.<br>
-        <strong>Clear All Data:</strong> Deletes everything (articles, chunks, embeddings). This cannot be undone!
+        <strong>Clear All Articles:</strong> Deletes all saved articles (stock_news and not_good). This action cannot be undone!<br>
+        <strong>Clear News Volume Data:</strong> Removes all news volume count records while preserving your saved articles.
+      </div>
+    </div>
+
+    <!-- SQL Query Interface -->
+    <div class="section">
+      <h2>SQL Query Interface</h2>
+
+      <div class="form-group">
+        <label for="sql-query">SQL Query:</label>
+        <textarea
+          id="sql-query"
+          placeholder="SELECT * FROM articles LIMIT 10;"
+          style="width: 100%; height: 150px; font-family: 'Courier New', monospace; font-size: 13px;
+                 background: #1e1e1e; border: 1px solid #404040; border-radius: 4px;
+                 color: #ffffff; padding: 12px; resize: vertical;">
+        </textarea>
+        <small>Execute SQL queries directly on the DuckDB database</small>
+      </div>
+
+      <div class="button-group">
+        <button id="btn-execute-sql" class="btn-primary">Execute Query</button>
+        <button id="btn-clear-query" class="btn-secondary">Clear</button>
+      </div>
+
+      <div id="sql-results" style="margin-top: 24px; display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <div id="sql-results-info" style="color: #4caf50; font-size: 14px;"></div>
+        </div>
+
+        <div id="sql-results-container" style="max-height: 600px; overflow: auto;
+             background: #1e1e1e; border: 1px solid #404040; border-radius: 4px;">
+          <!-- Results table will be inserted here -->
+        </div>
       </div>
     </div>
   </div>
@@ -281,17 +475,8 @@
   <script>
     // Get DOM elements
     const message = document.getElementById('message');
-    const statGood = document.getElementById('stat-good');
-    const statNotGood = document.getElementById('stat-not-good');
-    const statChunks = document.getElementById('stat-chunks');
-    const statEmbeddings = document.getElementById('stat-embeddings');
-    const chunkSize = document.getElementById('chunk-size');
-    const chunkOverlap = document.getElementById('chunk-overlap');
-    const chunkStrategy = document.getElementById('chunk-strategy');
-    const btnSave = document.getElementById('btn-save');
-    const btnRechunk = document.getElementById('btn-rechunk');
-    const btnClearVectors = document.getElementById('btn-clear-vectors');
     const btnClearAll = document.getElementById('btn-clear-all');
+    const btnClearNewsVolume = document.getElementById('btn-clear-news-volume');
 
     // Show message
     function showMessage(text, type = 'info') {
@@ -306,128 +491,245 @@
     // Load stats
     async function loadStats() {
       try {
-        const stats = await window.electronAPI.getStats();
-        statGood.textContent = stats.good || 0;
-        statNotGood.textContent = stats.not_good || 0;
+        const stats = await window.electronAPI.getStockStats();
 
-        const embeddingStats = await window.electronAPI.getEmbeddingStats();
-        statChunks.textContent = embeddingStats.totalChunks || 0;
-        statEmbeddings.textContent = embeddingStats.chunksWithEmbeddings || 0;
+        // Basic counts
+        document.getElementById('stat-total').textContent = stats.total.toLocaleString();
+        document.getElementById('stat-stock-news').textContent = stats.stockNews.toLocaleString();
+        document.getElementById('stat-not-good').textContent = stats.notGood.toLocaleString();
+        document.getElementById('stat-news-volume').textContent = stats.newsVolumeRecords.toLocaleString();
+
+        // Stock news metrics
+        document.getElementById('stat-unique-tickers').textContent = stats.uniqueTickers.toLocaleString();
+        document.getElementById('stat-articles-with-tickers').textContent = stats.articlesWithTickers.toLocaleString();
+        document.getElementById('stat-articles-with-dates').textContent = stats.articlesWithDates.toLocaleString();
+        document.getElementById('stat-db-size').textContent = `${stats.dbSizeMB} MB`;
+
+        // Top tickers
+        const tickerList = document.getElementById('ticker-list');
+        if (stats.topTickers && stats.topTickers.length > 0) {
+          tickerList.innerHTML = stats.topTickers.map(t => `
+            <div class="domain-item">
+              <div class="domain-name">${t.ticker}</div>
+              <div class="domain-count">${t.count.toLocaleString()}</div>
+            </div>
+          `).join('');
+        } else {
+          tickerList.innerHTML = '<div style="color: #666; font-style: italic;">No tickers yet</div>';
+        }
+
+        // News volume records
+        await loadNewsVolume();
       } catch (error) {
         console.error('Error loading stats:', error);
       }
     }
 
-    // Load settings
-    async function loadSettings() {
+    // Load recent news volume counts
+    async function loadNewsVolume() {
       try {
-        const settings = await window.electronAPI.getChunkingSettings();
-        chunkSize.value = settings.chunkSize;
-        chunkOverlap.value = settings.chunkOverlap;
-        chunkStrategy.value = settings.chunkStrategy;
+        const volumeData = await window.electronAPI.getRecentNewsVolume();
+        const container = document.getElementById('news-volume-container');
+
+        if (volumeData && volumeData.length > 0) {
+          container.innerHTML = volumeData.map(v => {
+            const date = new Date(v.recorded_at).toLocaleString();
+            return `
+              <div class="domain-item">
+                <div style="flex: 1;">
+                  <div class="domain-name">${v.ticker}</div>
+                  <div style="font-size: 12px; color: #666666; margin-top: 2px;">${date} · ${v.source || 'Unknown'}</div>
+                </div>
+                <div class="domain-count">${v.article_count.toLocaleString()} articles</div>
+              </div>
+            `;
+          }).join('');
+        } else {
+          container.innerHTML = '<div style="color: #666; font-style: italic;">No news volume records yet. Use the "📊 Count News" button to start tracking.</div>';
+        }
       } catch (error) {
-        console.error('Error loading settings:', error);
+        console.error('Error loading news volume:', error);
+        document.getElementById('news-volume-container').innerHTML = '<div style="color: #f44336;">Error loading news volume data</div>';
       }
     }
 
-    // Save settings
-    btnSave.addEventListener('click', async () => {
-      try {
-        const settings = {
-          chunkSize: parseInt(chunkSize.value),
-          chunkOverlap: parseInt(chunkOverlap.value),
-          chunkStrategy: chunkStrategy.value
-        };
 
-        await window.electronAPI.saveChunkingSettings(settings);
-        showMessage('✓ Settings saved successfully', 'success');
-      } catch (error) {
-        showMessage('Error saving settings: ' + error.message, 'error');
-      }
-    });
-
-    // Re-chunk all
-    btnRechunk.addEventListener('click', async () => {
-      const settings = {
-        chunkSize: parseInt(chunkSize.value),
-        chunkOverlap: parseInt(chunkOverlap.value),
-        chunkStrategy: chunkStrategy.value
-      };
-
-      const confirm = window.confirm(
-        `This will delete all existing chunks and re-chunk all articles with:\n\n` +
-        `Chunk Size: ${settings.chunkSize} tokens\n` +
-        `Overlap: ${settings.chunkOverlap} tokens\n` +
-        `Strategy: ${settings.chunkStrategy}\n\n` +
-        `Continue?`
-      );
-
-      if (!confirm) return;
-
-      try {
-        showMessage('Re-chunking all articles...', 'info');
-        await window.electronAPI.saveChunkingSettings(settings);
-        await window.electronAPI.rechunkAll(settings.chunkSize, settings.chunkOverlap, settings.chunkStrategy);
-        showMessage('✓ Re-chunking complete!', 'success');
-        await loadStats();
-      } catch (error) {
-        showMessage('Error re-chunking: ' + error.message, 'error');
-      }
-    });
-
-    // Clear vectors
-    btnClearVectors.addEventListener('click', async () => {
-      const confirm = window.confirm(
-        'This will clear all embeddings from the database.\n\n' +
-        'Articles and text will be preserved, but you will need to regenerate embeddings.\n\n' +
-        'Continue?'
-      );
-
-      if (!confirm) return;
-
-      try {
-        showMessage('Clearing vectors...', 'info');
-        await window.electronAPI.clearVectors();
-        showMessage('✓ Vectors cleared successfully', 'success');
-        await loadStats();
-      } catch (error) {
-        showMessage('Error clearing vectors: ' + error.message, 'error');
-      }
-    });
-
-    // Clear all data
+    // Clear all articles
     btnClearAll.addEventListener('click', async () => {
       const confirm = window.confirm(
-        '⚠️ WARNING: This will delete ALL data from the database!\n\n' +
+        '⚠️ WARNING: This will delete ALL articles from the database!\n\n' +
         'This includes:\n' +
-        '- All articles\n' +
-        '- All text chunks\n' +
-        '- All embeddings\n\n' +
+        '- All stock news articles\n' +
+        '- All "not good" articles\n\n' +
+        'News volume records will NOT be deleted.\n\n' +
         'This action CANNOT be undone!\n\n' +
-        'Type "DELETE ALL" in the next prompt to confirm.'
+        'Click OK to continue.'
       );
 
       if (!confirm) return;
 
-      const confirmText = window.prompt('Type "DELETE ALL" to confirm:');
-      if (confirmText !== 'DELETE ALL') {
-        showMessage('Clear all cancelled', 'info');
+      const confirmText = window.prompt('Type "DELETE ALL ARTICLES" to confirm:');
+      if (confirmText !== 'DELETE ALL ARTICLES') {
+        showMessage('Clear articles cancelled', 'info');
         return;
       }
 
       try {
-        showMessage('Clearing all data...', 'info');
+        showMessage('Clearing all articles...', 'info');
         await window.electronAPI.clearAllData();
-        showMessage('✓ All data cleared successfully', 'success');
+        showMessage('✓ All articles cleared successfully', 'success');
         await loadStats();
       } catch (error) {
         showMessage('Error clearing data: ' + error.message, 'error');
       }
     });
 
+    // Clear news volume data
+    btnClearNewsVolume.addEventListener('click', async () => {
+      const confirm = window.confirm(
+        '⚠️ WARNING: This will delete all news volume count records!\n\n' +
+        'Your saved articles will NOT be affected.\n\n' +
+        'Continue?'
+      );
+
+      if (!confirm) return;
+
+      try {
+        showMessage('Clearing news volume data...', 'info');
+        await window.electronAPI.clearNewsVolume();
+        showMessage('✓ News volume data cleared successfully', 'success');
+        await loadStats();
+      } catch (error) {
+        showMessage('Error clearing news volume: ' + error.message, 'error');
+      }
+    });
+
+    // SQL Query Interface
+    const sqlQuery = document.getElementById('sql-query');
+    const btnExecuteSQL = document.getElementById('btn-execute-sql');
+    const btnClearQuery = document.getElementById('btn-clear-query');
+    const sqlResults = document.getElementById('sql-results');
+    const sqlResultsInfo = document.getElementById('sql-results-info');
+    const sqlResultsContainer = document.getElementById('sql-results-container');
+
+    let lastQueryResult = null;
+
+    // Clear query
+    btnClearQuery.addEventListener('click', () => {
+      sqlQuery.value = '';
+      sqlResults.style.display = 'none';
+      lastQueryResult = null;
+    });
+
+    // Execute SQL query
+    btnExecuteSQL.addEventListener('click', async () => {
+      const query = sqlQuery.value.trim();
+
+      if (!query) {
+        showMessage('Please enter a SQL query', 'error');
+        return;
+      }
+
+      try {
+        showMessage('Executing query...', 'info');
+        btnExecuteSQL.disabled = true;
+        btnExecuteSQL.textContent = 'Executing...';
+
+        const result = await window.electronAPI.executeSQL(query);
+
+        btnExecuteSQL.disabled = false;
+        btnExecuteSQL.textContent = 'Execute Query';
+
+        if (!result.success) {
+          showMessage('SQL Error: ' + result.error, 'error');
+          sqlResults.style.display = 'none';
+          return;
+        }
+
+        lastQueryResult = result;
+
+        if (result.type === 'select') {
+          // Display SELECT results
+          displayQueryResults(result);
+          showMessage('✓ Query executed successfully', 'success');
+        } else {
+          // Display mutation results
+          sqlResults.style.display = 'none';
+          showMessage(`✓ ${result.message} (${result.executionTime}ms)`, 'success');
+
+          // Refresh stats if data was modified
+          await loadStats();
+        }
+      } catch (error) {
+        btnExecuteSQL.disabled = false;
+        btnExecuteSQL.textContent = 'Execute Query';
+        showMessage('Error: ' + error.message, 'error');
+      }
+    });
+
+    // Display query results in table
+    function displayQueryResults(result) {
+      const { rows, columns, rowCount, executionTime } = result;
+
+      // Update info
+      sqlResultsInfo.textContent = `Results: ${rowCount} rows, ${columns.length} columns (${executionTime}ms)`;
+
+      if (rowCount === 0) {
+        sqlResultsContainer.innerHTML = '<div style="padding: 20px; color: #888; text-align: center;">No results found</div>';
+        sqlResults.style.display = 'block';
+        return;
+      }
+
+      // Build table HTML
+      let tableHTML = '<table><thead><tr>';
+
+      // Column headers
+      columns.forEach(col => {
+        tableHTML += `<th>${escapeHtml(col)}</th>`;
+      });
+      tableHTML += '</tr></thead><tbody>';
+
+      // Data rows (limit to 500 for performance)
+      const displayRows = rows.slice(0, 500);
+      displayRows.forEach(row => {
+        tableHTML += '<tr>';
+        columns.forEach(col => {
+          const value = row[col];
+          if (value === null || value === undefined) {
+            tableHTML += '<td class="null-value">(null)</td>';
+          } else if (typeof value === 'object') {
+            // Handle arrays/objects (like embeddings)
+            tableHTML += `<td title="${escapeHtml(JSON.stringify(value))}">[${typeof value}]</td>`;
+          } else {
+            const strValue = String(value);
+            const displayValue = strValue.length > 100 ? strValue.substring(0, 100) + '...' : strValue;
+            tableHTML += `<td title="${escapeHtml(strValue)}">${escapeHtml(displayValue)}</td>`;
+          }
+        });
+        tableHTML += '</tr>';
+      });
+
+      tableHTML += '</tbody></table>';
+
+      if (rowCount > 500) {
+        tableHTML += `<div style="padding: 12px; color: #ff9800; text-align: center; border-top: 1px solid #404040;">
+          ⚠️ Showing first 500 of ${rowCount} rows
+        </div>`;
+      }
+
+      sqlResultsContainer.innerHTML = tableHTML;
+      sqlResults.style.display = 'block';
+    }
+
+    // HTML escape utility
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
     // Initialize
     (async () => {
-      await loadSettings();
       await loadStats();
     })();
   </script>

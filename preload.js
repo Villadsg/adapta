@@ -20,29 +20,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Database operations
   analyzePage: () => ipcRenderer.invoke('analyze-page'),
-  saveArticle: (category) => ipcRenderer.invoke('save-article', category),
+  saveArticle: (category, manualTickers) => ipcRenderer.invoke('save-article', category, manualTickers),
+  recordNewsCount: () => ipcRenderer.invoke('record-news-count'),
   getStats: () => ipcRenderer.invoke('get-stats'),
-  getEmbeddingStats: () => ipcRenderer.invoke('get-embedding-stats'),
+  getStockStats: () => ipcRenderer.invoke('get-stock-stats'),
+  getRecentNewsVolume: () => ipcRenderer.invoke('get-recent-news-volume'),
   getArticles: (categoryFilter) => ipcRenderer.invoke('get-articles', categoryFilter),
-
-  // Settings operations
-  getChunkingSettings: () => ipcRenderer.invoke('get-chunking-settings'),
-  saveChunkingSettings: (settings) => ipcRenderer.invoke('save-chunking-settings', settings),
-  rechunkAll: (chunkSize, overlap, strategy) => ipcRenderer.invoke('rechunk-all', chunkSize, overlap, strategy),
+  executeSQL: (query) => ipcRenderer.invoke('execute-sql', query),
 
   // Database management
-  clearVectors: () => ipcRenderer.invoke('clear-vectors'),
   clearAllData: () => ipcRenderer.invoke('clear-all-data'),
+  clearNewsVolume: () => ipcRenderer.invoke('clear-news-volume'),
 
   // Get current state
   getCurrentUrl: () => ipcRenderer.invoke('get-current-url'),
 
   // Listen for URL changes
   onUrlChanged: (callback) => ipcRenderer.on('url-changed', (event, data) => callback(data)),
-
-  // Scraping operations
-  scrapeCurrentPageNews: (topN) => ipcRenderer.invoke('scrape-current-page-news', topN),
-  onScrapeProgress: (callback) => ipcRenderer.on('scrape-progress', (event, data) => callback(data)),
 
   // Window controls
   windowMinimize: () => ipcRenderer.invoke('window-minimize'),

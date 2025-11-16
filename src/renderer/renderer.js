@@ -1,24 +1,29 @@
 // Get DOM elements
 const urlBar = document.getElementById('url-bar');
+const tickerInput = document.getElementById('ticker-input');
 const btnBack = document.getElementById('btn-back');
 const btnForward = document.getElementById('btn-forward');
 const btnReload = document.getElementById('btn-reload');
+const btnAnalyze = document.getElementById('btn-analyze');
+const btnCountNews = document.getElementById('btn-count-news');
 const btnNotGood = document.getElementById('btn-not-good');
 const btnSettings = document.getElementById('btn-settings');
-const statusText = document.getElementById('status-text');
-const statsText = document.getElementById('stats-text');
-const similarityDisplay = document.getElementById('similarity-display');
-const similarityText = document.getElementById('similarity-text');
+const statsText = document.getElementById('stats-text-bottom');
+const analysisBar = document.getElementById('analysis-bar');
+const analysisText = document.getElementById('analysis-text');
 const tabsContainer = document.getElementById('tabs-container');
 const btnNewTab = document.getElementById('btn-new-tab');
 const btnMinimize = document.getElementById('btn-minimize');
 const btnMaximize = document.getElementById('btn-maximize');
 const btnClose = document.getElementById('btn-close');
-const btnScrapeNews = document.getElementById('btn-scrape-news');
 
 // Tab management
 let currentTabId = null;
 const tabs = new Map(); // tabId -> {element, title, url}
+
+// Performance optimization: batch DOM updates
+let pendingUpdates = new Map(); // tabId -> {url, title}
+let rafScheduled = false;
 
 // Create a new tab
 async function createTab(url = '') {
@@ -150,43 +155,133 @@ urlBar.addEventListener('keypress', async (e) => {
   }
 });
 
-// Automatically analyze page for similarity
-async function analyzeCurrentPage() {
+// Save article as 'stock_news' with similarity analysis first
+async function saveStockNews() {
   try {
-    setStatus('Analyzing page...', 'info');
+    // Step 1: Extract article data to show tickers
+    btnAnalyze.disabled = true;
+    btnAnalyze.textContent = '⏳ Extracting...';
+    analysisText.textContent = 'Extracting article data...';
+    analysisText.style.color = '#999999';
+    analysisText.style.display = 'inline';
 
-    const result = await window.electronAPI.analyzePage();
+    const articleData = await window.electronAPI.downloadText();
 
-    if (result.skipped) {
+    if (articleData.error) {
+      analysisText.textContent = `Error: ${articleData.error}`;
+      analysisText.style.color = '#f44336';
+      analysisText.style.display = 'inline';
+      btnAnalyze.disabled = false;
+      btnAnalyze.textContent = '📈 Save Stock News';
+      return;
+    }
+
+    // Show extracted tickers
+    const autoTickers = articleData.tickers || [];
+    if (autoTickers.length > 0) {
+      analysisText.textContent = `Found tickers: ${autoTickers.join(', ')} | Analyzing similarity...`;
+      analysisText.style.color = '#2196f3'; // Blue for info
+      analysisText.style.display = 'inline';
+    } else {
+      analysisText.textContent = 'No tickers found automatically | Analyzing similarity...';
+      analysisText.style.color = '#ff9800'; // Orange for warning
+      analysisText.style.display = 'inline';
+    }
+
+    // Step 2: Analyze for similarity
+    btnAnalyze.textContent = '⏳ Analyzing...';
+    const analysisResult = await window.electronAPI.analyzePage();
+
+    if (analysisResult.skipped) {
       // Internal page (settings, file://, etc.)
-      similarityDisplay.style.display = 'none';
-      setStatus('Ready');
+      analysisText.style.display = 'none';
+      btnAnalyze.disabled = false;
+      btnAnalyze.textContent = '📈 Save Stock News';
       return;
     }
 
-    if (!result.success) {
-      setStatus(`Analysis error: ${result.error}`, 'error');
-      similarityDisplay.style.display = 'none';
+    if (!analysisResult.success) {
+      analysisText.textContent = `Analysis error: ${analysisResult.error}`;
+      analysisText.style.color = '#f44336';
+      analysisText.style.display = 'inline';
+      btnAnalyze.disabled = false;
+      btnAnalyze.textContent = '📈 Save Stock News';
       return;
     }
 
-    // Display similarity results
-    displaySimilarityResults(result.matches);
-    setStatus('Ready');
+    // Display similarity results with tickers
+    let similarityMsg = '';
+    if (analysisResult.matches && analysisResult.matches.length > 0) {
+      const topMatch = analysisResult.matches[0];
+      const similarityPercent = (topMatch.similarity * 100).toFixed(1);
+      similarityMsg = `${similarityPercent}% similar | `;
+    }
+    analysisText.textContent = similarityMsg + (autoTickers.length > 0
+      ? `Tickers: ${autoTickers.join(', ')}`
+      : 'No tickers found');
+    analysisText.style.color = '#2196f3';
+    analysisText.style.display = 'inline';
+
+    // Step 3: Parse manual tickers from input field
+    const manualTickersInput = tickerInput.value.trim();
+    const manualTickers = manualTickersInput
+      ? manualTickersInput.split(/[\s,]+/).map(t => t.toUpperCase()).filter(t => t.length > 0)
+      : [];
+
+    // Step 4: Save the article as 'stock_news' with merged tickers
+    btnAnalyze.textContent = '💾 Saving...';
+    const saveResult = await window.electronAPI.saveArticle('stock_news', manualTickers);
+
+    if (!saveResult.success) {
+      analysisText.textContent = `Error saving: ${saveResult.error}`;
+      analysisText.style.color = '#f44336';
+      analysisText.style.display = 'inline';
+      btnAnalyze.disabled = false;
+      btnAnalyze.textContent = '📈 Save Stock News';
+      return;
+    }
+
+    // Build success message with final tickers and date
+    const article = saveResult.article;
+    let successMsg = `✓ Saved: ${article.title}`;
+    if (article.tickers && article.tickers.length > 0) {
+      successMsg += ` [${article.tickers.join(', ')}]`;
+    }
+    if (article.publishedDate) {
+      const date = new Date(article.publishedDate);
+      successMsg += ` (${date.toLocaleDateString()})`;
+    }
+
+    analysisText.textContent = successMsg;
+    analysisText.style.color = '#4caf50'; // Green for success
+    analysisText.style.display = 'inline';
+
+    // Clear ticker input after successful save
+    tickerInput.value = '';
+
+    // Update stats
+    await updateStats();
+
+    // Re-enable button
+    btnAnalyze.disabled = false;
+    btnAnalyze.textContent = '📈 Save Stock News';
 
   } catch (error) {
-    console.error('Error analyzing page:', error);
-    setStatus(`Error: ${error.message}`, 'error');
-    similarityDisplay.style.display = 'none';
+    console.error('Error saving stock news:', error);
+    analysisText.textContent = `Error: ${error.message}`;
+    analysisText.style.color = '#f44336';
+    analysisText.style.display = 'inline';
+    btnAnalyze.disabled = false;
+    btnAnalyze.textContent = '📈 Save Stock News';
   }
 }
 
-// Display similarity results inline
+// Display similarity results in analysis bar
 function displaySimilarityResults(matches) {
   if (!matches || matches.length === 0) {
-    similarityText.textContent = 'No similar pages found (unique content)';
-    similarityText.style.color = '#4caf50'; // Green for unique
-    similarityDisplay.style.display = 'block';
+    analysisText.textContent = '✓ Analysis complete: No similar pages found (unique content)';
+    analysisText.style.color = '#4caf50'; // Green for unique
+    analysisText.style.display = 'inline';
     return;
   }
 
@@ -194,7 +289,7 @@ function displaySimilarityResults(matches) {
   const similarityPercent = (topMatch.similarity * 100).toFixed(1);
   const matchCategory = topMatch.category === 'good' ? 'Good' : 'Not Good';
 
-  let message = `⚠️ ${similarityPercent}% similar to "${topMatch.title}" (${matchCategory})`;
+  let message = `✓ Analysis complete: ${similarityPercent}% similar to "${topMatch.title}" (${matchCategory})`;
 
   // Show all top matches if there are multiple
   if (matches.length > 1) {
@@ -204,9 +299,39 @@ function displaySimilarityResults(matches) {
     message += ` | Others: ${otherMatches}`;
   }
 
-  similarityText.textContent = message;
-  similarityText.style.color = topMatch.similarity > 0.7 ? '#ff9800' : '#9c27b0'; // Orange for high similarity
-  similarityDisplay.style.display = 'block';
+  analysisText.textContent = message;
+  analysisText.style.color = topMatch.similarity > 0.7 ? '#ff9800' : '#9c27b0'; // Orange for high similarity
+  analysisText.style.display = 'inline';
+}
+
+// Batch DOM updates using requestAnimationFrame for better performance
+function scheduleDOMUpdate(tabId, url, title) {
+  pendingUpdates.set(tabId, { url, title });
+
+  if (!rafScheduled) {
+    rafScheduled = true;
+    requestAnimationFrame(() => {
+      // Process all pending updates at once (batched)
+      pendingUpdates.forEach((data, tabId) => {
+        const { url, title } = data;
+
+        // Update tab URL and title
+        updateTabUrl(tabId, url);
+        if (title) {
+          updateTabTitle(tabId, title);
+        }
+
+        // Update URL bar if this is the active tab
+        if (tabId === currentTabId) {
+          urlBar.value = url;
+          analysisText.style.display = 'none';
+        }
+      });
+
+      pendingUpdates.clear();
+      rafScheduled = false;
+    });
+  }
 }
 
 // Listen for URL changes from the browser view
@@ -251,16 +376,8 @@ window.electronAPI.onUrlChanged(async (data) => {
     });
   }
 
-  updateTabUrl(tabId, url);
-  if (title) {
-    updateTabTitle(tabId, title);
-  }
-  if (tabId === currentTabId) {
-    urlBar.value = url;
-
-    // Automatically analyze the page for similarity
-    await analyzeCurrentPage();
-  }
+  // Schedule batched DOM update for better performance
+  scheduleDOMUpdate(tabId, url, title);
 });
 
 // New tab button
@@ -283,7 +400,10 @@ async function saveArticle(category) {
     const article = result.article;
     console.log(`✓ Article saved (ID: ${article.id})`, article);
 
-    setStatus(`✓ Marked as "Not Good": ${article.title}`, 'success');
+    // Simple status message for 'not_good' articles (no tickers/dates)
+    let statusMsg = `✓ Marked as "Not Good": ${article.title}`;
+
+    setStatus(statusMsg, 'success');
 
     // Update stats
     await updateStats();
@@ -298,6 +418,56 @@ btnNotGood.addEventListener('click', async () => {
   await saveArticle('not_good');
 });
 
+// Save Stock News button - analyze similarity then save with tickers/dates
+btnAnalyze.addEventListener('click', async () => {
+  await saveStockNews();
+});
+
+// Count News button - record article count on current page
+btnCountNews.addEventListener('click', async () => {
+  await recordNewsCount();
+});
+
+// Record news count from current page
+async function recordNewsCount() {
+  try {
+    btnCountNews.disabled = true;
+    btnCountNews.textContent = '⏳ Counting...';
+    analysisText.textContent = 'Counting articles...';
+    analysisText.style.color = '#999999';
+    analysisText.style.display = 'inline';
+
+    const result = await window.electronAPI.recordNewsCount();
+
+    if (!result.success) {
+      analysisText.textContent = `Error: ${result.error}`;
+      analysisText.style.color = '#f44336';
+      analysisText.style.display = 'inline';
+      btnCountNews.disabled = false;
+      btnCountNews.textContent = '📊 Count News';
+      return;
+    }
+
+    // Display success with ticker and count
+    const date = new Date(result.recordedAt).toLocaleDateString();
+    analysisText.textContent = `✓ Recorded ${result.count} articles for ${result.ticker} (${date})`;
+    analysisText.style.color = '#5e35b1'; // Purple to match button
+    analysisText.style.display = 'inline';
+
+    console.log(`✓ News count saved: ${result.ticker} = ${result.count} articles`);
+
+    btnCountNews.disabled = false;
+    btnCountNews.textContent = '📊 Count News';
+  } catch (error) {
+    console.error('Error recording news count:', error);
+    analysisText.textContent = `Error: ${error.message}`;
+    analysisText.style.color = '#f44336';
+    analysisText.style.display = 'inline';
+    btnCountNews.disabled = false;
+    btnCountNews.textContent = '📊 Count News';
+  }
+}
+
 // Update statistics display
 async function updateStats() {
   try {
@@ -310,16 +480,9 @@ async function updateStats() {
   }
 }
 
-// Helper function to update status bar
+// Helper function to update status bar (no-op since status bar removed)
 function setStatus(message, type = 'info') {
-  statusText.textContent = message;
-  statusText.className = '';
-
-  if (type === 'success') {
-    statusText.classList.add('status-success');
-  } else if (type === 'error') {
-    statusText.classList.add('status-error');
-  }
+  // Status bar has been removed, function kept for compatibility
 }
 
 // Settings button handler - navigate to settings page
@@ -346,53 +509,10 @@ btnClose.addEventListener('click', async () => {
   await window.electronAPI.windowClose();
 });
 
-// News scraping functionality (from current page)
-btnScrapeNews.addEventListener('click', async () => {
-  try {
-    btnScrapeNews.disabled = true;
-    btnScrapeNews.textContent = '⏳ Scraping...';
-    setStatus('Extracting news links from current page...', 'info');
-
-    const result = await window.electronAPI.scrapeCurrentPageNews(5);
-
-    if (!result.success) {
-      setStatus(`Error: ${result.error}`, 'error');
-      btnScrapeNews.disabled = false;
-      btnScrapeNews.textContent = '📰 Scrape News (Top 5)';
-      return;
-    }
-
-    setStatus(
-      `✓ Scraped ${result.saved}/${result.total} articles from ${result.sourceTitle}`,
-      'success'
-    );
-
-    // Update stats
-    await updateStats();
-
-    btnScrapeNews.disabled = false;
-    btnScrapeNews.textContent = '📰 Scrape News (Top 5)';
-  } catch (error) {
-    console.error('Error scraping news:', error);
-    setStatus(`Error: ${error.message}`, 'error');
-    btnScrapeNews.disabled = false;
-    btnScrapeNews.textContent = '📰 Scrape News (Top 5)';
-  }
-});
-
-// Listen for scrape progress updates
-window.electronAPI.onScrapeProgress((progress) => {
-  if (progress.message) {
-    setStatus(`[${progress.current}/${progress.total}] ${progress.message}`, 'info');
-  }
-});
-
 // Initialize
 (async () => {
-  // Create three tabs with news.google.com
-  await createTab('https://news.google.com');
-  await createTab('https://news.google.com');
-  await createTab('https://news.google.com');
+  // Create one tab with finance.yahoo.com
+  await createTab('https://finance.yahoo.com');
 
   setStatus('Ready');
 

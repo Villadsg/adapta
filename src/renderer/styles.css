@@ -197,29 +197,26 @@ body {
   border-color: #0078d4;
 }
 
-/* Scraper controls */
-.scraper-controls {
-  display: flex;
-  gap: 8px;
-  align-items: center;
+/* Ticker input field */
+#ticker-input {
+  width: 200px;
+  height: 36px;
+  background: #1e1e1e;
+  border: 1px solid #404040;
+  border-radius: 4px;
+  color: #ffffff;
+  padding: 0 12px;
+  font-size: 13px;
+  margin-right: 8px;
 }
 
-.btn-scrape {
-  background: #2e7d32;
+#ticker-input:focus {
+  outline: none;
+  border-color: #2e7d32;
 }
 
-.btn-scrape:hover {
-  background: #1b5e20;
-}
-
-.btn-scrape:active {
-  background: #145214;
-}
-
-.btn-scrape:disabled {
-  background: #404040;
-  cursor: not-allowed;
-  opacity: 0.6;
+#ticker-input::placeholder {
+  color: #888888;
 }
 
 .action-controls {
@@ -262,6 +259,44 @@ body {
   background: #145214;
 }
 
+/* Save Stock News button - green */
+.btn-analyze {
+  background: #2e7d32;
+}
+
+.btn-analyze:hover {
+  background: #1b5e20;
+}
+
+.btn-analyze:active {
+  background: #0d4718;
+}
+
+.btn-analyze:disabled {
+  background: #404040;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Count News button - purple/blue */
+.btn-count-news {
+  background: #5e35b1;
+}
+
+.btn-count-news:hover {
+  background: #4527a0;
+}
+
+.btn-count-news:active {
+  background: #311b92;
+}
+
+.btn-count-news:disabled {
+  background: #404040;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 /* Not Good button - red */
 .btn-not-good {
   background: #c62828;
@@ -288,21 +323,38 @@ body {
   white-space: nowrap;
 }
 
-#status-bar {
-  height: 20px;
-  background: #252525;
-  border-bottom: 1px solid #404040;
+/* Analysis bar at bottom of browser (below content) */
+#analysis-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  background: #1e1e1e;
+  border-top: 1px solid #404040;
   display: flex;
   align-items: center;
-  padding: 0 12px;
-  font-size: 11px;
-  color: #999999;
+  justify-content: space-between;
+  padding: 0 16px;
+  font-size: 12px;
+  z-index: 1000;
+  gap: 16px;
 }
 
-#status-text {
+#stats-text-bottom {
+  font-size: 12px;
+  color: #999999;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+#analysis-text {
+  font-weight: 500;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  flex-grow: 1;
+  text-align: right;
 }
 
 /* Success/error states */
@@ -352,23 +404,6 @@ body {
 
 .btn-danger-dark:active {
   background: #660000;
-}
-
-/* Inline Similarity Display */
-#similarity-display {
-  padding: 0 12px;
-  max-width: 600px;
-  overflow: hidden;
-}
-
-#similarity-text {
-  font-size: 12px;
-  color: #9c27b0;
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: block;
 }
 
 /* Window Controls */

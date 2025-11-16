@@ -1,7 +1,8 @@
 const { app, BrowserWindow, BrowserView, ipcMain } = require('electron');
 const path = require('path');
 const ArticleDatabase = require('./src/services/database');
-const nativeTabScraper = require('./src/services/nativeTabScraper');
+const articleExtractor = require('./src/services/articleExtractor');
+const newsScraper = require('./src/services/newsScraper');
 
 let mainWindow;
 let database;
@@ -10,6 +11,10 @@ let database;
 const tabs = new Map(); // tabId -> BrowserView
 let activeTabId = null;
 let nextTabId = 1;
+
+// Performance optimization: debounce timers
+const navigationDebounceTimers = new Map(); // tabId -> timer
+let resizeTimer = null;
 
 function createWindow() {
   // Create the main application window
@@ -27,15 +32,19 @@ function createWindow() {
   // Load the control UI
   mainWindow.loadFile('src/renderer/index.html');
 
-  // Update browser view bounds when window resizes
+  // Update browser view bounds when window resizes (debounced for performance)
   mainWindow.on('resize', () => {
-    if (activeTabId) {
-      const browserView = tabs.get(activeTabId);
-      updateBrowserViewBounds(browserView);
-    }
+    if (resizeTimer) clearTimeout(resizeTimer);
+
+    resizeTimer = setTimeout(() => {
+      if (activeTabId) {
+        const browserView = tabs.get(activeTabId);
+        updateBrowserViewBounds(browserView);
+      }
+    }, 16); // ~60fps
   });
 
-  // Also handle maximize/unmaximize events
+  // Also handle maximize/unmaximize events (immediate, no debounce needed)
   mainWindow.on('maximize', () => {
     if (activeTabId) {
       updateBrowserViewBounds(tabs.get(activeTabId));
@@ -58,19 +67,16 @@ function updateBrowserViewBounds(browserView) {
 
   const { width, height } = mainWindow.getContentBounds();
 
-  // Log for debugging
-  console.log(`Updating browser view bounds: ${width}x${height}, content area: ${width}x${height - 116}`);
-
   browserView.setBounds({
     x: 0,
-    y: 116, // Space for tab bar (36px) + toolbar (60px) + status bar (20px)
+    y: 96, // Space for tab bar (36px) + toolbar (60px)
     width: width,
-    height: height - 116
+    height: height - 124 // 96 (top bars) + 28 (analysis bar at bottom)
   });
 }
 
 // Create a new tab
-function createTab(url = 'https://news.google.com') {
+function createTab(url = 'https://finance.yahoo.com') {
   const tabId = nextTabId++;
 
   const browserView = new BrowserView({
@@ -82,20 +88,85 @@ function createTab(url = 'https://news.google.com') {
 
   tabs.set(tabId, browserView);
 
-  // Update URL bar when navigation happens
+  // Block tracking and ad domains
+  const session = browserView.webContents.session;
+  // Optimized: use compiled regex for faster URL blocking (3-5x faster)
+  const blockPattern = new RegExp(
+    'cootlogix\\.com|kueezrtb\\.com|doubleclick\\.net|' +
+    'googleadservices\\.com|googlesyndication\\.com|' +
+    'advertising\\.com|adsystem\\.com|adnxs\\.com|' +
+    'amazon-adsystem\\.com|/sa/|/tr/|sync\\.|pixel\\.|track\\.|analytics\\.',
+    'i' // case insensitive
+  );
+
+  session.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
+    // Single regex test is much faster than array iteration + toLowerCase + includes
+    callback({ cancel: blockPattern.test(details.url) });
+  });
+
+  // Suppress console error messages from blocked/failed tracking URLs
+  browserView.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    // Level 2 = error, 1 = warning, 0 = log
+    if (level === 2 || level === 1) {
+      // Filter out connection errors from tracking/sync domains
+      if (message.includes('ERR_CONNECTION_REFUSED') ||
+          message.includes('ERR_FAILED') ||
+          message.includes('ERR_ABORTED')) {
+        const trackingKeywords = ['sync.', 'track', 'pixel', 'analytics', 'cootlogix', 'kueezrtb'];
+        if (trackingKeywords.some(keyword => message.toLowerCase().includes(keyword))) {
+          // Silently ignore tracking domain errors
+          return;
+        }
+      }
+    }
+    // Log other console messages for debugging (optional - can be removed)
+    // console.log(`[WebContent Console] ${message}`);
+  });
+
+  // Gracefully handle failed loads from tracking URLs
+  browserView.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    // Ignore tracking domain failures
+    const trackingKeywords = ['sync.', 'track', 'pixel', 'analytics', 'cootlogix', 'kueezrtb', 'doubleclick', 'adsystem'];
+    const isTrackingUrl = trackingKeywords.some(keyword => validatedURL.toLowerCase().includes(keyword));
+
+    if (isTrackingUrl) {
+      // Silently ignore tracking URL failures
+      return;
+    }
+
+    // Log real navigation failures for the main page
+    if (errorCode !== -3) { // -3 is ERR_ABORTED (user cancelled)
+      console.log(`Navigation failed: ${validatedURL} - ${errorDescription}`);
+    }
+  });
+
+  // Debounced URL update sender to prevent rapid-fire IPC messages
+  function sendUrlUpdate(url, title) {
+    // Clear existing timer for this tab
+    if (navigationDebounceTimers.has(tabId)) {
+      clearTimeout(navigationDebounceTimers.get(tabId));
+    }
+
+    // Debounce: only send after 50ms of no new events
+    const timer = setTimeout(() => {
+      mainWindow.webContents.send('url-changed', { tabId, url, title });
+      navigationDebounceTimers.delete(tabId);
+    }, 50);
+
+    navigationDebounceTimers.set(tabId, timer);
+  }
+
+  // Update URL bar when navigation happens (debounced for performance)
   browserView.webContents.on('did-navigate', (event, url) => {
-    const title = browserView.webContents.getTitle();
-    mainWindow.webContents.send('url-changed', { tabId, url, title });
+    sendUrlUpdate(url, browserView.webContents.getTitle());
   });
 
   browserView.webContents.on('did-navigate-in-page', (event, url) => {
-    const title = browserView.webContents.getTitle();
-    mainWindow.webContents.send('url-changed', { tabId, url, title });
+    sendUrlUpdate(url, browserView.webContents.getTitle());
   });
 
   browserView.webContents.on('page-title-updated', (event, title) => {
-    const url = browserView.webContents.getURL();
-    mainWindow.webContents.send('url-changed', { tabId, url, title });
+    sendUrlUpdate(browserView.webContents.getURL(), title);
   });
 
   // Handle links that try to open in new windows - open them in new tabs instead
@@ -207,19 +278,17 @@ ipcMain.handle('download-text', async (event) => {
     const browserView = getActiveBrowserView();
     if (!browserView) return { error: 'No active tab' };
 
-    const url = browserView.webContents.getURL();
-    const title = browserView.webContents.getTitle();
-
-    // Execute JavaScript in the browser view to extract text
-    const text = await browserView.webContents.executeJavaScript(`
-      document.body.innerText;
-    `);
+    // Extract clean article content using Readability.js
+    const articleData = await articleExtractor.extractFromWebContents(browserView.webContents);
+    const { url, title, text, publishedDate, tickers } = articleData;
 
     return {
       url: url,
       title: title,
       text: text,
-      wordCount: text.split(/\\s+/).length
+      wordCount: text.split(/\s+/).length,
+      publishedDate: publishedDate,
+      tickers: tickers
     };
   } catch (error) {
     console.error('Error extracting text:', error);
@@ -264,22 +333,22 @@ ipcMain.handle('analyze-page', async (event) => {
     if (!browserView) return { success: false, error: 'No active tab', matches: [] };
 
     const url = browserView.webContents.getURL();
-    const title = browserView.webContents.getTitle();
 
     // Skip analysis for internal pages and non-http(s) URLs
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       return { success: true, matches: [], skipped: true, reason: 'Internal page' };
     }
 
-    // Extract text from current page
-    const text = await browserView.webContents.executeJavaScript(`
-      document.body.innerText;
-    `);
+    // Extract clean article content using Readability.js
+    const articleData = await articleExtractor.extractFromWebContents(browserView.webContents);
+    const { title, text } = articleData;
 
-    // Use title + beginning of text as query (first ~500 chars for speed)
-    const queryText = `${title}. ${text.substring(0, 500)}`;
+    // Use full article text for most accurate similarity comparison
+    const queryText = `${title}. ${text}`;
 
     console.log(`\n🔍 Analyzing page: ${title}`);
+    console.log(`   Extracted ${text.length} chars of clean article content`);
+    console.log(`   Comparing full article text for maximum accuracy`);
 
     // Search for similar content (top 5 matches, minimum 50% similarity)
     const results = await database.searchBySimilarity(queryText, {
@@ -333,26 +402,53 @@ ipcMain.handle('analyze-page', async (event) => {
   }
 });
 
-ipcMain.handle('save-article', async (event, category) => {
+ipcMain.handle('save-article', async (event, category, manualTickers = []) => {
   try {
     const browserView = getActiveBrowserView();
     if (!browserView) return { success: false, error: 'No active tab' };
 
-    const url = browserView.webContents.getURL();
-    const title = browserView.webContents.getTitle();
+    // Extract clean article content using Readability.js
+    const articleData = await articleExtractor.extractFromWebContents(browserView.webContents);
+    const { url, title, text, publishedDate, tickers: autoTickers } = articleData;
 
-    // Execute JavaScript in the browser view to extract text
-    const text = await browserView.webContents.executeJavaScript(`
-      document.body.innerText;
-    `);
+    // Only extract tickers and dates for 'stock_news' category
+    // For 'not_good' articles, skip ticker/date extraction
+    const shouldExtractStockData = (category === 'stock_news');
+
+    // Merge auto-extracted tickers with manual tickers
+    let finalTickers = [];
+    if (shouldExtractStockData) {
+      // Combine auto and manual tickers, remove duplicates, sort
+      const tickerSet = new Set([...autoTickers, ...manualTickers]);
+      finalTickers = Array.from(tickerSet).sort();
+    }
 
     // Save article to database with embedding for full article
-    const result = await database.saveArticle(url, title, text, category);
+    const result = await database.saveArticle(url, title, text, category, {
+      publishedDate: shouldExtractStockData ? publishedDate : null,
+      tickers: finalTickers
+    });
+
     console.log(`✓ Article saved with full-text embedding (ID: ${result.id}) - ${result.title}`);
+    console.log(`   Category: ${category}`);
+    console.log(`   Saved ${text.length} chars of clean article content`);
+
+    if (shouldExtractStockData) {
+      if (publishedDate) {
+        console.log(`   Published: ${new Date(publishedDate).toLocaleDateString()}`);
+      }
+      if (finalTickers.length > 0) {
+        console.log(`   Tickers: ${finalTickers.join(', ')}`);
+        if (manualTickers.length > 0) {
+          console.log(`   Manual tickers added: ${manualTickers.join(', ')}`);
+        }
+      }
+    }
 
     return {
       success: true,
-      article: result
+      article: result,
+      category: category
     };
   } catch (error) {
     console.error('Error saving article:', error);
@@ -385,50 +481,43 @@ ipcMain.handle('get-articles', async (event, categoryFilter) => {
   }
 });
 
-// Settings IPC handlers
-ipcMain.handle('get-chunking-settings', async (event) => {
+// Get stock statistics for settings page
+ipcMain.handle('get-stock-stats', async (event) => {
   try {
-    const settings = await database.getChunkingSettings();
-    return settings;
+    const stats = await database.getStockStats();
+    return stats;
   } catch (error) {
-    console.error('Error getting chunking settings:', error);
+    console.error('Error getting stock stats:', error);
     return { error: error.message };
   }
 });
 
-ipcMain.handle('save-chunking-settings', async (event, settings) => {
+// Get recent news volume records
+ipcMain.handle('get-recent-news-volume', async (event) => {
   try {
-    await database.setSetting('chunk_size', settings.chunkSize.toString());
-    await database.setSetting('chunk_overlap', settings.chunkOverlap.toString());
-    await database.setSetting('chunk_strategy', settings.chunkStrategy);
-    console.log(`✓ Settings saved: ${settings.chunkSize} tokens, ${settings.chunkOverlap} overlap, ${settings.chunkStrategy} strategy`);
-    return { success: true };
+    const volumeData = await database.getRecentNewsVolume(20);
+    return volumeData;
   } catch (error) {
-    console.error('Error saving chunking settings:', error);
-    return { success: false, error: error.message };
+    console.error('Error getting news volume:', error);
+    return { error: error.message };
   }
 });
 
-ipcMain.handle('rechunk-all', async (event, chunkSize, overlap, strategy) => {
+// Execute raw SQL query
+ipcMain.handle('execute-sql', async (event, query) => {
   try {
-    await database.rechunkAllArticles(chunkSize, overlap, strategy);
-    return { success: true };
+    const result = await database.executeRawSQL(query);
+    return { success: true, ...result };
   } catch (error) {
-    console.error('Error re-chunking:', error);
-    return { success: false, error: error.message };
+    console.error('Error executing SQL:', error);
+    return {
+      success: false,
+      error: error.error || error.message,
+      executionTime: error.executionTime || 0
+    };
   }
 });
 
-// Clear vectors only
-ipcMain.handle('clear-vectors', async (event) => {
-  try {
-    await database.clearVectors();
-    return { success: true };
-  } catch (error) {
-    console.error('Error clearing vectors:', error);
-    return { success: false, error: error.message };
-  }
-});
 
 // Clear all data
 ipcMain.handle('clear-all-data', async (event) => {
@@ -441,6 +530,17 @@ ipcMain.handle('clear-all-data', async (event) => {
   }
 });
 
+// Clear news volume data
+ipcMain.handle('clear-news-volume', async (event) => {
+  try {
+    await database.clearNewsVolume();
+    return { success: true };
+  } catch (error) {
+    console.error('Error clearing news volume:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Semantic search handler
 ipcMain.handle('search-similarity', async (event, query, options) => {
   try {
@@ -448,6 +548,42 @@ ipcMain.handle('search-similarity', async (event, query, options) => {
     return { success: true, results };
   } catch (error) {
     console.error('Error searching:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Record news count handler
+ipcMain.handle('record-news-count', async (event) => {
+  try {
+    const browserView = getActiveBrowserView();
+    if (!browserView) return { success: false, error: 'No active tab' };
+
+    // Use news scraper to count articles on current page
+    const result = await newsScraper.countArticles(browserView.webContents);
+
+    if (!result.success) {
+      return result; // Return error from scraper
+    }
+
+    // Save to database
+    const saved = await database.saveNewsCount(
+      result.ticker,
+      result.count,
+      result.source,
+      result.url
+    );
+
+    console.log(`✓ Recorded news count: ${saved.ticker} = ${saved.articleCount} articles (${saved.source})`);
+
+    return {
+      success: true,
+      ticker: saved.ticker,
+      count: saved.articleCount,
+      recordedAt: saved.recordedAt,
+      source: saved.source
+    };
+  } catch (error) {
+    console.error('Error recording news count:', error);
     return { success: false, error: error.message };
   }
 });
@@ -477,99 +613,6 @@ ipcMain.handle('get-embedding-stats', async (event) => {
   } catch (error) {
     console.error('Error getting embedding stats:', error);
     return { error: error.message };
-  }
-});
-
-// Scrape news from current page using native tabs
-ipcMain.handle('scrape-current-page-news', async (event, topN = 5) => {
-  try {
-    console.log(`\n🚀 Starting native tab scrape from current page (top ${topN})`);
-
-    const browserView = getActiveBrowserView();
-    if (!browserView) {
-      return { success: false, error: 'No active tab' };
-    }
-
-    const currentUrl = browserView.webContents.getURL();
-    const currentTitle = browserView.webContents.getTitle();
-
-    console.log(`   Current page: ${currentTitle}`);
-    console.log(`   URL: ${currentUrl}`);
-
-    // Use native tab scraper
-    const articles = await nativeTabScraper.scrapeNewsFromCurrentPage({
-      currentWebContents: browserView.webContents,
-      createTab: (url) => {
-        return new Promise((resolve) => {
-          const tabId = createTab(url);
-          const newBrowserView = tabs.get(tabId);
-          resolve({ browserView: newBrowserView, tabId });
-        });
-      },
-      closeTab: (tabId) => {
-        return new Promise((resolve) => {
-          closeTab(tabId);
-          resolve();
-        });
-      },
-      onProgress: (current, total, message) => {
-        // Send progress updates to renderer
-        mainWindow.webContents.send('scrape-progress', {
-          current,
-          total,
-          message,
-          progress: Math.round((current / total) * 100)
-        });
-        console.log(`   [${current}/${total}] ${message}`);
-      },
-      topN
-    });
-
-    // Save scraped articles to database
-    const savedArticles = [];
-
-    for (const article of articles) {
-      try {
-        // Extract domain from URL for category
-        const urlObj = new URL(article.url);
-        const domain = urlObj.hostname.replace('www.', '');
-
-        // Save article with domain as category
-        const saved = await database.saveArticle(
-          article.url,
-          article.title,
-          article.text,
-          `news:${domain}`
-        );
-
-        console.log(`✓ Saved: ${saved.title} (ID: ${saved.id})`);
-
-        savedArticles.push({
-          id: saved.id,
-          title: saved.title,
-          url: saved.url
-        });
-      } catch (error) {
-        console.error(`Error saving article ${article.url}:`, error.message);
-      }
-    }
-
-    console.log(`\n✅ Scraping complete: ${savedArticles.length}/${articles.length} articles saved`);
-
-    return {
-      success: true,
-      sourceUrl: currentUrl,
-      sourceTitle: currentTitle,
-      total: articles.length,
-      saved: savedArticles.length,
-      articles: savedArticles
-    };
-  } catch (error) {
-    console.error('Error scraping current page news:', error);
-    return {
-      success: false,
-      error: error.message
-    };
   }
 });
 

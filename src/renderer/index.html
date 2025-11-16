@@ -32,34 +32,23 @@
       <input type="text" id="url-bar" placeholder="Enter URL..." />
     </div>
 
-    <!-- Stats display -->
-    <div class="stats-display">
-      <span id="stats-text">Not Good: 0</span>
-    </div>
-
-    <!-- Similarity display (auto-shown on navigation) -->
-    <div id="similarity-display" style="display: none;">
-      <span id="similarity-text"></span>
-    </div>
-
-    <!-- News scraper -->
-    <div class="scraper-controls">
-      <button id="btn-scrape-news" class="action-btn btn-scrape" title="Extract top 5 news links from current page">📰 Scrape News (Top 5)</button>
-    </div>
-
     <!-- Action buttons -->
     <div class="action-controls">
+      <input type="text" id="ticker-input" placeholder="Add tickers (e.g. AAPL, TSLA)" title="Add or override stock tickers" />
+      <button id="btn-analyze" class="action-btn btn-analyze">📈 Save Stock News</button>
+      <button id="btn-count-news" class="action-btn btn-count-news">📊 Count News</button>
       <button id="btn-not-good" class="action-btn btn-not-good">Mark as "Not Good"</button>
       <button id="btn-settings" class="action-btn btn-settings">⚙️ Settings</button>
     </div>
   </div>
 
-  <!-- Status/info bar -->
-  <div id="status-bar">
-    <span id="status-text">Ready</span>
-  </div>
-
   <!-- The browser view will be positioned here by Electron -->
+
+  <!-- Analysis results bar (below browser content) -->
+  <div id="analysis-bar">
+    <span id="stats-text-bottom">Not Good: 0</span>
+    <span id="analysis-text" style="display: none;"></span>
+  </div>
 
   <script src="renderer.js"></script>
 </body>

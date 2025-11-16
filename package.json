@@ -4,7 +4,8 @@
   "description": "Browser with semantic similarity search",
   "main": "main.js",
   "scripts": {
-    "start": "electron . --no-sandbox",
+    "start": "G_MESSAGES_DEBUG='' electron . --no-sandbox 2>&1 | grep -v 'GLib-GObject'",
+    "start:clean": "electron . --no-sandbox",
     "dev": "electron . --no-sandbox --enable-logging"
   },
   "keywords": [
@@ -19,6 +20,8 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^3.7.6",
-    "duckdb": "^1.4.1"
+    "@mozilla/readability": "^0.6.0",
+    "duckdb": "^1.4.1",
+    "jsdom": "^24.1.0"
   }
 }
