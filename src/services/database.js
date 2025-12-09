@@ -112,6 +112,39 @@ class ArticleDatabase {
       )
     `;
 
+    const createStockPricesSequence = `
+      CREATE SEQUENCE IF NOT EXISTS stock_prices_id_seq START 1
+    `;
+
+    const createStockPricesTable = `
+      CREATE TABLE IF NOT EXISTS stock_prices (
+        id INTEGER PRIMARY KEY DEFAULT nextval('stock_prices_id_seq'),
+        ticker TEXT NOT NULL,
+        date DATE NOT NULL,
+        open DECIMAL(10,2),
+        high DECIMAL(10,2),
+        low DECIMAL(10,2),
+        close DECIMAL(10,2),
+        volume BIGINT,
+        source TEXT,
+        fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(ticker, date, source)
+      )
+    `;
+
+    const createWatchedTickersSequence = `
+      CREATE SEQUENCE IF NOT EXISTS watched_tickers_id_seq START 1
+    `;
+
+    const createWatchedTickersTable = `
+      CREATE TABLE IF NOT EXISTS watched_tickers (
+        id INTEGER PRIMARY KEY DEFAULT nextval('watched_tickers_id_seq'),
+        ticker TEXT NOT NULL UNIQUE,
+        added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        auto_update BOOLEAN DEFAULT true
+      )
+    `;
+
     return new Promise((resolve, reject) => {
       // Create articles sequence
       this.connection.run(createArticlesSequence, (err) => {
@@ -162,20 +195,52 @@ class ArticleDatabase {
                       return;
                     }
 
-                    // Initialize default settings
-                    this.initializeSettings()
-                      .then(() => {
-                        // Run migrations
-                        this.runMigrations()
-                          .then(() => {
-                            // Create indexes
-                            this.createIndexes()
-                              .then(resolve)
+                    // Create stock_prices sequence
+                    this.connection.run(createStockPricesSequence, (err) => {
+                      if (err) {
+                        reject(err);
+                        return;
+                      }
+
+                      // Create stock_prices table
+                      this.connection.run(createStockPricesTable, (err) => {
+                        if (err) {
+                          reject(err);
+                          return;
+                        }
+
+                        // Create watched_tickers sequence
+                        this.connection.run(createWatchedTickersSequence, (err) => {
+                          if (err) {
+                            reject(err);
+                            return;
+                          }
+
+                          // Create watched_tickers table
+                          this.connection.run(createWatchedTickersTable, (err) => {
+                            if (err) {
+                              reject(err);
+                              return;
+                            }
+
+                            // Initialize default settings
+                            this.initializeSettings()
+                              .then(() => {
+                                // Run migrations
+                                this.runMigrations()
+                                  .then(() => {
+                                    // Create indexes
+                                    this.createIndexes()
+                                      .then(resolve)
+                                      .catch(reject);
+                                  })
+                                  .catch(reject);
+                              })
                               .catch(reject);
-                          })
-                          .catch(reject);
-                      })
-                      .catch(reject);
+                          });
+                        });
+                      });
+                    });
                   });
                 });
               });
@@ -198,7 +263,11 @@ class ArticleDatabase {
       'CREATE INDEX IF NOT EXISTS idx_chunks_article_id ON article_chunks(article_id)',
       'CREATE INDEX IF NOT EXISTS idx_chunks_category ON article_chunks(category)',
       'CREATE INDEX IF NOT EXISTS idx_news_volume_ticker ON news_volume(ticker)',
-      'CREATE INDEX IF NOT EXISTS idx_news_volume_recorded_at ON news_volume(recorded_at)'
+      'CREATE INDEX IF NOT EXISTS idx_news_volume_recorded_at ON news_volume(recorded_at)',
+      'CREATE INDEX IF NOT EXISTS idx_stock_prices_ticker ON stock_prices(ticker)',
+      'CREATE INDEX IF NOT EXISTS idx_stock_prices_date ON stock_prices(date)',
+      'CREATE INDEX IF NOT EXISTS idx_stock_prices_ticker_date ON stock_prices(ticker, date)',
+      'CREATE INDEX IF NOT EXISTS idx_watched_tickers_ticker ON watched_tickers(ticker)'
     ];
 
     for (const indexSQL of indexes) {
@@ -1380,6 +1449,266 @@ class ArticleDatabase {
         }
       });
     });
+  }
+
+  /**
+   * Get database file size in MB
+   * @returns {Promise<number>} Database size in MB
+   */
+  async getDatabaseSize() {
+    const fs = require('fs');
+    try {
+      const stats = fs.statSync(this.dbPath);
+      return (stats.size / (1024 * 1024)).toFixed(2);
+    } catch (err) {
+      console.error('Error getting database size:', err);
+      return 0;
+    }
+  }
+
+  // ===== Stock Price Tracking Methods =====
+
+  /**
+   * Save stock price data to database
+   * @param {string} ticker - Stock ticker symbol
+   * @param {string} date - Date in YYYY-MM-DD format
+   * @param {Object} priceData - Price data object {open, high, low, close, volume}
+   * @param {string} source - Data source (e.g., 'yahoo_finance')
+   * @returns {Promise<Object>} Saved record
+   */
+  async saveStockPrice(ticker, date, priceData, source = 'yahoo_finance') {
+    const sql = `
+      INSERT INTO stock_prices (ticker, date, open, high, low, close, volume, source)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      ON CONFLICT (ticker, date, source) DO UPDATE SET
+        open = $3,
+        high = $4,
+        low = $5,
+        close = $6,
+        volume = $7,
+        fetched_at = CURRENT_TIMESTAMP
+      RETURNING id
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(
+        sql,
+        ticker.toUpperCase(),
+        date,
+        priceData.open,
+        priceData.high,
+        priceData.low,
+        priceData.close,
+        priceData.volume,
+        source,
+        (err, result) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve({
+            id: result[0]?.id,
+            ticker: ticker.toUpperCase(),
+            date,
+            ...priceData
+          });
+        }
+      );
+    });
+  }
+
+  /**
+   * Get price history for a ticker
+   * @param {string} ticker - Stock ticker symbol
+   * @param {Object} options - Query options
+   * @param {string} options.startDate - Start date (YYYY-MM-DD)
+   * @param {string} options.endDate - End date (YYYY-MM-DD)
+   * @param {number} options.limit - Max number of records
+   * @param {string} options.source - Data source filter
+   * @returns {Promise<Array>} Array of price records
+   */
+  async getPriceHistory(ticker, options = {}) {
+    const {
+      startDate = null,
+      endDate = null,
+      limit = 365,
+      source = 'yahoo_finance'
+    } = options;
+
+    let sql = `
+      SELECT ticker, date, open, high, low, close, volume, source, fetched_at
+      FROM stock_prices
+      WHERE ticker = $1 AND source = $2
+    `;
+
+    const params = [ticker.toUpperCase(), source];
+
+    if (startDate) {
+      sql += ` AND date >= $${params.length + 1}`;
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      sql += ` AND date <= $${params.length + 1}`;
+      params.push(endDate);
+    }
+
+    sql += ` ORDER BY date DESC LIMIT $${params.length + 1}`;
+    params.push(limit);
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, params, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  /**
+   * Get latest price for a ticker
+   * @param {string} ticker - Stock ticker symbol
+   * @param {string} source - Data source
+   * @returns {Promise<Object|null>} Latest price record or null
+   */
+  async getLatestPrice(ticker, source = 'yahoo_finance') {
+    const sql = `
+      SELECT ticker, date, open, high, low, close, volume, source, fetched_at
+      FROM stock_prices
+      WHERE ticker = $1 AND source = $2
+      ORDER BY date DESC
+      LIMIT 1
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ticker.toUpperCase(), source, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows.length > 0 ? rows[0] : null);
+      });
+    });
+  }
+
+  /**
+   * Add a ticker to watchlist
+   * @param {string} ticker - Stock ticker symbol
+   * @param {boolean} autoUpdate - Enable automatic updates
+   * @returns {Promise<Object>} Added ticker record
+   */
+  async addWatchedTicker(ticker, autoUpdate = true) {
+    const sql = `
+      INSERT INTO watched_tickers (ticker, auto_update)
+      VALUES ($1, $2)
+      ON CONFLICT (ticker) DO UPDATE SET auto_update = $2
+      RETURNING id, ticker, added_at, auto_update
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ticker.toUpperCase(), autoUpdate, (err, result) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(result[0]);
+      });
+    });
+  }
+
+  /**
+   * Remove a ticker from watchlist
+   * @param {string} ticker - Stock ticker symbol
+   * @returns {Promise<void>}
+   */
+  async removeWatchedTicker(ticker) {
+    const sql = 'DELETE FROM watched_tickers WHERE ticker = $1';
+
+    return new Promise((resolve, reject) => {
+      this.connection.run(sql, ticker.toUpperCase(), (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  }
+
+  /**
+   * Get all watched tickers
+   * @param {boolean} autoUpdateOnly - Only return tickers with auto_update enabled
+   * @returns {Promise<Array>} Array of watched ticker records
+   */
+  async getWatchedTickers(autoUpdateOnly = false) {
+    let sql = 'SELECT id, ticker, added_at, auto_update FROM watched_tickers';
+
+    if (autoUpdateOnly) {
+      sql += ' WHERE auto_update = true';
+    }
+
+    sql += ' ORDER BY ticker ASC';
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  /**
+   * Check if ticker is being watched
+   * @param {string} ticker - Stock ticker symbol
+   * @returns {Promise<boolean>} True if watched
+   */
+  async isTickerWatched(ticker) {
+    const sql = 'SELECT COUNT(*) as count FROM watched_tickers WHERE ticker = $1';
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ticker.toUpperCase(), (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows[0]?.count > 0);
+      });
+    });
+  }
+
+  /**
+   * Get stock price statistics
+   * @returns {Promise<Object>} Price data statistics
+   */
+  async getPriceStats() {
+    const totalPrices = await new Promise((resolve, reject) => {
+      this.connection.all('SELECT COUNT(*) as count FROM stock_prices', (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    const uniqueTickers = await new Promise((resolve, reject) => {
+      this.connection.all('SELECT COUNT(DISTINCT ticker) as count FROM stock_prices', (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    const dateRange = await new Promise((resolve, reject) => {
+      this.connection.all(
+        'SELECT MIN(date) as earliest, MAX(date) as latest FROM stock_prices',
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows[0] || { earliest: null, latest: null });
+        }
+      );
+    });
+
+    const watchedCount = await new Promise((resolve, reject) => {
+      this.connection.all('SELECT COUNT(*) as count FROM watched_tickers', (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    return {
+      totalPrices,
+      uniqueTickers,
+      earliestDate: dateRange.earliest,
+      latestDate: dateRange.latest,
+      watchedCount
+    };
   }
 
   /**

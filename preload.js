@@ -32,6 +32,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   clearAllData: () => ipcRenderer.invoke('clear-all-data'),
   clearNewsVolume: () => ipcRenderer.invoke('clear-news-volume'),
 
+  // Stock price tracking
+  fetchHistoricalPrices: (ticker, options) => ipcRenderer.invoke('fetch-historical-prices', ticker, options),
+  getPriceHistory: (ticker, options) => ipcRenderer.invoke('get-price-history', ticker, options),
+  getLatestPrice: (ticker) => ipcRenderer.invoke('get-latest-price', ticker),
+  addWatchedTicker: (ticker, autoUpdate) => ipcRenderer.invoke('add-watched-ticker', ticker, autoUpdate),
+  removeWatchedTicker: (ticker) => ipcRenderer.invoke('remove-watched-ticker', ticker),
+  getWatchedTickers: (autoUpdateOnly) => ipcRenderer.invoke('get-watched-tickers', autoUpdateOnly),
+  isTickerWatched: (ticker) => ipcRenderer.invoke('is-ticker-watched', ticker),
+  getPriceStats: () => ipcRenderer.invoke('get-price-stats'),
+  togglePricePolling: (enabled, intervalMinutes) => ipcRenderer.invoke('toggle-price-polling', enabled, intervalMinutes),
+  getPollingStatus: () => ipcRenderer.invoke('get-polling-status'),
+  updateLatestPrice: (ticker) => ipcRenderer.invoke('update-latest-price', ticker),
+
   // Get current state
   getCurrentUrl: () => ipcRenderer.invoke('get-current-url'),
 

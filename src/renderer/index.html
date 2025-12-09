@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Adapta Browser</title>
   <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <!-- Tab Bar with Window Controls -->
@@ -38,7 +39,58 @@
       <button id="btn-analyze" class="action-btn btn-analyze">📈 Save Stock News</button>
       <button id="btn-count-news" class="action-btn btn-count-news">📊 Count News</button>
       <button id="btn-not-good" class="action-btn btn-not-good">Mark as "Not Good"</button>
+      <button id="btn-stock-prices" class="action-btn btn-stock-prices">💹 Stock Prices</button>
       <button id="btn-settings" class="action-btn btn-settings">⚙️ Settings</button>
+    </div>
+  </div>
+
+  <!-- Stock Price Sidebar -->
+  <div id="stock-sidebar" class="stock-sidebar">
+    <div class="sidebar-header">
+      <h3>Stock Prices</h3>
+      <button id="sidebar-close" class="sidebar-close-btn">×</button>
+    </div>
+
+    <div class="sidebar-content">
+      <!-- Ticker Selection -->
+      <div class="ticker-selector">
+        <select id="ticker-dropdown" class="ticker-dropdown">
+          <option value="">Select a ticker...</option>
+        </select>
+        <button id="btn-add-ticker" class="btn-sm" title="Add new ticker to watchlist">+</button>
+      </div>
+
+      <!-- Latest Price Display -->
+      <div id="latest-price-display" class="latest-price-display" style="display: none;">
+        <div class="price-main">
+          <span class="ticker-name" id="current-ticker-name">-</span>
+          <span class="price-value" id="current-price">$0.00</span>
+        </div>
+        <div class="price-change" id="price-change">
+          <span id="price-change-value">$0.00</span>
+          <span id="price-change-percent">(0.00%)</span>
+        </div>
+        <div class="price-meta">
+          <span id="price-date">Last updated: -</span>
+        </div>
+      </div>
+
+      <!-- Chart Container -->
+      <div id="chart-container" class="chart-container">
+        <canvas id="price-chart"></canvas>
+      </div>
+
+      <!-- Loading/Error States -->
+      <div id="sidebar-message" class="sidebar-message" style="display: none;">
+        <p id="sidebar-message-text">Loading...</p>
+      </div>
+
+      <!-- Actions -->
+      <div class="sidebar-actions">
+        <button id="btn-refresh-price" class="btn-sm">🔄 Refresh</button>
+        <button id="btn-fetch-history" class="btn-sm">📥 Fetch History</button>
+        <button id="btn-remove-ticker" class="btn-sm btn-danger">🗑️ Remove</button>
+      </div>
     </div>
   </div>
 

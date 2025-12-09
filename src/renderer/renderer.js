@@ -7,6 +7,7 @@ const btnReload = document.getElementById('btn-reload');
 const btnAnalyze = document.getElementById('btn-analyze');
 const btnCountNews = document.getElementById('btn-count-news');
 const btnNotGood = document.getElementById('btn-not-good');
+const btnStockPrices = document.getElementById('btn-stock-prices');
 const btnSettings = document.getElementById('btn-settings');
 const statsText = document.getElementById('stats-text-bottom');
 const analysisBar = document.getElementById('analysis-bar');
@@ -16,6 +17,19 @@ const btnNewTab = document.getElementById('btn-new-tab');
 const btnMinimize = document.getElementById('btn-minimize');
 const btnMaximize = document.getElementById('btn-maximize');
 const btnClose = document.getElementById('btn-close');
+
+// Stock sidebar elements
+const stockSidebar = document.getElementById('stock-sidebar');
+const sidebarClose = document.getElementById('sidebar-close');
+const tickerDropdown = document.getElementById('ticker-dropdown');
+const btnAddTicker = document.getElementById('btn-add-ticker');
+const btnRefreshPrice = document.getElementById('btn-refresh-price');
+const btnFetchHistory = document.getElementById('btn-fetch-history');
+const btnRemoveTicker = document.getElementById('btn-remove-ticker');
+const latestPriceDisplay = document.getElementById('latest-price-display');
+const sidebarMessage = document.getElementById('sidebar-message');
+const sidebarMessageText = document.getElementById('sidebar-message-text');
+const chartContainer = document.getElementById('chart-container');
 
 // Tab management
 let currentTabId = null;
@@ -508,6 +522,345 @@ btnMaximize.addEventListener('click', async () => {
 btnClose.addEventListener('click', async () => {
   await window.electronAPI.windowClose();
 });
+
+// ===== Stock Price Sidebar =====
+
+let priceChart = null;
+let currentSelectedTicker = null;
+
+// Setup sidebar event listeners
+function setupSidebarListeners() {
+  // Toggle sidebar
+  if (btnStockPrices && stockSidebar) {
+    btnStockPrices.addEventListener('click', (e) => {
+      e.preventDefault();
+      console.log('Stock prices button clicked');
+      stockSidebar.classList.toggle('open');
+      console.log('Sidebar open state:', stockSidebar.classList.contains('open'));
+      if (stockSidebar.classList.contains('open')) {
+        loadWatchedTickers();
+      }
+    });
+    console.log('✓ Stock prices button listener attached');
+  } else {
+    console.error('Stock sidebar elements not found:', {
+      btnStockPrices: !!btnStockPrices,
+      stockSidebar: !!stockSidebar
+    });
+  }
+
+  if (sidebarClose) {
+    sidebarClose.addEventListener('click', () => {
+      stockSidebar.classList.remove('open');
+    });
+  }
+}
+
+// Call setup immediately since script is at end of body
+setupSidebarListeners();
+
+// Load watched tickers into dropdown
+async function loadWatchedTickers() {
+  try {
+    const result = await window.electronAPI.getWatchedTickers(false);
+    if (!result.success) {
+      console.error('Failed to load watched tickers:', result.error);
+      return;
+    }
+
+    tickerDropdown.innerHTML = '<option value="">Select a ticker...</option>';
+
+    for (const ticker of result.tickers) {
+      const option = document.createElement('option');
+      option.value = ticker.ticker;
+      option.textContent = ticker.ticker;
+      tickerDropdown.appendChild(option);
+    }
+
+    // If there's a selected ticker, keep it selected
+    if (currentSelectedTicker) {
+      tickerDropdown.value = currentSelectedTicker;
+    }
+  } catch (error) {
+    console.error('Error loading watched tickers:', error);
+  }
+}
+
+// Ticker selection changed
+tickerDropdown.addEventListener('change', async () => {
+  const ticker = tickerDropdown.value;
+  if (!ticker) {
+    currentSelectedTicker = null;
+    latestPriceDisplay.style.display = 'none';
+    chartContainer.style.display = 'none';
+    return;
+  }
+
+  currentSelectedTicker = ticker;
+  await loadTickerData(ticker);
+});
+
+// Load ticker data and chart
+async function loadTickerData(ticker) {
+  try {
+    showSidebarMessage('Loading price data...');
+
+    // Get price history
+    const result = await window.electronAPI.getPriceHistory(ticker, { limit: 365 });
+
+    if (!result.success) {
+      showSidebarMessage('Error: ' + result.error);
+      return;
+    }
+
+    if (result.prices.length === 0) {
+      showSidebarMessage('No price data available. Click "Fetch History" to download.');
+      latestPriceDisplay.style.display = 'none';
+      return;
+    }
+
+    hideSidebarMessage();
+
+    // Sort prices by date ascending for chart
+    const sortedPrices = result.prices.reverse();
+
+    // Display latest price
+    const latestPrice = sortedPrices[sortedPrices.length - 1];
+    displayLatestPrice(ticker, latestPrice, sortedPrices);
+
+    // Render chart
+    renderPriceChart(sortedPrices);
+
+  } catch (error) {
+    console.error('Error loading ticker data:', error);
+    showSidebarMessage('Error loading data: ' + error.message);
+  }
+}
+
+// Display latest price info
+function displayLatestPrice(ticker, latest, history) {
+  latestPriceDisplay.style.display = 'block';
+
+  document.getElementById('current-ticker-name').textContent = ticker;
+  document.getElementById('current-price').textContent = `$${Number(latest.close).toFixed(2)}`;
+  document.getElementById('price-date').textContent = `Last updated: ${latest.date}`;
+
+  // Calculate change if we have previous day
+  if (history.length >= 2) {
+    const prevPrice = history[history.length - 2].close;
+    const change = latest.close - prevPrice;
+    const changePercent = ((change / prevPrice) * 100).toFixed(2);
+
+    const priceChangeDiv = document.getElementById('price-change');
+    document.getElementById('price-change-value').textContent = `${change >= 0 ? '+' : ''}$${change.toFixed(2)}`;
+    document.getElementById('price-change-percent').textContent = `(${changePercent}%)`;
+
+    priceChangeDiv.className = 'price-change ' + (change >= 0 ? 'positive' : 'negative');
+  }
+}
+
+// Render price chart using Chart.js
+function renderPriceChart(prices) {
+  chartContainer.style.display = 'block';
+
+  const canvas = document.getElementById('price-chart');
+  const ctx = canvas.getContext('2d');
+
+  // Destroy existing chart
+  if (priceChart) {
+    priceChart.destroy();
+  }
+
+  const dates = prices.map(p => p.date);
+  const closePrices = prices.map(p => Number(p.close));
+
+  priceChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: dates,
+      datasets: [{
+        label: 'Close Price',
+        data: closePrices,
+        borderColor: '#4ec9b0',
+        backgroundColor: 'rgba(78, 201, 176, 0.1)',
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        tension: 0.1
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: false
+        },
+        tooltip: {
+          mode: 'index',
+          intersect: false,
+          backgroundColor: '#252525',
+          titleColor: '#ffffff',
+          bodyColor: '#ffffff',
+          borderColor: '#404040',
+          borderWidth: 1,
+          callbacks: {
+            label: function(context) {
+              return '$' + context.parsed.y.toFixed(2);
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          display: true,
+          ticks: {
+            color: '#808080',
+            maxTicksLimit: 8,
+            autoSkip: true
+          },
+          grid: {
+            color: '#404040',
+            drawBorder: false
+          }
+        },
+        y: {
+          display: true,
+          ticks: {
+            color: '#808080',
+            callback: function(value) {
+              return '$' + value.toFixed(0);
+            }
+          },
+          grid: {
+            color: '#404040',
+            drawBorder: false
+          }
+        }
+      },
+      interaction: {
+        mode: 'nearest',
+        axis: 'x',
+        intersect: false
+      }
+    }
+  });
+}
+
+// Add new ticker
+btnAddTicker.addEventListener('click', async () => {
+  const ticker = prompt('Enter ticker symbol (e.g., AAPL, TSLA):');
+  if (!ticker) return;
+
+  const upperTicker = ticker.toUpperCase().trim();
+
+  try {
+    const result = await window.electronAPI.addWatchedTicker(upperTicker, true);
+    if (result.success) {
+      await loadWatchedTickers();
+      tickerDropdown.value = upperTicker;
+      currentSelectedTicker = upperTicker;
+      setStatus(`Added ${upperTicker} to watchlist`);
+
+      // Automatically fetch history
+      await fetchHistory(upperTicker);
+    } else {
+      alert('Error adding ticker: ' + result.error);
+    }
+  } catch (error) {
+    alert('Error: ' + error.message);
+  }
+});
+
+// Fetch historical prices
+btnFetchHistory.addEventListener('click', async () => {
+  if (!currentSelectedTicker) {
+    alert('Please select a ticker first');
+    return;
+  }
+
+  await fetchHistory(currentSelectedTicker);
+});
+
+async function fetchHistory(ticker) {
+  try {
+    showSidebarMessage(`Fetching historical data for ${ticker}...`);
+
+    const result = await window.electronAPI.fetchHistoricalPrices(ticker, {});
+
+    if (result.success) {
+      setStatus(`Fetched ${result.count} price records for ${ticker}`);
+      await loadTickerData(ticker);
+    } else {
+      showSidebarMessage('Error: ' + result.error);
+      setTimeout(hideSidebarMessage, 3000);
+    }
+  } catch (error) {
+    showSidebarMessage('Error: ' + error.message);
+    setTimeout(hideSidebarMessage, 3000);
+  }
+}
+
+// Refresh latest price
+btnRefreshPrice.addEventListener('click', async () => {
+  if (!currentSelectedTicker) {
+    alert('Please select a ticker first');
+    return;
+  }
+
+  try {
+    setStatus(`Updating price for ${currentSelectedTicker}...`);
+    const result = await window.electronAPI.updateLatestPrice(currentSelectedTicker);
+
+    if (result.success) {
+      setStatus(`Updated ${currentSelectedTicker}`);
+      await loadTickerData(currentSelectedTicker);
+    } else {
+      alert('Error updating price: ' + (result.error || result.message));
+    }
+  } catch (error) {
+    alert('Error: ' + error.message);
+  }
+});
+
+// Remove ticker from watchlist
+btnRemoveTicker.addEventListener('click', async () => {
+  if (!currentSelectedTicker) {
+    alert('Please select a ticker first');
+    return;
+  }
+
+  if (!confirm(`Remove ${currentSelectedTicker} from watchlist?`)) {
+    return;
+  }
+
+  try {
+    const result = await window.electronAPI.removeWatchedTicker(currentSelectedTicker);
+    if (result.success) {
+      setStatus(`Removed ${currentSelectedTicker} from watchlist`);
+      currentSelectedTicker = null;
+      latestPriceDisplay.style.display = 'none';
+      chartContainer.style.display = 'none';
+      await loadWatchedTickers();
+    } else {
+      alert('Error removing ticker: ' + result.error);
+    }
+  } catch (error) {
+    alert('Error: ' + error.message);
+  }
+});
+
+// Helper functions for sidebar messages
+function showSidebarMessage(message) {
+  sidebarMessageText.textContent = message;
+  sidebarMessage.style.display = 'block';
+  chartContainer.style.display = 'none';
+  latestPriceDisplay.style.display = 'none';
+}
+
+function hideSidebarMessage() {
+  sidebarMessage.style.display = 'none';
+}
 
 // Initialize
 (async () => {

@@ -411,6 +411,63 @@
       </div>
     </div>
 
+    <!-- Stock Price Tracking -->
+    <div class="section">
+      <h2>Stock Price Tracking</h2>
+
+      <!-- Price Statistics -->
+      <h3 style="margin-bottom: 15px; color: #cccccc;">Price Data Statistics</h3>
+      <div class="stats">
+        <div class="stat-card stat-blue">
+          <div class="stat-value" id="stat-total-prices">0</div>
+          <div class="stat-label">Total Price Records</div>
+        </div>
+        <div class="stat-card stat-green">
+          <div class="stat-value" id="stat-price-tickers">0</div>
+          <div class="stat-label">Tickers with Prices</div>
+        </div>
+        <div class="stat-card stat-purple">
+          <div class="stat-value" id="stat-watched-tickers">0</div>
+          <div class="stat-label">Watched Tickers</div>
+        </div>
+        <div class="stat-card stat-orange">
+          <div class="stat-value" id="stat-price-date-range">-</div>
+          <div class="stat-label">Date Range</div>
+        </div>
+      </div>
+
+      <!-- Auto-Polling Configuration -->
+      <h3 style="margin-top: 30px; margin-bottom: 15px; color: #cccccc;">Automatic Price Updates</h3>
+      <div class="form-group">
+        <label>
+          <input type="checkbox" id="auto-polling-enabled" style="width: auto; height: auto; margin-right: 8px;">
+          Enable automatic price updates
+        </label>
+        <small>Automatically fetch latest prices for watched tickers in the background</small>
+      </div>
+
+      <div class="form-group">
+        <label for="polling-interval">Update Interval (minutes)</label>
+        <select id="polling-interval">
+          <option value="5">Every 5 minutes</option>
+          <option value="15" selected>Every 15 minutes (recommended)</option>
+          <option value="30">Every 30 minutes</option>
+          <option value="60">Every hour</option>
+        </select>
+        <small>How often to check for price updates. Lower intervals may hit API rate limits.</small>
+      </div>
+
+      <div class="button-group">
+        <button class="btn-primary" id="btn-save-polling">Save Settings</button>
+        <button class="btn-secondary" id="btn-refresh-all-prices">Refresh All Prices Now</button>
+      </div>
+
+      <!-- Polling Status -->
+      <div id="polling-status" style="margin-top: 20px; padding: 12px; background: #1e1e1e; border: 1px solid #404040; border-radius: 4px; color: #cccccc; font-size: 14px;">
+        Status: <span id="polling-status-text">Loading...</span>
+      </div>
+    </div>
+
     <!-- News Volume Tracking -->
     <div class="section">
       <h2>Recent News Volume Counts</h2>
@@ -728,9 +785,104 @@
       return div.innerHTML;
     }
 
+    // === Price Tracking Functions ===
+
+    // Load price statistics
+    async function loadPriceStats() {
+      try {
+        const result = await window.electronAPI.getPriceStats();
+        if (result.success) {
+          const stats = result.stats;
+          document.getElementById('stat-total-prices').textContent = stats.totalPrices.toLocaleString();
+          document.getElementById('stat-price-tickers').textContent = stats.uniqueTickers.toLocaleString();
+          document.getElementById('stat-watched-tickers').textContent = stats.watchedCount.toLocaleString();
+
+          if (stats.earliestDate && stats.latestDate) {
+            const earliest = stats.earliestDate.split('T')[0];
+            const latest = stats.latestDate.split('T')[0];
+            document.getElementById('stat-price-date-range').textContent = `${earliest} to ${latest}`;
+          } else {
+            document.getElementById('stat-price-date-range').textContent = 'No data';
+          }
+        }
+      } catch (error) {
+        console.error('Error loading price stats:', error);
+      }
+    }
+
+    // Load polling status and settings
+    async function loadPollingSettings() {
+      try {
+        const statusResult = await window.electronAPI.getPollingStatus();
+        if (statusResult.success) {
+          document.getElementById('auto-polling-enabled').checked = statusResult.isActive;
+          document.getElementById('polling-interval').value = statusResult.intervalMinutes.toString();
+
+          const statusText = statusResult.isActive ?
+            `Active (updating every ${statusResult.intervalMinutes} minutes)` :
+            'Inactive';
+          document.getElementById('polling-status-text').textContent = statusText;
+        }
+      } catch (error) {
+        console.error('Error loading polling settings:', error);
+      }
+    }
+
+    // Save polling settings
+    document.getElementById('btn-save-polling').addEventListener('click', async () => {
+      try {
+        const enabled = document.getElementById('auto-polling-enabled').checked;
+        const interval = parseInt(document.getElementById('polling-interval').value);
+
+        const result = await window.electronAPI.togglePricePolling(enabled, interval);
+
+        if (result.success) {
+          showMessage(`Price polling ${enabled ? 'enabled' : 'disabled'} successfully`, 'success');
+          await loadPollingSettings();
+        } else {
+          showMessage('Error saving settings: ' + result.error, 'error');
+        }
+      } catch (error) {
+        showMessage('Error: ' + error.message, 'error');
+      }
+    });
+
+    // Refresh all prices now
+    document.getElementById('btn-refresh-all-prices').addEventListener('click', async () => {
+      try {
+        showMessage('Refreshing prices for all watched tickers...', 'info');
+
+        const watchedResult = await window.electronAPI.getWatchedTickers(false);
+        if (!watchedResult.success) {
+          showMessage('Error getting watched tickers: ' + watchedResult.error, 'error');
+          return;
+        }
+
+        if (watchedResult.tickers.length === 0) {
+          showMessage('No watched tickers to update', 'info');
+          return;
+        }
+
+        let successCount = 0;
+        for (const ticker of watchedResult.tickers) {
+          const result = await window.electronAPI.updateLatestPrice(ticker.ticker);
+          if (result.success) {
+            successCount++;
+          }
+        }
+
+        showMessage(`Updated ${successCount} of ${watchedResult.tickers.length} tickers`, 'success');
+        await loadPriceStats();
+      } catch (error) {
+        showMessage('Error refreshing prices: ' + error.message, 'error');
+      }
+    });
+
     // Initialize
     (async () => {
       await loadStats();
+      await loadPriceStats();
+      await loadPollingSettings();
     })();
   </script>
 </body>

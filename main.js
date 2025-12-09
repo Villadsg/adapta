@@ -1,11 +1,13 @@
 const { app, BrowserWindow, BrowserView, ipcMain } = require('electron');
 const path = require('path');
 const ArticleDatabase = require('./src/services/database');
+const PriceTrackingService = require('./src/services/priceTracking');
 const articleExtractor = require('./src/services/articleExtractor');
 const newsScraper = require('./src/services/newsScraper');
 
 let mainWindow;
 let database;
+let priceTracker;
 
 // Tab management
 const tabs = new Map(); // tabId -> BrowserView
@@ -588,6 +590,136 @@ ipcMain.handle('record-news-count', async (event) => {
   }
 });
 
+// === Stock Price Tracking Handlers ===
+
+// Fetch and save historical prices for a ticker
+ipcMain.handle('fetch-historical-prices', async (event, ticker, options = {}) => {
+  try {
+    const result = await priceTracker.fetchAndSaveHistoricalPrices(ticker, options);
+    return result;
+  } catch (error) {
+    console.error('Error fetching historical prices:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Get price history from database
+ipcMain.handle('get-price-history', async (event, ticker, options = {}) => {
+  try {
+    const prices = await database.getPriceHistory(ticker, options);
+    return { success: true, prices };
+  } catch (error) {
+    console.error('Error getting price history:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Get latest price for a ticker
+ipcMain.handle('get-latest-price', async (event, ticker) => {
+  try {
+    const price = await database.getLatestPrice(ticker);
+    return { success: true, price };
+  } catch (error) {
+    console.error('Error getting latest price:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Add ticker to watchlist
+ipcMain.handle('add-watched-ticker', async (event, ticker, autoUpdate = true) => {
+  try {
+    const result = await database.addWatchedTicker(ticker, autoUpdate);
+    return { success: true, ticker: result };
+  } catch (error) {
+    console.error('Error adding watched ticker:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Remove ticker from watchlist
+ipcMain.handle('remove-watched-ticker', async (event, ticker) => {
+  try {
+    await database.removeWatchedTicker(ticker);
+    return { success: true };
+  } catch (error) {
+    console.error('Error removing watched ticker:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Get all watched tickers
+ipcMain.handle('get-watched-tickers', async (event, autoUpdateOnly = false) => {
+  try {
+    const tickers = await database.getWatchedTickers(autoUpdateOnly);
+    return { success: true, tickers };
+  } catch (error) {
+    console.error('Error getting watched tickers:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Check if ticker is watched
+ipcMain.handle('is-ticker-watched', async (event, ticker) => {
+  try {
+    const isWatched = await database.isTickerWatched(ticker);
+    return { success: true, isWatched };
+  } catch (error) {
+    console.error('Error checking if ticker is watched:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Get price statistics
+ipcMain.handle('get-price-stats', async (event) => {
+  try {
+    const stats = await database.getPriceStats();
+    return { success: true, stats };
+  } catch (error) {
+    console.error('Error getting price stats:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Start/stop price polling
+ipcMain.handle('toggle-price-polling', async (event, enabled, intervalMinutes = 15) => {
+  try {
+    if (enabled) {
+      priceTracker.startPolling(intervalMinutes);
+      await database.setSetting('price_auto_polling', 'true');
+      await database.setSetting('price_polling_interval', intervalMinutes.toString());
+    } else {
+      priceTracker.stopPolling();
+      await database.setSetting('price_auto_polling', 'false');
+    }
+    return { success: true, enabled, intervalMinutes };
+  } catch (error) {
+    console.error('Error toggling price polling:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Get polling status
+ipcMain.handle('get-polling-status', async (event) => {
+  try {
+    const status = priceTracker.getPollingStatus();
+    return { success: true, ...status };
+  } catch (error) {
+    console.error('Error getting polling status:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Update latest price for a ticker (manual refresh)
+ipcMain.handle('update-latest-price', async (event, ticker) => {
+  try {
+    const result = await priceTracker.updateLatestPrice(ticker);
+    return result;
+  } catch (error) {
+    console.error('Error updating latest price:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Window control handlers
 ipcMain.handle('window-minimize', async (event) => {
   mainWindow.minimize();
@@ -627,10 +759,26 @@ app.whenReady().then(async () => {
     console.error('Failed to initialize database:', error);
   }
 
+  // Initialize price tracker
+  priceTracker = new PriceTrackingService(database);
+
+  // Check if auto-polling is enabled in settings
+  const autoPolling = await database.getSetting('price_auto_polling', 'false');
+  const pollingInterval = await database.getSetting('price_polling_interval', '15');
+
+  if (autoPolling === 'true') {
+    priceTracker.startPolling(parseInt(pollingInterval));
+  }
+
   createWindow();
 });
 
 app.on('window-all-closed', async () => {
+  // Stop price polling
+  if (priceTracker) {
+    priceTracker.stopPolling();
+  }
+
   // Close database connection
   if (database) {
     await database.close();
