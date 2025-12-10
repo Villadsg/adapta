@@ -572,7 +572,7 @@ class ArticleDatabase {
     let sql = `
       SELECT id, url, title, category, domain, saved_at, word_count, published_date, tickers
       FROM articles
-      WHERE list_contains(tickers, ?)
+      WHERE (list_contains(tickers, ?) OR list_contains(tickers, '*'))
     `;
 
     const params = [ticker];

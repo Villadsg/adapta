@@ -1,6 +1,7 @@
 // Get DOM elements
 const urlBar = document.getElementById('url-bar');
 const tickerInput = document.getElementById('ticker-input');
+const allStocksCheckbox = document.getElementById('all-stocks-checkbox');
 const btnBack = document.getElementById('btn-back');
 const btnForward = document.getElementById('btn-forward');
 const btnReload = document.getElementById('btn-reload');
@@ -30,6 +31,35 @@ const latestPriceDisplay = document.getElementById('latest-price-display');
 const sidebarMessage = document.getElementById('sidebar-message');
 const sidebarMessageText = document.getElementById('sidebar-message-text');
 const chartContainer = document.getElementById('chart-container');
+const toastContainer = document.getElementById('toast-container');
+
+// Toast notification function
+function showToast(title, message, type = 'success', duration = 3000) {
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+
+  const icons = {
+    success: '✓',
+    error: '✕',
+    info: 'ℹ'
+  };
+
+  toast.innerHTML = `
+    <span class="toast-icon">${icons[type] || icons.info}</span>
+    <div class="toast-content">
+      <div class="toast-title">${title}</div>
+      <div class="toast-message">${message}</div>
+    </div>
+  `;
+
+  toastContainer.appendChild(toast);
+
+  // Auto-remove after duration
+  setTimeout(() => {
+    toast.classList.add('hiding');
+    setTimeout(() => toast.remove(), 300);
+  }, duration);
+}
 
 // Tab management
 let currentTabId = null;
@@ -143,30 +173,56 @@ function updateTabUrl(tabId, url) {
   }
 }
 
-// Navigation event handlers
-btnBack.addEventListener('click', async () => {
-  await window.electronAPI.goBack();
+// Navigation event handlers (fire-and-forget for faster response)
+btnBack.addEventListener('click', () => {
+  window.electronAPI.goBack();
 });
 
-btnForward.addEventListener('click', async () => {
-  await window.electronAPI.goForward();
+btnForward.addEventListener('click', () => {
+  window.electronAPI.goForward();
 });
 
-btnReload.addEventListener('click', async () => {
-  await window.electronAPI.reload();
+btnReload.addEventListener('click', () => {
+  window.electronAPI.reload();
 });
+
+// Check if input looks like a URL
+function isUrl(input) {
+  // Has protocol
+  if (/^https?:\/\//i.test(input)) return true;
+  // Has common TLD pattern (e.g., example.com, site.org)
+  if (/^[a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,}(\/|$)/.test(input)) return true;
+  // localhost or IP address
+  if (/^(localhost|(\d{1,3}\.){3}\d{1,3})(:\d+)?(\/|$)/.test(input)) return true;
+  return false;
+}
 
 // URL bar navigation
 urlBar.addEventListener('keypress', async (e) => {
   if (e.key === 'Enter') {
-    const url = urlBar.value.trim();
-    if (url) {
+    const input = urlBar.value.trim();
+    if (input) {
       setStatus('Navigating...');
+
+      let url;
+      if (isUrl(input)) {
+        // It's a URL - navigate directly
+        url = input;
+      } else {
+        // It's a search query - use DuckDuckGo
+        url = `https://duckduckgo.com/?q=${encodeURIComponent(input)}`;
+      }
+
       const finalUrl = await window.electronAPI.navigateToUrl(url);
       urlBar.value = finalUrl;
       setStatus('Ready');
     }
   }
+});
+
+// Select all text when URL bar is focused
+urlBar.addEventListener('focus', () => {
+  urlBar.select();
 });
 
 // Save article as 'stock_news' with similarity analysis first
@@ -236,15 +292,22 @@ async function saveStockNews() {
     analysisText.style.color = '#2196f3';
     analysisText.style.display = 'inline';
 
-    // Step 3: Parse manual tickers from input field
-    const manualTickersInput = tickerInput.value.trim();
-    const manualTickers = manualTickersInput
-      ? manualTickersInput.split(/[\s,]+/).map(t => t.toUpperCase()).filter(t => t.length > 0)
-      : [];
+    // Step 3: Determine tickers - either "all stocks" or manual/auto tickers
+    let tickersToSave;
+    if (allStocksCheckbox.checked) {
+      // "All stocks" mode - use special marker
+      tickersToSave = ['*'];
+    } else {
+      // Parse manual tickers from input field
+      const manualTickersInput = tickerInput.value.trim();
+      tickersToSave = manualTickersInput
+        ? manualTickersInput.split(/[\s,]+/).map(t => t.toUpperCase()).filter(t => t.length > 0)
+        : [];
+    }
 
-    // Step 4: Save the article as 'stock_news' with merged tickers
+    // Step 4: Save the article as 'stock_news' with tickers
     btnAnalyze.textContent = '💾 Saving...';
-    const saveResult = await window.electronAPI.saveArticle('stock_news', manualTickers);
+    const saveResult = await window.electronAPI.saveArticle('stock_news', tickersToSave);
 
     if (!saveResult.success) {
       analysisText.textContent = `Error saving: ${saveResult.error}`;
@@ -259,7 +322,9 @@ async function saveStockNews() {
     const article = saveResult.article;
     let successMsg = `✓ Saved: ${article.title}`;
     if (article.tickers && article.tickers.length > 0) {
-      successMsg += ` [${article.tickers.join(', ')}]`;
+      // Show "All Stocks" instead of "*"
+      const tickerDisplay = article.tickers.includes('*') ? 'All Stocks' : article.tickers.join(', ');
+      successMsg += ` [${tickerDisplay}]`;
     }
     if (article.publishedDate) {
       const date = new Date(article.publishedDate);
@@ -270,8 +335,13 @@ async function saveStockNews() {
     analysisText.style.color = '#4caf50'; // Green for success
     analysisText.style.display = 'inline';
 
-    // Clear ticker input after successful save
+    // Show toast notification
+    const tickerDisplay = article.tickers?.includes('*') ? 'All Stocks' : (article.tickers?.join(', ') || 'No tickers');
+    showToast('Article Saved', `${article.title.substring(0, 50)}${article.title.length > 50 ? '...' : ''} [${tickerDisplay}]`, 'success');
+
+    // Clear inputs after successful save
     tickerInput.value = '';
+    allStocksCheckbox.checked = false;
 
     // Update stats
     await updateStats();
@@ -418,6 +488,9 @@ async function saveArticle(category) {
     let statusMsg = `✓ Marked as "Not Good": ${article.title}`;
 
     setStatus(statusMsg, 'success');
+
+    // Show toast notification
+    showToast('Marked as Not Good', `${article.title.substring(0, 50)}${article.title.length > 50 ? '...' : ''}`, 'info');
 
     // Update stats
     await updateStats();

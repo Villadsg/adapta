@@ -35,10 +35,6 @@
 
     <!-- Action buttons -->
     <div class="action-controls">
-      <input type="text" id="ticker-input" placeholder="Add tickers (e.g. AAPL, TSLA)" title="Add or override stock tickers" />
-      <button id="btn-analyze" class="action-btn btn-analyze">📈 Save Stock News</button>
-      <button id="btn-count-news" class="action-btn btn-count-news">📊 Count News</button>
-      <button id="btn-not-good" class="action-btn btn-not-good">Mark as "Not Good"</button>
       <button id="btn-stock-prices" class="action-btn btn-stock-prices">💹 Stock Prices</button>
       <button id="btn-settings" class="action-btn btn-settings">⚙️ Settings</button>
     </div>
@@ -96,10 +92,23 @@
 
   <!-- The browser view will be positioned here by Electron -->
 
-  <!-- Analysis results bar (below browser content) -->
+  <!-- Toast notification -->
+  <div id="toast-container"></div>
+
+  <!-- Bottom bar with ticker input, action buttons, and stats -->
   <div id="analysis-bar">
-    <span id="stats-text-bottom">Not Good: 0</span>
+    <div class="bottom-bar-left">
+      <label class="all-stocks-label" title="Save as market-wide news (applies to all stocks)">
+        <input type="checkbox" id="all-stocks-checkbox" />
+        All
+      </label>
+      <input type="text" id="ticker-input" placeholder="Tickers (e.g. AAPL, TSLA)" title="Add or override stock tickers" />
+      <button id="btn-analyze" class="action-btn-sm btn-analyze">📈 Save Stock News</button>
+      <button id="btn-count-news" class="action-btn-sm btn-count-news">📊 Count News</button>
+      <button id="btn-not-good" class="action-btn-sm btn-not-good">Not Good</button>
+    </div>
     <span id="analysis-text" style="display: none;"></span>
+    <span id="stats-text-bottom">Not Good: 0</span>
   </div>
 
   <script src="renderer.js"></script>

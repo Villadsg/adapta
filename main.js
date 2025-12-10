@@ -73,7 +73,7 @@ function updateBrowserViewBounds(browserView) {
     x: 0,
     y: 96, // Space for tab bar (36px) + toolbar (60px)
     width: width,
-    height: height - 124 // 96 (top bars) + 28 (analysis bar at bottom)
+    height: height - 136 // 96 (top bars) + 28 (analysis bar at bottom)
   });
 }
 
@@ -149,11 +149,11 @@ function createTab(url = 'https://finance.yahoo.com') {
       clearTimeout(navigationDebounceTimers.get(tabId));
     }
 
-    // Debounce: only send after 50ms of no new events
+    // Debounce: only send after 10ms of no new events (reduced from 50ms for faster response)
     const timer = setTimeout(() => {
       mainWindow.webContents.send('url-changed', { tabId, url, title });
       navigationDebounceTimers.delete(tabId);
-    }, 50);
+    }, 10);
 
     navigationDebounceTimers.set(tabId, timer);
   }
