@@ -35,62 +35,74 @@
 
     <!-- Action buttons -->
     <div class="action-controls">
-      <button id="btn-stock-prices" class="action-btn btn-stock-prices">💹 Stock Prices</button>
+      <button id="btn-analyze-events" class="action-btn btn-analyze-events">📊 Analyze Events</button>
       <button id="btn-settings" class="action-btn btn-settings">⚙️ Settings</button>
     </div>
   </div>
 
-  <!-- Stock Price Sidebar -->
-  <div id="stock-sidebar" class="stock-sidebar">
-    <div class="sidebar-header">
-      <h3>Stock Prices</h3>
-      <button id="sidebar-close" class="sidebar-close-btn">×</button>
-    </div>
+  <!-- The browser view will be positioned here by Electron -->
 
-    <div class="sidebar-content">
-      <!-- Ticker Selection -->
-      <div class="ticker-selector">
-        <select id="ticker-dropdown" class="ticker-dropdown">
-          <option value="">Select a ticker...</option>
-        </select>
-        <button id="btn-add-ticker" class="btn-sm" title="Add new ticker to watchlist">+</button>
-      </div>
-
-      <!-- Latest Price Display -->
-      <div id="latest-price-display" class="latest-price-display" style="display: none;">
-        <div class="price-main">
-          <span class="ticker-name" id="current-ticker-name">-</span>
-          <span class="price-value" id="current-price">$0.00</span>
+  <!-- Stock Analysis Modal -->
+  <div id="analysis-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <h3>Analyze Stock Events</h3>
+      <p>Configure analysis parameters for price events.</p>
+      <div class="modal-form">
+        <div class="form-row">
+          <label for="analysis-ticker-input">Stock Ticker</label>
+          <input type="text" id="analysis-ticker-input" placeholder="e.g., NVDA, AAPL, TSLA" autofocus />
         </div>
-        <div class="price-change" id="price-change">
-          <span id="price-change-value">$0.00</span>
-          <span id="price-change-percent">(0.00%)</span>
+        <div class="form-row">
+          <label for="analysis-benchmark-input">Market Benchmark</label>
+          <input type="text" id="analysis-benchmark-input" placeholder="e.g., SPY, QQQ" value="SPY" />
         </div>
-        <div class="price-meta">
-          <span id="price-date">Last updated: -</span>
+        <div class="form-row-inline">
+          <div class="form-field">
+            <label for="analysis-days-input">Days</label>
+            <input type="number" id="analysis-days-input" placeholder="1700" value="1700" min="30" max="5000" />
+          </div>
+          <div class="form-field">
+            <label for="analysis-events-input">Min Events</label>
+            <input type="number" id="analysis-events-input" placeholder="15" value="15" min="1" max="100" />
+          </div>
+        </div>
+        <div class="form-row-checkbox">
+          <label class="checkbox-label">
+            <input type="checkbox" id="analysis-fetch-news" checked />
+            <span>Fetch Yahoo Finance news</span>
+            <span class="checkbox-hint">(slower, but finds related articles with similarity scores)</span>
+          </label>
+        </div>
+        <div class="form-row-checkbox">
+          <label class="checkbox-label">
+            <input type="checkbox" id="analysis-add-watchlist" checked />
+            <span>Add to watchlist</span>
+            <span class="checkbox-hint">(enables automatic news harvesting for this ticker)</span>
+          </label>
         </div>
       </div>
 
-      <!-- Chart Container -->
-      <div id="chart-container" class="chart-container">
-        <canvas id="price-chart"></canvas>
+      <!-- Watchlist Section -->
+      <div class="watchlist-section">
+        <div class="watchlist-header">
+          <h4>Watched Tickers</h4>
+          <span id="corpus-stats" class="corpus-stats"></span>
+        </div>
+        <div id="watchlist-container" class="watchlist-container">
+          <span class="watchlist-empty">No tickers in watchlist</span>
+        </div>
+        <div class="harvester-controls">
+          <button id="btn-harvest-now" class="btn-harvest" title="Manually trigger news collection">🔄 Harvest Now</button>
+          <span id="harvester-status" class="harvester-status"></span>
+        </div>
       </div>
 
-      <!-- Loading/Error States -->
-      <div id="sidebar-message" class="sidebar-message" style="display: none;">
-        <p id="sidebar-message-text">Loading...</p>
-      </div>
-
-      <!-- Actions -->
-      <div class="sidebar-actions">
-        <button id="btn-refresh-price" class="btn-sm">🔄 Refresh</button>
-        <button id="btn-fetch-history" class="btn-sm">📥 Fetch History</button>
-        <button id="btn-remove-ticker" class="btn-sm btn-danger">🗑️ Remove</button>
+      <div class="modal-buttons">
+        <button id="modal-cancel" class="btn-modal btn-cancel">Cancel</button>
+        <button id="modal-analyze" class="btn-modal btn-primary">Analyze</button>
       </div>
     </div>
   </div>
-
-  <!-- The browser view will be positioned here by Electron -->
 
   <!-- Toast notification -->
   <div id="toast-container"></div>

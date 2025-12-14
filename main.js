@@ -2,12 +2,16 @@ const { app, BrowserWindow, BrowserView, ipcMain } = require('electron');
 const path = require('path');
 const ArticleDatabase = require('./src/services/database');
 const PriceTrackingService = require('./src/services/priceTracking');
+const StockAnalysisService = require('./src/services/stockAnalysis');
+const NewsHarvesterService = require('./src/services/newsHarvester');
 const articleExtractor = require('./src/services/articleExtractor');
 const newsScraper = require('./src/services/newsScraper');
 
 let mainWindow;
 let database;
 let priceTracker;
+let stockAnalyzer;
+let newsHarvester;
 
 // Tab management
 const tabs = new Map(); // tabId -> BrowserView
@@ -83,6 +87,7 @@ function createTab(url = 'https://finance.yahoo.com') {
 
   const browserView = new BrowserView({
     webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false
     }
@@ -720,6 +725,95 @@ ipcMain.handle('update-latest-price', async (event, ticker) => {
   }
 });
 
+// Analyze stock events
+ipcMain.handle('analyze-stock-events', async (event, ticker, options = {}) => {
+  try {
+    const {
+      benchmark = 'SPY',
+      days = 1700,
+      minEvents = 15,
+      fetchNews = true,
+      newsDayRange = 1,
+      maxArticles = 10
+    } = options;
+
+    console.log(`\nAnalyzing stock events for ${ticker}...`);
+    console.log(`Options: benchmark=${benchmark}, days=${days}, minEvents=${minEvents}, fetchNews=${fetchNews}`);
+
+    // Run analysis pipeline
+    const result = await stockAnalyzer.analyzeStock(ticker, {
+      benchmark,
+      days,
+      minEvents,
+    });
+
+    let newsArticlesFetched = 0;
+
+    // Fetch news from Yahoo Finance if enabled
+    if (fetchNews && result.events.length > 0) {
+      console.log(`\nFetching Yahoo Finance news for events...`);
+      await stockAnalyzer.fetchEventNews(result.events, ticker, {
+        dayRange: newsDayRange,
+        maxArticlesPerEvent: maxArticles
+      });
+
+      // Count fetched articles
+      newsArticlesFetched = result.events.reduce(
+        (sum, e) => sum + (e.fetchedArticles?.length || 0), 0
+      );
+    }
+
+    // Find related articles from existing DB for each event
+    console.log(`\nFinding related articles for ${result.events.length} events...`);
+    for (const eventData of result.events) {
+      // Get existing DB articles
+      const existingArticles = await stockAnalyzer.findRelatedArticles(
+        eventData.date,
+        ticker,
+        3
+      );
+
+      // Merge with fetched articles, avoiding duplicates
+      const allArticles = [...existingArticles];
+      if (eventData.fetchedArticles) {
+        for (const fetched of eventData.fetchedArticles) {
+          if (!allArticles.find(a => a.url === fetched.url)) {
+            allArticles.push(fetched);
+          }
+        }
+      }
+
+      // Calculate similarities between articles
+      eventData.articles = await stockAnalyzer.calculateArticleSimilarities(allArticles);
+    }
+
+    // Generate HTML report
+    const html = stockAnalyzer.generateAnalysisHTML(
+      result.data,
+      result.events,
+      ticker
+    );
+
+    console.log(`\nAnalysis complete: ${result.events.length} events found`);
+    if (fetchNews) {
+      console.log(`News articles fetched: ${newsArticlesFetched}`);
+    }
+
+    return {
+      success: true,
+      html,
+      eventCount: result.events.length,
+      stats: {
+        ...result.stats,
+        newsArticlesFetched
+      },
+    };
+  } catch (error) {
+    console.error('Error analyzing stock events:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Window control handlers
 ipcMain.handle('window-minimize', async (event) => {
   mainWindow.minimize();
@@ -737,6 +831,26 @@ ipcMain.handle('window-close', async (event) => {
   mainWindow.close();
 });
 
+// Modal support - hide/show BrowserView so modal can be seen
+ipcMain.handle('show-modal', async (event) => {
+  if (activeTabId) {
+    const browserView = tabs.get(activeTabId);
+    if (browserView) {
+      mainWindow.removeBrowserView(browserView);
+    }
+  }
+});
+
+ipcMain.handle('hide-modal', async (event) => {
+  if (activeTabId) {
+    const browserView = tabs.get(activeTabId);
+    if (browserView) {
+      mainWindow.setBrowserView(browserView);
+      updateBrowserViewBounds(browserView);
+    }
+  }
+});
+
 // Get embedding statistics
 ipcMain.handle('get-embedding-stats', async (event) => {
   try {
@@ -745,6 +859,70 @@ ipcMain.handle('get-embedding-stats', async (event) => {
   } catch (error) {
     console.error('Error getting embedding stats:', error);
     return { error: error.message };
+  }
+});
+
+// === News Harvester Handlers ===
+
+// Start/stop news harvester
+ipcMain.handle('toggle-news-harvester', async (event, enabled, intervalMinutes = 60) => {
+  try {
+    if (enabled) {
+      newsHarvester.start({ intervalMinutes, runImmediately: false });
+      await database.setSetting('news_harvester_enabled', 'true');
+      await database.setSetting('news_harvester_interval', intervalMinutes.toString());
+    } else {
+      newsHarvester.stop();
+      await database.setSetting('news_harvester_enabled', 'false');
+    }
+    return { success: true, enabled, intervalMinutes };
+  } catch (error) {
+    console.error('Error toggling news harvester:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Get harvester status
+ipcMain.handle('get-harvester-status', async (event) => {
+  try {
+    const status = newsHarvester.getStatus();
+    return { success: true, ...status };
+  } catch (error) {
+    console.error('Error getting harvester status:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Manually trigger a harvest
+ipcMain.handle('trigger-harvest', async (event) => {
+  try {
+    const results = await newsHarvester.harvest();
+    return { success: true, results };
+  } catch (error) {
+    console.error('Error triggering harvest:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Harvest specific tickers
+ipcMain.handle('harvest-tickers', async (event, tickers) => {
+  try {
+    const results = await newsHarvester.harvestTickers(tickers);
+    return { success: true, results };
+  } catch (error) {
+    console.error('Error harvesting tickers:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Get corpus statistics
+ipcMain.handle('get-corpus-stats', async (event) => {
+  try {
+    const stats = await database.getCorpusStats();
+    return { success: true, stats };
+  } catch (error) {
+    console.error('Error getting corpus stats:', error);
+    return { success: false, error: error.message };
   }
 });
 
@@ -762,12 +940,29 @@ app.whenReady().then(async () => {
   // Initialize price tracker
   priceTracker = new PriceTrackingService(database);
 
+  // Initialize stock analyzer
+  stockAnalyzer = new StockAnalysisService(database);
+
+  // Initialize news harvester
+  newsHarvester = new NewsHarvesterService(database);
+
   // Check if auto-polling is enabled in settings
   const autoPolling = await database.getSetting('price_auto_polling', 'false');
   const pollingInterval = await database.getSetting('price_polling_interval', '15');
 
   if (autoPolling === 'true') {
     priceTracker.startPolling(parseInt(pollingInterval));
+  }
+
+  // Check if news harvester is enabled in settings
+  const harvesterEnabled = await database.getSetting('news_harvester_enabled', 'false');
+  const harvesterInterval = await database.getSetting('news_harvester_interval', '60');
+
+  if (harvesterEnabled === 'true') {
+    newsHarvester.start({
+      intervalMinutes: parseInt(harvesterInterval),
+      runImmediately: false // Don't run immediately on startup, wait for first interval
+    });
   }
 
   createWindow();
@@ -777,6 +972,11 @@ app.on('window-all-closed', async () => {
   // Stop price polling
   if (priceTracker) {
     priceTracker.stopPolling();
+  }
+
+  // Stop news harvester
+  if (newsHarvester) {
+    newsHarvester.stop();
   }
 
   // Close database connection

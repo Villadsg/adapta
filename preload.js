@@ -45,6 +45,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getPollingStatus: () => ipcRenderer.invoke('get-polling-status'),
   updateLatestPrice: (ticker) => ipcRenderer.invoke('update-latest-price', ticker),
 
+  // Stock event analysis
+  analyzeStockEvents: (ticker, options) => ipcRenderer.invoke('analyze-stock-events', ticker, options),
+
+  // News harvester
+  toggleNewsHarvester: (enabled, intervalMinutes) => ipcRenderer.invoke('toggle-news-harvester', enabled, intervalMinutes),
+  getHarvesterStatus: () => ipcRenderer.invoke('get-harvester-status'),
+  triggerHarvest: () => ipcRenderer.invoke('trigger-harvest'),
+  harvestTickers: (tickers) => ipcRenderer.invoke('harvest-tickers', tickers),
+  getCorpusStats: () => ipcRenderer.invoke('get-corpus-stats'),
+
+  // Modal support (hide/show BrowserView)
+  showModal: () => ipcRenderer.invoke('show-modal'),
+  hideModal: () => ipcRenderer.invoke('hide-modal'),
+
   // Get current state
   getCurrentUrl: () => ipcRenderer.invoke('get-current-url'),
 

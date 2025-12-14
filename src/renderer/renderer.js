@@ -8,7 +8,7 @@ const btnReload = document.getElementById('btn-reload');
 const btnAnalyze = document.getElementById('btn-analyze');
 const btnCountNews = document.getElementById('btn-count-news');
 const btnNotGood = document.getElementById('btn-not-good');
-const btnStockPrices = document.getElementById('btn-stock-prices');
+const btnAnalyzeEvents = document.getElementById('btn-analyze-events');
 const btnSettings = document.getElementById('btn-settings');
 const statsText = document.getElementById('stats-text-bottom');
 const analysisBar = document.getElementById('analysis-bar');
@@ -18,20 +18,24 @@ const btnNewTab = document.getElementById('btn-new-tab');
 const btnMinimize = document.getElementById('btn-minimize');
 const btnMaximize = document.getElementById('btn-maximize');
 const btnClose = document.getElementById('btn-close');
-
-// Stock sidebar elements
-const stockSidebar = document.getElementById('stock-sidebar');
-const sidebarClose = document.getElementById('sidebar-close');
-const tickerDropdown = document.getElementById('ticker-dropdown');
-const btnAddTicker = document.getElementById('btn-add-ticker');
-const btnRefreshPrice = document.getElementById('btn-refresh-price');
-const btnFetchHistory = document.getElementById('btn-fetch-history');
-const btnRemoveTicker = document.getElementById('btn-remove-ticker');
-const latestPriceDisplay = document.getElementById('latest-price-display');
-const sidebarMessage = document.getElementById('sidebar-message');
-const sidebarMessageText = document.getElementById('sidebar-message-text');
-const chartContainer = document.getElementById('chart-container');
 const toastContainer = document.getElementById('toast-container');
+
+// Modal elements
+const analysisModal = document.getElementById('analysis-modal');
+const analysisTickerInput = document.getElementById('analysis-ticker-input');
+const analysisBenchmarkInput = document.getElementById('analysis-benchmark-input');
+const analysisDaysInput = document.getElementById('analysis-days-input');
+const analysisEventsInput = document.getElementById('analysis-events-input');
+const analysisFetchNewsCheckbox = document.getElementById('analysis-fetch-news');
+const analysisAddWatchlistCheckbox = document.getElementById('analysis-add-watchlist');
+const modalCancel = document.getElementById('modal-cancel');
+const modalAnalyze = document.getElementById('modal-analyze');
+
+// Watchlist elements
+const watchlistContainer = document.getElementById('watchlist-container');
+const corpusStats = document.getElementById('corpus-stats');
+const btnHarvestNow = document.getElementById('btn-harvest-now');
+const harvesterStatus = document.getElementById('harvester-status');
 
 // Toast notification function
 function showToast(title, message, type = 'success', duration = 3000) {
@@ -202,8 +206,6 @@ urlBar.addEventListener('keypress', async (e) => {
   if (e.key === 'Enter') {
     const input = urlBar.value.trim();
     if (input) {
-      setStatus('Navigating...');
-
       let url;
       if (isUrl(input)) {
         // It's a URL - navigate directly
@@ -215,7 +217,6 @@ urlBar.addEventListener('keypress', async (e) => {
 
       const finalUrl = await window.electronAPI.navigateToUrl(url);
       urlBar.value = finalUrl;
-      setStatus('Ready');
     }
   }
 });
@@ -472,22 +473,15 @@ btnNewTab.addEventListener('click', async () => {
 // Save article as "Not Good" (similarity already shown from auto-analysis)
 async function saveArticle(category) {
   try {
-    setStatus(`Marking as "Not Good"...`, 'info');
-
     const result = await window.electronAPI.saveArticle(category);
 
     if (!result.success) {
-      setStatus(`Error: ${result.error}`, 'error');
+      showToast('Error', result.error, 'error');
       return;
     }
 
     const article = result.article;
     console.log(`✓ Article saved (ID: ${article.id})`, article);
-
-    // Simple status message for 'not_good' articles (no tickers/dates)
-    let statusMsg = `✓ Marked as "Not Good": ${article.title}`;
-
-    setStatus(statusMsg, 'success');
 
     // Show toast notification
     showToast('Marked as Not Good', `${article.title.substring(0, 50)}${article.title.length > 50 ? '...' : ''}`, 'info');
@@ -497,7 +491,7 @@ async function saveArticle(category) {
 
   } catch (error) {
     console.error('Error saving article:', error);
-    setStatus(`Error: ${error.message}`, 'error');
+    showToast('Error', error.message, 'error');
   }
 }
 
@@ -567,11 +561,6 @@ async function updateStats() {
   }
 }
 
-// Helper function to update status bar (no-op since status bar removed)
-function setStatus(message, type = 'info') {
-  // Status bar has been removed, function kept for compatibility
-}
-
 // Settings button handler - navigate to settings page
 btnSettings.addEventListener('click', async () => {
   try {
@@ -579,7 +568,6 @@ btnSettings.addEventListener('click', async () => {
     await window.electronAPI.openSettings();
   } catch (error) {
     console.error('Error opening settings:', error);
-    setStatus('Error opening settings', 'error');
   }
 });
 
@@ -596,351 +584,257 @@ btnClose.addEventListener('click', async () => {
   await window.electronAPI.windowClose();
 });
 
-// ===== Stock Price Sidebar =====
+// ===== Stock Event Analysis =====
 
-let priceChart = null;
-let currentSelectedTicker = null;
+// ===== Watchlist Management =====
 
-// Setup sidebar event listeners
-function setupSidebarListeners() {
-  // Toggle sidebar
-  if (btnStockPrices && stockSidebar) {
-    btnStockPrices.addEventListener('click', (e) => {
-      e.preventDefault();
-      console.log('Stock prices button clicked');
-      stockSidebar.classList.toggle('open');
-      console.log('Sidebar open state:', stockSidebar.classList.contains('open'));
-      if (stockSidebar.classList.contains('open')) {
-        loadWatchedTickers();
-      }
-    });
-    console.log('✓ Stock prices button listener attached');
-  } else {
-    console.error('Stock sidebar elements not found:', {
-      btnStockPrices: !!btnStockPrices,
-      stockSidebar: !!stockSidebar
-    });
-  }
-
-  if (sidebarClose) {
-    sidebarClose.addEventListener('click', () => {
-      stockSidebar.classList.remove('open');
-    });
-  }
-}
-
-// Call setup immediately since script is at end of body
-setupSidebarListeners();
-
-// Load watched tickers into dropdown
-async function loadWatchedTickers() {
+// Load and render the watchlist
+async function loadWatchlist() {
   try {
     const result = await window.electronAPI.getWatchedTickers(false);
     if (!result.success) {
-      console.error('Failed to load watched tickers:', result.error);
+      console.error('Error loading watchlist:', result.error);
       return;
     }
 
-    tickerDropdown.innerHTML = '<option value="">Select a ticker...</option>';
-
-    for (const ticker of result.tickers) {
-      const option = document.createElement('option');
-      option.value = ticker.ticker;
-      option.textContent = ticker.ticker;
-      tickerDropdown.appendChild(option);
-    }
-
-    // If there's a selected ticker, keep it selected
-    if (currentSelectedTicker) {
-      tickerDropdown.value = currentSelectedTicker;
-    }
+    const tickers = result.tickers || [];
+    renderWatchlist(tickers);
   } catch (error) {
-    console.error('Error loading watched tickers:', error);
+    console.error('Error loading watchlist:', error);
   }
 }
 
-// Ticker selection changed
-tickerDropdown.addEventListener('change', async () => {
-  const ticker = tickerDropdown.value;
-  if (!ticker) {
-    currentSelectedTicker = null;
-    latestPriceDisplay.style.display = 'none';
-    chartContainer.style.display = 'none';
+// Render watchlist tickers
+function renderWatchlist(tickers) {
+  watchlistContainer.innerHTML = '';
+
+  if (tickers.length === 0) {
+    watchlistContainer.innerHTML = '<span class="watchlist-empty">No tickers in watchlist</span>';
     return;
   }
 
-  currentSelectedTicker = ticker;
-  await loadTickerData(ticker);
-});
+  for (const tickerRecord of tickers) {
+    const tickerEl = document.createElement('span');
+    tickerEl.className = 'watchlist-ticker';
 
-// Load ticker data and chart
-async function loadTickerData(ticker) {
+    const tickerName = document.createElement('span');
+    tickerName.textContent = tickerRecord.ticker;
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'remove-ticker';
+    removeBtn.textContent = '×';
+    removeBtn.title = `Remove ${tickerRecord.ticker} from watchlist`;
+    removeBtn.onclick = async (e) => {
+      e.stopPropagation();
+      await removeFromWatchlist(tickerRecord.ticker);
+    };
+
+    tickerEl.appendChild(tickerName);
+    tickerEl.appendChild(removeBtn);
+    watchlistContainer.appendChild(tickerEl);
+  }
+}
+
+// Add ticker to watchlist
+async function addToWatchlist(ticker) {
   try {
-    showSidebarMessage('Loading price data...');
-
-    // Get price history
-    const result = await window.electronAPI.getPriceHistory(ticker, { limit: 365 });
-
-    if (!result.success) {
-      showSidebarMessage('Error: ' + result.error);
-      return;
-    }
-
-    if (result.prices.length === 0) {
-      showSidebarMessage('No price data available. Click "Fetch History" to download.');
-      latestPriceDisplay.style.display = 'none';
-      return;
-    }
-
-    hideSidebarMessage();
-
-    // Sort prices by date ascending for chart
-    const sortedPrices = result.prices.reverse();
-
-    // Display latest price
-    const latestPrice = sortedPrices[sortedPrices.length - 1];
-    displayLatestPrice(ticker, latestPrice, sortedPrices);
-
-    // Render chart
-    renderPriceChart(sortedPrices);
-
-  } catch (error) {
-    console.error('Error loading ticker data:', error);
-    showSidebarMessage('Error loading data: ' + error.message);
-  }
-}
-
-// Display latest price info
-function displayLatestPrice(ticker, latest, history) {
-  latestPriceDisplay.style.display = 'block';
-
-  document.getElementById('current-ticker-name').textContent = ticker;
-  document.getElementById('current-price').textContent = `$${Number(latest.close).toFixed(2)}`;
-  document.getElementById('price-date').textContent = `Last updated: ${latest.date}`;
-
-  // Calculate change if we have previous day
-  if (history.length >= 2) {
-    const prevPrice = history[history.length - 2].close;
-    const change = latest.close - prevPrice;
-    const changePercent = ((change / prevPrice) * 100).toFixed(2);
-
-    const priceChangeDiv = document.getElementById('price-change');
-    document.getElementById('price-change-value').textContent = `${change >= 0 ? '+' : ''}$${change.toFixed(2)}`;
-    document.getElementById('price-change-percent').textContent = `(${changePercent}%)`;
-
-    priceChangeDiv.className = 'price-change ' + (change >= 0 ? 'positive' : 'negative');
-  }
-}
-
-// Render price chart using Chart.js
-function renderPriceChart(prices) {
-  chartContainer.style.display = 'block';
-
-  const canvas = document.getElementById('price-chart');
-  const ctx = canvas.getContext('2d');
-
-  // Destroy existing chart
-  if (priceChart) {
-    priceChart.destroy();
-  }
-
-  const dates = prices.map(p => p.date);
-  const closePrices = prices.map(p => Number(p.close));
-
-  priceChart = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: dates,
-      datasets: [{
-        label: 'Close Price',
-        data: closePrices,
-        borderColor: '#4ec9b0',
-        backgroundColor: 'rgba(78, 201, 176, 0.1)',
-        borderWidth: 2,
-        pointRadius: 0,
-        pointHoverRadius: 4,
-        tension: 0.1
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          display: false
-        },
-        tooltip: {
-          mode: 'index',
-          intersect: false,
-          backgroundColor: '#252525',
-          titleColor: '#ffffff',
-          bodyColor: '#ffffff',
-          borderColor: '#404040',
-          borderWidth: 1,
-          callbacks: {
-            label: function(context) {
-              return '$' + context.parsed.y.toFixed(2);
-            }
-          }
-        }
-      },
-      scales: {
-        x: {
-          display: true,
-          ticks: {
-            color: '#808080',
-            maxTicksLimit: 8,
-            autoSkip: true
-          },
-          grid: {
-            color: '#404040',
-            drawBorder: false
-          }
-        },
-        y: {
-          display: true,
-          ticks: {
-            color: '#808080',
-            callback: function(value) {
-              return '$' + value.toFixed(0);
-            }
-          },
-          grid: {
-            color: '#404040',
-            drawBorder: false
-          }
-        }
-      },
-      interaction: {
-        mode: 'nearest',
-        axis: 'x',
-        intersect: false
-      }
-    }
-  });
-}
-
-// Add new ticker
-btnAddTicker.addEventListener('click', async () => {
-  const ticker = prompt('Enter ticker symbol (e.g., AAPL, TSLA):');
-  if (!ticker) return;
-
-  const upperTicker = ticker.toUpperCase().trim();
-
-  try {
-    const result = await window.electronAPI.addWatchedTicker(upperTicker, true);
+    const result = await window.electronAPI.addWatchedTicker(ticker.toUpperCase(), true);
     if (result.success) {
-      await loadWatchedTickers();
-      tickerDropdown.value = upperTicker;
-      currentSelectedTicker = upperTicker;
-      setStatus(`Added ${upperTicker} to watchlist`);
-
-      // Automatically fetch history
-      await fetchHistory(upperTicker);
+      await loadWatchlist();
+      return true;
     } else {
-      alert('Error adding ticker: ' + result.error);
+      console.error('Error adding to watchlist:', result.error);
+      return false;
     }
   } catch (error) {
-    alert('Error: ' + error.message);
-  }
-});
-
-// Fetch historical prices
-btnFetchHistory.addEventListener('click', async () => {
-  if (!currentSelectedTicker) {
-    alert('Please select a ticker first');
-    return;
-  }
-
-  await fetchHistory(currentSelectedTicker);
-});
-
-async function fetchHistory(ticker) {
-  try {
-    showSidebarMessage(`Fetching historical data for ${ticker}...`);
-
-    const result = await window.electronAPI.fetchHistoricalPrices(ticker, {});
-
-    if (result.success) {
-      setStatus(`Fetched ${result.count} price records for ${ticker}`);
-      await loadTickerData(ticker);
-    } else {
-      showSidebarMessage('Error: ' + result.error);
-      setTimeout(hideSidebarMessage, 3000);
-    }
-  } catch (error) {
-    showSidebarMessage('Error: ' + error.message);
-    setTimeout(hideSidebarMessage, 3000);
+    console.error('Error adding to watchlist:', error);
+    return false;
   }
 }
-
-// Refresh latest price
-btnRefreshPrice.addEventListener('click', async () => {
-  if (!currentSelectedTicker) {
-    alert('Please select a ticker first');
-    return;
-  }
-
-  try {
-    setStatus(`Updating price for ${currentSelectedTicker}...`);
-    const result = await window.electronAPI.updateLatestPrice(currentSelectedTicker);
-
-    if (result.success) {
-      setStatus(`Updated ${currentSelectedTicker}`);
-      await loadTickerData(currentSelectedTicker);
-    } else {
-      alert('Error updating price: ' + (result.error || result.message));
-    }
-  } catch (error) {
-    alert('Error: ' + error.message);
-  }
-});
 
 // Remove ticker from watchlist
-btnRemoveTicker.addEventListener('click', async () => {
-  if (!currentSelectedTicker) {
-    alert('Please select a ticker first');
-    return;
-  }
-
-  if (!confirm(`Remove ${currentSelectedTicker} from watchlist?`)) {
-    return;
-  }
-
+async function removeFromWatchlist(ticker) {
   try {
-    const result = await window.electronAPI.removeWatchedTicker(currentSelectedTicker);
+    const result = await window.electronAPI.removeWatchedTicker(ticker);
     if (result.success) {
-      setStatus(`Removed ${currentSelectedTicker} from watchlist`);
-      currentSelectedTicker = null;
-      latestPriceDisplay.style.display = 'none';
-      chartContainer.style.display = 'none';
-      await loadWatchedTickers();
+      await loadWatchlist();
+      showToast('Removed', `${ticker} removed from watchlist`, 'info', 2000);
     } else {
-      alert('Error removing ticker: ' + result.error);
+      console.error('Error removing from watchlist:', result.error);
     }
   } catch (error) {
-    alert('Error: ' + error.message);
+    console.error('Error removing from watchlist:', error);
+  }
+}
+
+// Load corpus stats
+async function loadCorpusStats() {
+  try {
+    const result = await window.electronAPI.getCorpusStats();
+    if (result.success && result.stats) {
+      const stats = result.stats;
+      if (stats.totalStockNews > 0) {
+        corpusStats.textContent = `${stats.totalStockNews} articles | ${stats.dateSpanDays}d span`;
+      } else {
+        corpusStats.textContent = 'No articles yet';
+      }
+    }
+  } catch (error) {
+    console.error('Error loading corpus stats:', error);
+    corpusStats.textContent = '';
+  }
+}
+
+// Load harvester status
+async function loadHarvesterStatus() {
+  try {
+    const result = await window.electronAPI.getHarvesterStatus();
+    if (result.success) {
+      if (result.isRunning) {
+        harvesterStatus.textContent = 'Auto-harvest: ON';
+        harvesterStatus.style.color = '#4caf50';
+      } else if (result.lastHarvestTime) {
+        const lastTime = new Date(result.lastHarvestTime);
+        harvesterStatus.textContent = `Last: ${lastTime.toLocaleTimeString()}`;
+      } else {
+        harvesterStatus.textContent = '';
+      }
+    }
+  } catch (error) {
+    console.error('Error loading harvester status:', error);
+  }
+}
+
+// Harvest now button handler
+btnHarvestNow.addEventListener('click', async () => {
+  try {
+    btnHarvestNow.disabled = true;
+    btnHarvestNow.textContent = '⏳ Harvesting...';
+    harvesterStatus.textContent = 'Collecting news...';
+
+    const result = await window.electronAPI.triggerHarvest();
+
+    if (result.success) {
+      const r = result.results;
+      showToast('Harvest Complete', `${r.articlesNew} new articles collected`, 'success');
+      harvesterStatus.textContent = `Done: ${r.articlesNew} new`;
+      await loadCorpusStats();
+    } else {
+      showToast('Harvest Failed', result.error, 'error');
+      harvesterStatus.textContent = 'Failed';
+    }
+  } catch (error) {
+    console.error('Error triggering harvest:', error);
+    showToast('Error', error.message, 'error');
+    harvesterStatus.textContent = 'Error';
+  } finally {
+    btnHarvestNow.disabled = false;
+    btnHarvestNow.textContent = '🔄 Harvest Now';
   }
 });
 
-// Helper functions for sidebar messages
-function showSidebarMessage(message) {
-  sidebarMessageText.textContent = message;
-  sidebarMessage.style.display = 'block';
-  chartContainer.style.display = 'none';
-  latestPriceDisplay.style.display = 'none';
-}
+// Show modal when button clicked
+btnAnalyzeEvents.addEventListener('click', async () => {
+  await window.electronAPI.showModal();
+  analysisModal.style.display = 'flex';
+  analysisTickerInput.value = '';
+  analysisBenchmarkInput.value = 'SPY';
+  analysisDaysInput.value = '1700';
+  analysisEventsInput.value = '15';
+  analysisFetchNewsCheckbox.checked = true;
+  analysisAddWatchlistCheckbox.checked = true;
+  analysisTickerInput.focus();
 
-function hideSidebarMessage() {
-  sidebarMessage.style.display = 'none';
-}
+  // Load watchlist and stats when modal opens
+  await Promise.all([
+    loadWatchlist(),
+    loadCorpusStats(),
+    loadHarvesterStatus()
+  ]);
+});
+
+// Cancel modal
+modalCancel.addEventListener('click', async () => {
+  analysisModal.style.display = 'none';
+  await window.electronAPI.hideModal();
+});
+
+// Close modal on background click
+analysisModal.addEventListener('click', async (e) => {
+  if (e.target === analysisModal) {
+    analysisModal.style.display = 'none';
+    await window.electronAPI.hideModal();
+  }
+});
+
+// Handle Enter key in input
+analysisTickerInput.addEventListener('keydown', async (e) => {
+  if (e.key === 'Enter') {
+    modalAnalyze.click();
+  } else if (e.key === 'Escape') {
+    analysisModal.style.display = 'none';
+    await window.electronAPI.hideModal();
+  }
+});
+
+// Run analysis
+modalAnalyze.addEventListener('click', async () => {
+  const ticker = analysisTickerInput.value.trim();
+  if (!ticker) {
+    analysisTickerInput.focus();
+    return;
+  }
+
+  const upperTicker = ticker.toUpperCase();
+  const benchmark = (analysisBenchmarkInput.value.trim() || 'SPY').toUpperCase();
+  const days = parseInt(analysisDaysInput.value, 10) || 1700;
+  const minEvents = parseInt(analysisEventsInput.value, 10) || 15;
+  const fetchNews = analysisFetchNewsCheckbox.checked;
+  const addToWatchlistChecked = analysisAddWatchlistCheckbox.checked;
+
+  analysisModal.style.display = 'none';
+  await window.electronAPI.hideModal();
+
+  // Add to watchlist if checkbox is checked
+  if (addToWatchlistChecked) {
+    const added = await addToWatchlist(upperTicker);
+    if (added) {
+      showToast('Watchlist', `${upperTicker} added to watchlist`, 'info', 2000);
+    }
+  }
+
+  try {
+    const fetchNewsMsg = fetchNews ? ' Fetching news articles...' : '';
+    showToast('Analyzing...', `Running event analysis for ${upperTicker} vs ${benchmark}.${fetchNewsMsg} This may take a minute...`, 'info', fetchNews ? 60000 : 10000);
+
+    const result = await window.electronAPI.analyzeStockEvents(upperTicker, {
+      benchmark,
+      days,
+      minEvents,
+      fetchNews
+    });
+
+    if (!result.success) {
+      showToast('Error', result.error, 'error');
+      return;
+    }
+
+    // Open results in new tab using data URL
+    const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(result.html);
+    await createTab(dataUrl);
+
+    showToast('Analysis Complete', `Found ${result.eventCount} events for ${upperTicker}`, 'success');
+
+  } catch (error) {
+    console.error('Error analyzing stock:', error);
+    showToast('Error', error.message, 'error');
+  }
+});
 
 // Initialize
 (async () => {
   // Create one tab with finance.yahoo.com
   await createTab('https://finance.yahoo.com');
-
-  setStatus('Ready');
 
   // Load initial stats
   await updateStats();

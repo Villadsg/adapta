@@ -6,6 +6,8 @@
 
 const { Readability } = require('@mozilla/readability');
 const { JSDOM } = require('jsdom');
+const https = require('https');
+const http = require('http');
 
 class ArticleExtractor {
   /**
@@ -245,6 +247,118 @@ class ArticleExtractor {
       console.error('Error extracting basic text:', error);
       throw error;
     }
+  }
+
+  /**
+   * Fetch HTML content from a URL using Node.js http/https
+   * @param {string} url - URL to fetch
+   * @param {number} timeout - Request timeout in milliseconds (default: 15000)
+   * @param {number} maxRedirects - Maximum number of redirects to follow (default: 5)
+   * @returns {Promise<string>} HTML content
+   */
+  fetchHTML(url, timeout = 15000, maxRedirects = 5) {
+    return new Promise((resolve, reject) => {
+      if (maxRedirects <= 0) {
+        reject(new Error('Too many redirects'));
+        return;
+      }
+
+      const protocol = url.startsWith('https') ? https : http;
+
+      const request = protocol.get(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Connection': 'keep-alive'
+        },
+        timeout: timeout
+      }, (res) => {
+        // Handle redirects
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          let redirectUrl = res.headers.location;
+          // Handle relative redirects
+          if (redirectUrl.startsWith('/')) {
+            const urlObj = new URL(url);
+            redirectUrl = `${urlObj.protocol}//${urlObj.host}${redirectUrl}`;
+          }
+          return this.fetchHTML(redirectUrl, timeout, maxRedirects - 1)
+            .then(resolve)
+            .catch(reject);
+        }
+
+        if (res.statusCode !== 200) {
+          reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
+          return;
+        }
+
+        let data = '';
+        res.setEncoding('utf8');
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => resolve(data));
+        res.on('error', reject);
+      });
+
+      request.on('error', reject);
+      request.on('timeout', () => {
+        request.destroy();
+        reject(new Error('Request timeout'));
+      });
+    });
+  }
+
+  /**
+   * Fetch and extract article content from a URL (headless, no browser needed)
+   * Uses Node.js http/https to fetch and Mozilla Readability to parse.
+   * @param {string} url - Article URL to fetch and extract
+   * @param {Object} options - Options
+   * @param {number} options.timeout - Request timeout in ms (default: 15000)
+   * @param {number} options.maxRetries - Maximum retry attempts (default: 2)
+   * @returns {Promise<Object>} Extracted article data with title, text, url, tickers, etc.
+   */
+  async extractFromURL(url, options = {}) {
+    const { timeout = 15000, maxRetries = 2 } = options;
+
+    let lastError;
+
+    for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+      try {
+        // Fetch HTML content
+        const html = await this.fetchHTML(url, timeout);
+
+        // Use existing extractFromHTML method
+        const article = this.extractFromHTML(html, url);
+
+        if (!article) {
+          throw new Error('Readability failed to extract article content');
+        }
+
+        // Extract tickers from the content
+        const tickers = this.extractTickers(article.text, article.title);
+
+        return {
+          title: article.title,
+          text: article.text,
+          url: url,
+          excerpt: article.excerpt || '',
+          byline: article.byline || '',
+          publishedDate: article.publishedDate || null,
+          tickers: tickers,
+          wordCount: article.text.split(/\s+/).length
+        };
+      } catch (error) {
+        lastError = error;
+        console.log(`    Attempt ${attempt}/${maxRetries + 1} failed for ${url}: ${error.message}`);
+
+        if (attempt <= maxRetries) {
+          // Exponential backoff: 1s, 2s, 4s...
+          const delay = Math.pow(2, attempt - 1) * 1000;
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    throw lastError;
   }
 }
 

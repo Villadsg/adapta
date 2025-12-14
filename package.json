@@ -22,6 +22,8 @@
     "@huggingface/transformers": "^3.7.6",
     "@mozilla/readability": "^0.6.0",
     "duckdb": "^1.4.1",
-    "jsdom": "^24.1.0"
+    "jsdom": "^24.1.0",
+    "simple-statistics": "^7.8.0",
+    "yahoo-finance2": "^3.10.2"
   }
 }

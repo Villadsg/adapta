@@ -402,21 +402,6 @@ class ArticleDatabase {
   }
 
   /**
-   * Get all chunking settings (DEPRECATED - chunking removed)
-   *
-   * @deprecated Chunking has been removed. This method is kept for backward compatibility.
-   * @returns {Promise<Object>} Chunking settings object
-   */
-  async getChunkingSettings() {
-    // Return dummy values for backward compatibility
-    return {
-      chunkSize: 512,
-      chunkOverlap: 50,
-      chunkStrategy: 'paragraph'
-    };
-  }
-
-  /**
    * Save an article to the database with embedding
    */
   async saveArticle(url, title, content, category, options = {}) {
@@ -499,7 +484,7 @@ class ArticleDatabase {
     params.push(limit);
 
     return new Promise((resolve, reject) => {
-      this.connection.all(sql, params, (err, rows) => {
+      this.connection.all(sql, ...params, (err, rows) => {
         if (err) reject(err);
         else resolve(rows);
       });
@@ -544,7 +529,7 @@ class ArticleDatabase {
     sql += ' ORDER BY saved_at DESC LIMIT 100';
 
     return new Promise((resolve, reject) => {
-      this.connection.all(sql, params, (err, rows) => {
+      this.connection.all(sql, ...params, (err, rows) => {
         if (err) reject(err);
         else resolve(rows);
       });
@@ -596,7 +581,7 @@ class ArticleDatabase {
     params.push(limit);
 
     return new Promise((resolve, reject) => {
-      this.connection.all(sql, params, (err, rows) => {
+      this.connection.all(sql, ...params, (err, rows) => {
         if (err) reject(err);
         else resolve(rows);
       });
@@ -849,157 +834,6 @@ class ArticleDatabase {
     });
   }
 
-  // ===== Chunk-related methods (DEPRECATED - kept for backward compatibility) =====
-
-  /**
-   * Save text chunks for an article with embeddings (DEPRECATED)
-   *
-   * @deprecated Chunking has been removed. Articles now store full-text embeddings.
-   * @param {number} articleId - Article ID
-   * @param {string[]} chunks - Array of chunk texts
-   * @param {string} category - Article category
-   * @param {Object} options - Save options
-   * @param {boolean} options.generateEmbeddings - Generate embeddings (default: true)
-   * @param {string} options.title - Article title for embedding context
-   * @returns {Promise<void>}
-   */
-  async saveChunks(articleId, chunks, category, options = {}) {
-    const { generateEmbeddings = true, title } = options;
-
-    // Generate embeddings if enabled
-    let embeddings = [];
-    if (generateEmbeddings) {
-      const embeddingService = require('./embeddings');
-      console.log(`  Generating embeddings for ${chunks.length} chunks...`);
-
-      // Get article title if not provided
-      const articleTitle = title || (await this.getArticleById(articleId))?.title || '';
-
-      // Generate embeddings for all chunks
-      embeddings = [];
-      for (const chunk of chunks) {
-        const embedding = await embeddingService.embed(chunk, {
-          task: 'search_document',
-          title: articleTitle,
-        });
-        embeddings.push(embedding);
-      }
-
-      if (chunks.length > 20) {
-        console.log(`✓ Generated ${chunks.length} embeddings`);
-      }
-    }
-
-    const sql = `
-      INSERT INTO article_chunks (article_id, chunk_text, chunk_index, category, embedding)
-      VALUES ($1, $2, $3, $4, $5::FLOAT[])
-    `;
-
-    for (let i = 0; i < chunks.length; i++) {
-      // Convert embedding array to DuckDB array format
-      const embedding = embeddings.length > 0 ? embeddings[i] : null;
-      const embeddingValue = embedding ? `[${embedding.join(',')}]` : null;
-
-      await new Promise((resolve, reject) => {
-        this.connection.run(sql, articleId, chunks[i], i, category, embeddingValue, (err) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
-    }
-
-    console.log(`  ✓ Saved ${chunks.length} chunks for article ${articleId}`);
-  }
-
-  /**
-   * Delete all chunks from the database
-   *
-   * @returns {Promise<void>}
-   */
-  async deleteAllChunks() {
-    const sql = 'DELETE FROM article_chunks';
-
-    return new Promise((resolve, reject) => {
-      this.connection.run(sql, (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
-  }
-
-  /**
-   * Re-chunk all articles with new parameters
-   *
-   * @param {number} chunkSize - Target chunk size in tokens
-   * @param {number} overlap - Overlap between chunks in tokens
-   * @param {string} strategy - Chunking strategy ('sentence' or 'paragraph')
-   * @returns {Promise<void>}
-   */
-  async rechunkAllArticles(chunkSize = 512, overlap = 50, strategy = 'paragraph') {
-    const { chunkText, chunkTextByParagraph } = require('./chunking');
-
-    console.log(`\nRe-chunking all articles with chunkSize=${chunkSize}, overlap=${overlap}, strategy=${strategy}...`);
-
-    // Choose chunking function based on strategy
-    const chunkFunction = strategy === 'paragraph' ? chunkTextByParagraph : chunkText;
-
-    // Get all articles
-    const articles = await new Promise((resolve, reject) => {
-      this.connection.all('SELECT id, title, content, category FROM articles', (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows);
-      });
-    });
-
-    if (articles.length === 0) {
-      console.log('No articles to re-chunk.');
-      return;
-    }
-
-    console.log(`Found ${articles.length} articles to re-chunk.`);
-
-    // Delete all existing chunks
-    await this.deleteAllChunks();
-    console.log('✓ Deleted all existing chunks.');
-
-    // Re-chunk each article
-    let processedCount = 0;
-    for (const article of articles) {
-      const chunks = chunkFunction(article.content, article.title, chunkSize, overlap);
-      if (chunks.length > 0) {
-        await this.saveChunks(article.id, chunks, article.category, { title: article.title });
-      }
-      processedCount++;
-      if (processedCount % 10 === 0) {
-        console.log(`  Progress: ${processedCount}/${articles.length} articles`);
-      }
-    }
-
-    console.log(`✓ Re-chunking complete! Processed ${articles.length} articles.\n`);
-  }
-
-  /**
-   * Get chunks for a specific article
-   *
-   * @param {number} articleId - Article ID
-   * @returns {Promise<Array>} Array of chunks
-   */
-  async getChunksByArticle(articleId) {
-    const sql = `
-      SELECT chunk_id, article_id, chunk_text, chunk_index, embedding, category
-      FROM article_chunks
-      WHERE article_id = $1
-      ORDER BY chunk_index
-    `;
-
-    return new Promise((resolve, reject) => {
-      this.connection.all(sql, articleId, (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows);
-      });
-    });
-  }
-
   /**
    * Search articles by semantic similarity using embeddings
    *
@@ -1037,8 +871,10 @@ class ArticleDatabase {
       WHERE embedding IS NOT NULL
     `;
 
+    const params = [];
     if (categoryFilter) {
-      sql += ` AND category = '${categoryFilter}'`;
+      sql += ` AND category = ?`;
+      params.push(categoryFilter);
     }
 
     const articles = await new Promise((resolve, reject) => {
@@ -1048,7 +884,7 @@ class ArticleDatabase {
         return;
       }
 
-      this.connection.all(sql, (err, rows) => {
+      this.connection.all(sql, ...params, (err, rows) => {
         if (err) reject(err);
         else resolve(rows);
       });
@@ -1557,7 +1393,7 @@ class ArticleDatabase {
     params.push(limit);
 
     return new Promise((resolve, reject) => {
-      this.connection.all(sql, params, (err, rows) => {
+      this.connection.all(sql, ...params, (err, rows) => {
         if (err) reject(err);
         else resolve(rows || []);
       });
@@ -1708,6 +1544,154 @@ class ArticleDatabase {
       earliestDate: dateRange.earliest,
       latestDate: dateRange.latest,
       watchedCount
+    };
+  }
+
+  // ===== News Harvesting Support Methods =====
+
+  /**
+   * Get articles with embeddings for a ticker (for uniqueness calculation)
+   * @param {string} ticker - Stock ticker symbol
+   * @param {Object} options - Query options
+   * @param {string} options.excludeArticleId - Article ID to exclude from results
+   * @param {number} options.limit - Max articles to return (default: 100)
+   * @returns {Promise<Array>} Articles with embeddings
+   */
+  async getArticlesWithEmbeddingsByTicker(ticker, options = {}) {
+    const { excludeArticleId = null, limit = 100 } = options;
+
+    let sql = `
+      SELECT id, url, title, published_date, embedding
+      FROM articles
+      WHERE embedding IS NOT NULL
+        AND (list_contains(tickers, ?) OR list_contains(tickers, '*'))
+    `;
+
+    const params = [ticker.toUpperCase()];
+
+    if (excludeArticleId) {
+      sql += ' AND id != ?';
+      params.push(excludeArticleId);
+    }
+
+    sql += ' ORDER BY published_date DESC NULLS LAST LIMIT ?';
+    params.push(limit);
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ...params, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  /**
+   * Get articles by ticker within a date range (with embeddings for similarity)
+   * @param {string} ticker - Stock ticker symbol
+   * @param {Date} centerDate - Center date for range
+   * @param {number} dayRange - Days before/after center date
+   * @returns {Promise<Array>} Articles within date range
+   */
+  async getArticlesByTickerAndDateRange(ticker, centerDate, dayRange = 3) {
+    const startDate = new Date(centerDate);
+    startDate.setDate(startDate.getDate() - dayRange);
+    const endDate = new Date(centerDate);
+    endDate.setDate(endDate.getDate() + dayRange);
+
+    const sql = `
+      SELECT id, url, title, content, published_date, embedding, tickers
+      FROM articles
+      WHERE (list_contains(tickers, ?) OR list_contains(tickers, '*'))
+        AND published_date >= ?
+        AND published_date <= ?
+      ORDER BY published_date DESC
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(
+        sql,
+        ticker.toUpperCase(),
+        startDate.toISOString(),
+        endDate.toISOString(),
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows || []);
+        }
+      );
+    });
+  }
+
+  /**
+   * Get corpus statistics for the news harvesting feature
+   * @returns {Promise<Object>} Corpus statistics
+   */
+  async getCorpusStats() {
+    const totalStockNews = await new Promise((resolve, reject) => {
+      this.connection.all(
+        "SELECT COUNT(*) as count FROM articles WHERE category = 'stock_news'",
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(Number(rows[0]?.count || 0));
+        }
+      );
+    });
+
+    const withEmbeddings = await new Promise((resolve, reject) => {
+      this.connection.all(
+        "SELECT COUNT(*) as count FROM articles WHERE category = 'stock_news' AND embedding IS NOT NULL",
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(Number(rows[0]?.count || 0));
+        }
+      );
+    });
+
+    const dateRange = await new Promise((resolve, reject) => {
+      this.connection.all(
+        `SELECT MIN(published_date) as earliest, MAX(published_date) as latest
+         FROM articles
+         WHERE category = 'stock_news' AND published_date IS NOT NULL`,
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows[0] || { earliest: null, latest: null });
+        }
+      );
+    });
+
+    const tickerCounts = await new Promise((resolve, reject) => {
+      this.connection.all(
+        `SELECT ticker, COUNT(*) as count
+         FROM (
+           SELECT UNNEST(tickers) as ticker
+           FROM articles
+           WHERE category = 'stock_news' AND tickers IS NOT NULL AND array_length(tickers) > 0
+         )
+         GROUP BY ticker
+         ORDER BY count DESC
+         LIMIT 20`,
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows || []);
+        }
+      );
+    });
+
+    // Calculate date span in days
+    let dateSpanDays = 0;
+    if (dateRange.earliest && dateRange.latest) {
+      const earliest = new Date(dateRange.earliest);
+      const latest = new Date(dateRange.latest);
+      dateSpanDays = Math.ceil((latest - earliest) / (1000 * 60 * 60 * 24));
+    }
+
+    return {
+      totalStockNews,
+      withEmbeddings,
+      earliestArticle: dateRange.earliest,
+      latestArticle: dateRange.latest,
+      dateSpanDays,
+      tickerCounts,
+      isReadyForAnalysis: totalStockNews >= 50 && dateSpanDays >= 7
     };
   }
 
