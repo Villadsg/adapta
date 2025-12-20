@@ -36,3 +36,7 @@ out/
 
 # Electron specific
 # (allow package-lock.json for reproducible builds)
+
+# Bun
+bun.lockb
+bun-workers/node_modules/

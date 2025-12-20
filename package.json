@@ -6,7 +6,9 @@
   "scripts": {
     "start": "G_MESSAGES_DEBUG='' electron . --no-sandbox 2>&1 | grep -v 'GLib-GObject'",
     "start:clean": "electron . --no-sandbox",
-    "dev": "electron . --no-sandbox --enable-logging"
+    "dev": "electron . --no-sandbox --enable-logging",
+    "bun:install": "cd bun-workers && bun install",
+    "bun:check": "bun --version"
   },
   "keywords": [
     "browser",

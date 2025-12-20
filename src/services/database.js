@@ -1622,6 +1622,59 @@ class ArticleDatabase {
   }
 
   /**
+   * Get all articles by category
+   * @param {string} category - Category to filter by ('not_good', 'stock_news', etc.)
+   * @returns {Promise<Array>} Articles in that category
+   */
+  async getArticlesByCategory(category) {
+    return new Promise((resolve, reject) => {
+      this.connection.all(
+        'SELECT id, title, content FROM articles WHERE category = ?',
+        category,
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows || []);
+        }
+      );
+    });
+  }
+
+  /**
+   * Update article content and regenerate embedding
+   * Used for boilerplate cleaning
+   * @param {number} articleId - Article ID to update
+   * @param {string} newContent - New cleaned content
+   * @param {string} title - Article title for embedding context
+   */
+  async updateArticleContent(articleId, newContent, title = null) {
+    const embeddingService = require('./embeddings');
+
+    // Generate new embedding for cleaned content
+    const embedding = await embeddingService.embed(newContent, {
+      task: 'search_document',
+      title: title
+    });
+
+    // Convert embedding array to DuckDB array format (same as saveArticle)
+    const embeddingValue = embedding ? `[${embedding.join(',')}]` : null;
+
+    // Update article
+    return new Promise((resolve, reject) => {
+      this.connection.run(
+        'UPDATE articles SET content = ?, embedding = ?::FLOAT[], word_count = ? WHERE id = ?',
+        newContent,
+        embeddingValue,
+        newContent.split(/\s+/).length,
+        articleId,
+        (err) => {
+          if (err) reject(err);
+          else resolve({ success: true, embeddingRegenerated: true });
+        }
+      );
+    });
+  }
+
+  /**
    * Get corpus statistics for the news harvesting feature
    * @returns {Promise<Object>} Corpus statistics
    */

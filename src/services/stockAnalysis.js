@@ -266,7 +266,7 @@ class StockAnalysisService {
    * @returns {Promise<Object>} Analysis results
    */
   async analyzeStock(ticker, options = {}) {
-    const { benchmark = 'SPY', days = 1700, minEvents = 15 } = options;
+    const { benchmark = 'SPY', days = 200, minEvents = 15 } = options;
 
     const endDate = new Date().toISOString().split('T')[0];
     const startDateObj = new Date();
@@ -297,7 +297,7 @@ class StockAnalysisService {
     console.log('\nClassifying event reactions...');
     const stockWithClassifications = this.classifyEarningsReactions(stockWithEarnings);
 
-    // Extract events
+    // Extract events and sort by date descending (newest first)
     const events = stockWithClassifications
       .filter((bar) => bar.isEarningsDate)
       .map((bar) => ({
@@ -312,7 +312,8 @@ class StockAnalysisService {
         volume: bar.volume,
         residualReturn: bar.residualReturn,
         volumeGapProduct: bar.volumeGapProduct,
-      }));
+      }))
+      .sort((a, b) => b.date.getTime() - a.date.getTime());
 
     // Calculate stats
     const classificationCounts = {};
@@ -460,6 +461,80 @@ class StockAnalysisService {
   }
 
   /**
+   * Save all ticker news to database without date range filtering
+   * This builds up the corpus regardless of event dates
+   * @param {string} ticker - Stock ticker symbol
+   * @param {Array} newsItems - News items from Yahoo Finance
+   * @returns {Promise<Object>} Statistics {new, duplicate, failed}
+   */
+  async saveAllTickerNews(ticker, newsItems) {
+    const articleExtractor = require('./articleExtractor');
+    const stats = {
+      new: 0,
+      duplicate: 0,
+      failed: 0
+    };
+
+    for (const news of newsItems) {
+      try {
+        // Check if article already exists in DB (by URL)
+        const existing = await this.checkArticleExists(news.link);
+        if (existing) {
+          stats.duplicate++;
+          continue;
+        }
+
+        // Fetch and extract article content
+        let article;
+        try {
+          article = await articleExtractor.extractFromURL(news.link, { timeout: 15000 });
+        } catch (extractError) {
+          stats.failed++;
+          continue;
+        }
+
+        // Skip if no meaningful content extracted
+        if (!article.text || article.text.length < 100) {
+          stats.failed++;
+          continue;
+        }
+
+        // Use Yahoo's publish time if we couldn't extract one
+        const publishedDate = article.publishedDate || (news.publishTime ? news.publishTime.toISOString() : null);
+
+        // Ensure ticker is included
+        if (!article.tickers.includes(ticker)) {
+          article.tickers.push(ticker);
+        }
+
+        // Save to database (generates embedding automatically)
+        await this.database.saveArticle(
+          article.url,
+          article.title,
+          article.text,
+          'stock_news',
+          {
+            publishedDate: publishedDate,
+            tickers: article.tickers,
+            generateEmbedding: true
+          }
+        );
+
+        stats.new++;
+
+        // Rate limiting: 1.5 seconds between requests to avoid blocking
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
+      } catch (error) {
+        stats.failed++;
+        // Continue with next article
+      }
+    }
+
+    return stats;
+  }
+
+  /**
    * Fetch and store news articles for stock events from Yahoo Finance
    * @param {Array} events - Array of detected events
    * @param {string} ticker - Stock ticker symbol
@@ -474,7 +549,7 @@ class StockAnalysisService {
 
     console.log(`\nFetching Yahoo Finance news for ${ticker}...`);
 
-    // Fetch all news for ticker (get more than needed for filtering)
+    // Fetch all news for ticker
     const allNews = await yahooNews.fetchTickerNews(ticker, 100);
 
     if (allNews.length === 0) {
@@ -482,6 +557,13 @@ class StockAnalysisService {
       return events;
     }
 
+    console.log(`  Found ${allNews.length} news items`);
+
+    // PHASE 1: Save ALL news to database to build corpus
+    const saveStats = await this.saveAllTickerNews(ticker, allNews);
+    console.log(`  Corpus: Saved ${saveStats.new} new, ${saveStats.duplicate} duplicate, ${saveStats.failed} failed`);
+
+    // PHASE 2: Match saved articles to events by date range
     // Determine the date range of available news
     const newsDates = allNews.filter(n => n.publishTime).map(n => n.publishTime.getTime());
     const oldestNewsDate = newsDates.length > 0 ? new Date(Math.min(...newsDates)) : null;
@@ -506,19 +588,27 @@ class StockAnalysisService {
         }
       }
 
-      // Filter news by date range
+      // Filter news by date range for this event
       const relevantNews = yahooNews.filterNewsByDateRange(allNews, event.date, dayRange);
 
       if (relevantNews.length > 0) {
         console.log(`  Event ${event.dateStr}: ${relevantNews.length} news items in \u00b1${dayRange} day range`);
         eventsWithNews++;
 
-        // Fetch and store articles (with rate limiting)
-        event.fetchedArticles = await this.processEventNews(
-          relevantNews.slice(0, maxArticlesPerEvent),
-          ticker,
-          event.date
-        );
+        // Fetch the actual saved articles from DB that match these URLs
+        // Articles were already saved in PHASE 1 with embeddings
+        const eventArticles = [];
+        for (const news of relevantNews) {
+          const savedArticle = await this.checkArticleExists(news.link);
+          if (savedArticle) {
+            // Get full article with embeddings
+            const fullArticle = await this.getArticleById(savedArticle.id);
+            if (fullArticle) {
+              eventArticles.push(fullArticle);
+            }
+          }
+        }
+        event.fetchedArticles = eventArticles;
       } else {
         event.fetchedArticles = [];
       }

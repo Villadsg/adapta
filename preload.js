@@ -32,6 +32,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   clearAllData: () => ipcRenderer.invoke('clear-all-data'),
   clearNewsVolume: () => ipcRenderer.invoke('clear-news-volume'),
 
+  // Settings
+  getSetting: (key, defaultValue) => ipcRenderer.invoke('get-setting', key, defaultValue),
+  setSetting: (key, value) => ipcRenderer.invoke('set-setting', key, value),
+
   // Stock price tracking
   fetchHistoricalPrices: (ticker, options) => ipcRenderer.invoke('fetch-historical-prices', ticker, options),
   getPriceHistory: (ticker, options) => ipcRenderer.invoke('get-price-history', ticker, options),
@@ -68,5 +72,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Window controls
   windowMinimize: () => ipcRenderer.invoke('window-minimize'),
   windowMaximize: () => ipcRenderer.invoke('window-maximize'),
-  windowClose: () => ipcRenderer.invoke('window-close')
+  windowClose: () => ipcRenderer.invoke('window-close'),
+
+  // Window controls (already in the list above)
+  // Removed: onNewsArticlesReady - using executeJavaScript approach instead
 });

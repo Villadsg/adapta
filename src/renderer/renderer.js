@@ -73,6 +73,99 @@ const tabs = new Map(); // tabId -> {element, title, url}
 let pendingUpdates = new Map(); // tabId -> {url, title}
 let rafScheduled = false;
 
+// Auto-analysis debounce timer for "not good" detection
+let autoAnalysisTimer = null;
+const AUTO_ANALYSIS_DELAY = 2500; // Wait 2.5s after page load before analyzing (increased for snappier navigation)
+
+// Navigation velocity tracking - skip analysis during rapid browsing
+const navigationHistory = [];
+const MAX_NAV_HISTORY = 5;
+const NAV_COOLDOWN = 5000; // 5 seconds
+
+// Quick check if URL is worth analyzing (skip homepages, search pages, etc.)
+function shouldAttemptAnalysis(url) {
+  if (!url || !url.startsWith('http')) return false;
+  try {
+    const urlObj = new URL(url);
+    // Skip homepages
+    if (urlObj.pathname === '/' || urlObj.pathname === '') return false;
+    // Skip search pages
+    if (urlObj.search.includes('q=') || urlObj.pathname.includes('/search')) return false;
+    // Skip known search engines
+    if (urlObj.hostname.includes('duckduckgo') || urlObj.hostname.includes('google.com')) return false;
+    // Skip common non-article paths
+    if (/^\/(login|signup|account|cart|checkout|settings)/i.test(urlObj.pathname)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Automatically analyze page for "not good" similarity when navigating
+async function autoAnalyzeForNotGood() {
+  // Quick rejection based on URL
+  const tab = tabs.get(currentTabId);
+  if (!tab || !shouldAttemptAnalysis(tab.url)) {
+    analysisText.style.display = 'none';
+    return;
+  }
+
+  try {
+    const result = await window.electronAPI.analyzePage();
+
+    if (!result.success || result.skipped) {
+      // Clear any previous warning
+      analysisText.style.display = 'none';
+      return;
+    }
+
+    // Filter for "not_good" matches only
+    const notGoodMatches = (result.matches || []).filter(m => m.category === 'not_good');
+
+    if (notGoodMatches.length > 0) {
+      const topMatch = notGoodMatches[0];
+      const similarityPercent = (topMatch.similarity * 100).toFixed(0);
+
+      // Always show similarity to "not good" content
+      analysisText.textContent = `${similarityPercent}% similar to "Not Good": ${topMatch.title.substring(0, 40)}${topMatch.title.length > 40 ? '...' : ''}`;
+      analysisText.style.color = '#333333'; // Black
+      analysisText.style.display = 'inline';
+    } else {
+      // No "not good" matches - clear any warning
+      analysisText.style.display = 'none';
+    }
+  } catch (error) {
+    console.error('Auto-analysis error:', error);
+    analysisText.style.display = 'none';
+  }
+}
+
+// Debounced version of auto-analysis with velocity tracking
+function scheduleAutoAnalysis() {
+  // Clear any pending analysis
+  if (autoAnalysisTimer) {
+    clearTimeout(autoAnalysisTimer);
+  }
+
+  // Track navigation velocity
+  const now = Date.now();
+  navigationHistory.push(now);
+  if (navigationHistory.length > MAX_NAV_HISTORY) navigationHistory.shift();
+
+  // Skip analysis if navigating too fast (more than 3 navigations in 5 seconds)
+  const recentNavs = navigationHistory.filter(t => now - t < NAV_COOLDOWN);
+  if (recentNavs.length > 3) return;
+
+  // Schedule analysis after delay, using idle callback for better performance
+  autoAnalysisTimer = setTimeout(() => {
+    if (typeof requestIdleCallback !== 'undefined') {
+      requestIdleCallback(() => autoAnalyzeForNotGood(), { timeout: 5000 });
+    } else {
+      autoAnalyzeForNotGood();
+    }
+  }, AUTO_ANALYSIS_DELAY);
+}
+
 // Create a new tab
 async function createTab(url = '') {
   const tabId = await window.electronAPI.createTab(url);
@@ -201,22 +294,28 @@ function isUrl(input) {
   return false;
 }
 
-// URL bar navigation
-urlBar.addEventListener('keypress', async (e) => {
+// URL bar navigation - optimistic update for snappy feel
+urlBar.addEventListener('keypress', (e) => {
   if (e.key === 'Enter') {
     const input = urlBar.value.trim();
     if (input) {
       let url;
       if (isUrl(input)) {
-        // It's a URL - navigate directly
-        url = input;
+        // It's a URL - add protocol if missing
+        url = input.startsWith('http://') || input.startsWith('https://')
+          ? input
+          : 'https://' + input;
       } else {
         // It's a search query - use DuckDuckGo
         url = `https://duckduckgo.com/?q=${encodeURIComponent(input)}`;
       }
 
-      const finalUrl = await window.electronAPI.navigateToUrl(url);
-      urlBar.value = finalUrl;
+      // Optimistic update - show URL immediately for snappy feel
+      urlBar.value = url;
+      urlBar.blur();
+
+      // Fire-and-forget navigation - onUrlChanged will correct if needed
+      window.electronAPI.navigateToUrl(url);
     }
   }
 });
@@ -463,6 +562,11 @@ window.electronAPI.onUrlChanged(async (data) => {
 
   // Schedule batched DOM update for better performance
   scheduleDOMUpdate(tabId, url, title);
+
+  // Auto-analyze for "not good" similarity when active tab navigates
+  if (tabId === currentTabId && url.startsWith('http')) {
+    scheduleAutoAnalysis();
+  }
 });
 
 // New tab button
@@ -739,7 +843,7 @@ btnAnalyzeEvents.addEventListener('click', async () => {
   analysisModal.style.display = 'flex';
   analysisTickerInput.value = '';
   analysisBenchmarkInput.value = 'SPY';
-  analysisDaysInput.value = '1700';
+  analysisDaysInput.value = '200';
   analysisEventsInput.value = '15';
   analysisFetchNewsCheckbox.checked = true;
   analysisAddWatchlistCheckbox.checked = true;
@@ -787,7 +891,7 @@ modalAnalyze.addEventListener('click', async () => {
 
   const upperTicker = ticker.toUpperCase();
   const benchmark = (analysisBenchmarkInput.value.trim() || 'SPY').toUpperCase();
-  const days = parseInt(analysisDaysInput.value, 10) || 1700;
+  const days = parseInt(analysisDaysInput.value, 10) || 200;
   const minEvents = parseInt(analysisEventsInput.value, 10) || 15;
   const fetchNews = analysisFetchNewsCheckbox.checked;
   const addToWatchlistChecked = analysisAddWatchlistCheckbox.checked;

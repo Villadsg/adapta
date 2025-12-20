@@ -2,14 +2,48 @@
  * Article Extractor Service
  * Shared utility for extracting clean article content using Mozilla's Readability.js
  * Used by both the news scraper and article comparison features.
+ *
+ * Supports optional Bun worker for faster HTTP requests.
  */
 
 const { Readability } = require('@mozilla/readability');
 const { JSDOM } = require('jsdom');
 const https = require('https');
 const http = require('http');
+const bunBridge = require('./bunBridge');
 
 class ArticleExtractor {
+  constructor() {
+    // Browser-based extractor function (injected from main process)
+    this.browserExtractor = null;
+    // Bun worker settings
+    this.useBun = true; // Default to true
+    this.bunChecked = false;
+    this.bunAvailable = false;
+  }
+
+  /**
+   * Check if Bun is available (cached check)
+   * @returns {Promise<boolean>}
+   */
+  async checkBunAvailable() {
+    if (this.bunChecked) {
+      return this.bunAvailable;
+    }
+    this.bunChecked = true;
+    this.bunAvailable = await bunBridge.isBunAvailable();
+    return this.bunAvailable;
+  }
+
+  /**
+   * Set the browser-based extractor function
+   * This is injected from main.js to enable JavaScript-rendered page extraction
+   * @param {Function} extractorFn - Async function that takes (url, options) and returns article data
+   */
+  setBrowserExtractor(extractorFn) {
+    this.browserExtractor = extractorFn;
+    console.log('ArticleExtractor: Browser-based extraction enabled');
+  }
   /**
    * Extract article content from HTML using Readability.js
    * @param {string} html - The HTML content to parse
@@ -250,13 +284,36 @@ class ArticleExtractor {
   }
 
   /**
-   * Fetch HTML content from a URL using Node.js http/https
+   * Fetch HTML content from a URL
+   * Uses Bun worker if available, falls back to Node.js http/https
    * @param {string} url - URL to fetch
    * @param {number} timeout - Request timeout in milliseconds (default: 15000)
    * @param {number} maxRedirects - Maximum number of redirects to follow (default: 5)
    * @returns {Promise<string>} HTML content
    */
-  fetchHTML(url, timeout = 15000, maxRedirects = 5) {
+  async fetchHTML(url, timeout = 15000, maxRedirects = 5) {
+    // Try Bun worker first if available
+    if (this.useBun && await this.checkBunAvailable()) {
+      try {
+        return await bunBridge.fetchHTML(url, { timeout, maxRedirects });
+      } catch (error) {
+        console.warn(`[ArticleExtractor] Bun worker failed, falling back to Node.js: ${error.message}`);
+        // Fall through to Node.js implementation
+      }
+    }
+
+    // Node.js fallback
+    return this.fetchHTMLNode(url, timeout, maxRedirects);
+  }
+
+  /**
+   * Fetch HTML content from a URL using Node.js http/https (fallback)
+   * @param {string} url - URL to fetch
+   * @param {number} timeout - Request timeout in milliseconds (default: 15000)
+   * @param {number} maxRedirects - Maximum number of redirects to follow (default: 5)
+   * @returns {Promise<string>} HTML content
+   */
+  fetchHTMLNode(url, timeout = 15000, maxRedirects = 5) {
     return new Promise((resolve, reject) => {
       if (maxRedirects <= 0) {
         reject(new Error('Too many redirects'));
@@ -282,7 +339,7 @@ class ArticleExtractor {
             const urlObj = new URL(url);
             redirectUrl = `${urlObj.protocol}//${urlObj.host}${redirectUrl}`;
           }
-          return this.fetchHTML(redirectUrl, timeout, maxRedirects - 1)
+          return this.fetchHTMLNode(redirectUrl, timeout, maxRedirects - 1)
             .then(resolve)
             .catch(reject);
         }
@@ -308,7 +365,52 @@ class ArticleExtractor {
   }
 
   /**
-   * Fetch and extract article content from a URL (headless, no browser needed)
+   * Fetch and extract article content from a URL
+   * Uses browser-based extraction (preferred) or falls back to HTTP.
+   * @param {string} url - Article URL to fetch and extract
+   * @param {Object} options - Options
+   * @param {number} options.timeout - Request timeout in ms (default: 15000)
+   * @param {number} options.maxRetries - Maximum retry attempts (default: 2)
+   * @param {boolean} options.useBrowser - Force browser extraction (default: true if available)
+   * @returns {Promise<Object>} Extracted article data with title, text, url, tickers, etc.
+   */
+  async extractFromURL(url, options = {}) {
+    const { timeout = 15000, maxRetries = 2, useBrowser = true } = options;
+
+    // Try browser-based extraction first (handles JS-rendered pages and consent dialogs)
+    if (useBrowser && this.browserExtractor) {
+      try {
+        const article = await this.browserExtractor(url, { timeout });
+
+        // Validate we got actual content (not a consent page)
+        if (article && article.text && article.text.length > 100) {
+          // Extract tickers from the content
+          const tickers = this.extractTickers(article.text, article.title);
+
+          return {
+            title: article.title,
+            text: article.text,
+            url: url,
+            excerpt: article.excerpt || '',
+            byline: article.byline || '',
+            publishedDate: article.publishedDate || null,
+            tickers: tickers,
+            wordCount: article.text.split(/\s+/).length
+          };
+        } else {
+          console.log(`    Browser extraction returned insufficient content, trying HTTP fallback...`);
+        }
+      } catch (browserError) {
+        console.log(`    Browser extraction failed: ${browserError.message}, trying HTTP fallback...`);
+      }
+    }
+
+    // Fall back to HTTP-based extraction
+    return this.extractFromURLViaHTTP(url, { timeout, maxRetries });
+  }
+
+  /**
+   * Fetch and extract article content from a URL using HTTP (no browser)
    * Uses Node.js http/https to fetch and Mozilla Readability to parse.
    * @param {string} url - Article URL to fetch and extract
    * @param {Object} options - Options
@@ -316,7 +418,7 @@ class ArticleExtractor {
    * @param {number} options.maxRetries - Maximum retry attempts (default: 2)
    * @returns {Promise<Object>} Extracted article data with title, text, url, tickers, etc.
    */
-  async extractFromURL(url, options = {}) {
+  async extractFromURLViaHTTP(url, options = {}) {
     const { timeout = 15000, maxRetries = 2 } = options;
 
     let lastError;
@@ -348,7 +450,7 @@ class ArticleExtractor {
         };
       } catch (error) {
         lastError = error;
-        console.log(`    Attempt ${attempt}/${maxRetries + 1} failed for ${url}: ${error.message}`);
+        console.log(`    HTTP attempt ${attempt}/${maxRetries + 1} failed for ${url}: ${error.message}`);
 
         if (attempt <= maxRetries) {
           // Exponential backoff: 1s, 2s, 4s...

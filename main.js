@@ -18,6 +18,116 @@ const tabs = new Map(); // tabId -> BrowserView
 let activeTabId = null;
 let nextTabId = 1;
 
+// Track analysis tabs for news updates
+const analysisTabs = new Map(); // tabId -> { ticker, browserView }
+
+// Hidden BrowserView for article extraction (reused for performance)
+let extractionBrowserView = null;
+
+/**
+ * Get or create a hidden BrowserView for article extraction
+ * This allows us to load pages with full JavaScript execution
+ */
+function getExtractionBrowserView() {
+  if (!extractionBrowserView) {
+    extractionBrowserView = new BrowserView({
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        offscreen: true // Render offscreen for better performance
+      }
+    });
+    console.log('Created hidden BrowserView for article extraction');
+  }
+  return extractionBrowserView;
+}
+
+/**
+ * Try to click consent/cookie dialogs
+ */
+async function tryClickConsent(webContents) {
+  const consentSelectors = [
+    // Common consent button patterns
+    'button[name="agree"]',
+    'button.accept-all',
+    'button.consent-accept',
+    '[data-testid="consent-accept"]',
+    '[data-testid="accept-button"]',
+    'button[id*="accept"]',
+    'button[class*="accept"]',
+    'button[class*="consent"]',
+    // Text-based matching (CSS :has-text is not standard, use JS)
+  ];
+
+  // Try CSS selectors first
+  for (const selector of consentSelectors) {
+    try {
+      await webContents.executeJavaScript(`
+        (function() {
+          const btn = document.querySelector('${selector}');
+          if (btn) { btn.click(); return true; }
+          return false;
+        })()
+      `);
+    } catch (e) { /* ignore */ }
+  }
+
+  // Try text-based matching
+  try {
+    await webContents.executeJavaScript(`
+      (function() {
+        const buttons = document.querySelectorAll('button, a[role="button"], [type="submit"]');
+        for (const btn of buttons) {
+          const text = btn.textContent.toLowerCase();
+          if (text.includes('accept') || text.includes('agree') || text.includes('i agree') || text.includes('consent')) {
+            btn.click();
+            return true;
+          }
+        }
+        return false;
+      })()
+    `);
+  } catch (e) { /* ignore */ }
+
+  // Small delay to let dialog close
+  await new Promise(resolve => setTimeout(resolve, 300));
+}
+
+/**
+ * Extract article content using browser-based loading
+ * This handles JavaScript-rendered pages and consent dialogs
+ */
+async function extractArticleViaBrowser(url, options = {}) {
+  const { timeout = 20000 } = options;
+  const browserView = getExtractionBrowserView();
+
+  try {
+    console.log(`  [Browser] Loading: ${url.substring(0, 60)}...`);
+
+    // Load the URL
+    await browserView.webContents.loadURL(url);
+
+    // Wait for page to be ready (domcontentloaded + small delay for JS)
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Try to click consent dialogs
+    await tryClickConsent(browserView.webContents);
+
+    // Wait a bit more for any post-consent content to load
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Extract article using existing method
+    const article = await articleExtractor.extractFromWebContents(browserView.webContents);
+
+    console.log(`  [Browser] Extracted: "${article.title?.substring(0, 50)}..."`);
+    return article;
+
+  } catch (error) {
+    console.error(`  [Browser] Failed to extract from ${url}: ${error.message}`);
+    throw error;
+  }
+}
+
 // Performance optimization: debounce timers
 const navigationDebounceTimers = new Map(); // tabId -> timer
 let resizeTimer = null;
@@ -348,7 +458,26 @@ ipcMain.handle('analyze-page', async (event) => {
 
     // Extract clean article content using Readability.js
     const articleData = await articleExtractor.extractFromWebContents(browserView.webContents);
-    const { title, text } = articleData;
+    const { title, text, publishedDate } = articleData;
+
+    // Skip analysis for non-article pages (search results, front pages, etc.)
+    // Use multiple signals to detect non-article pages:
+    const parsedUrl = new URL(url);
+    const isHomepage = parsedUrl.pathname === '/' || parsedUrl.pathname === '';
+    const isSearchPage = parsedUrl.search.includes('q=') ||
+                         parsedUrl.pathname.includes('/search') ||
+                         parsedUrl.hostname.includes('duckduckgo');
+    const hasPublishedDate = !!publishedDate;
+
+    // Skip if: (homepage OR search page) AND no published date
+    if ((isHomepage || isSearchPage) && !hasPublishedDate) {
+      return {
+        success: true,
+        matches: [],
+        skipped: true,
+        reason: 'Non-article page (homepage or search results)'
+      };
+    }
 
     // Use full article text for most accurate similarity comparison
     const queryText = `${title}. ${text}`;
@@ -357,10 +486,11 @@ ipcMain.handle('analyze-page', async (event) => {
     console.log(`   Extracted ${text.length} chars of clean article content`);
     console.log(`   Comparing full article text for maximum accuracy`);
 
-    // Search for similar content (top 5 matches, minimum 50% similarity)
+    // Search for similar content in "not_good" articles only (always show top match)
     const results = await database.searchBySimilarity(queryText, {
       limit: 5,
-      minSimilarity: 0.5
+      minSimilarity: 0,
+      categoryFilter: 'not_good'
     });
 
     // Group results by article and get best match per article
@@ -409,6 +539,184 @@ ipcMain.handle('analyze-page', async (event) => {
   }
 });
 
+// Common boilerplate patterns to remove from articles (regex-based)
+const BOILERPLATE_PATTERNS = [
+  // Newsletter CTAs
+  /sign\s+up\s+(for|to)\s+(our|the|a)?\s*newsletter/gi,
+  /subscribe\s+(to|for)\s+(our|the|a)?\s*newsletter/gi,
+  /get\s+(the\s+)?latest\s+news\s+(in\s+your\s+inbox|delivered)/gi,
+  /join\s+our\s+mailing\s+list/gi,
+  /enter\s+your\s+email/gi,
+
+  // Cookie/Privacy notices
+  /we\s+use\s+cookies/gi,
+  /by\s+continuing\s+to\s+(use|browse)\s+(this\s+)?(site|website)/gi,
+  /privacy\s+policy\s+and\s+terms/gi,
+  /accept\s+(all\s+)?cookies/gi,
+  /cookie\s+(policy|settings|preferences)/gi,
+
+  // Social media CTAs
+  /follow\s+us\s+on\s+(twitter|x|facebook|linkedin|instagram)/gi,
+  /share\s+(this\s+)?(article|story|post)\s+on/gi,
+  /connect\s+with\s+us/gi,
+  /like\s+us\s+on\s+facebook/gi,
+
+  // Read more / Related content
+  /read\s+more\s*:/gi,
+  /related\s+(articles?|stories|content|posts?)\s*:/gi,
+  /you\s+(may|might)\s+also\s+like/gi,
+  /recommended\s+for\s+you/gi,
+  /more\s+from\s+this\s+(author|section)/gi,
+  /trending\s+(now|stories)/gi,
+
+  // Subscription prompts
+  /already\s+a\s+(member|subscriber)/gi,
+  /create\s+(a\s+)?free\s+account/gi,
+  /start\s+your\s+free\s+trial/gi,
+  /upgrade\s+to\s+premium/gi,
+  /become\s+a\s+(member|subscriber)/gi,
+  /unlimited\s+access/gi,
+
+  // Comments section noise
+  /leave\s+a\s+comment/gi,
+  /comments?\s+are\s+closed/gi,
+  /\d+\s+comments?(?:\s|$)/gi,
+  /post\s+a\s+comment/gi,
+
+  // Copyright notices
+  /copyright\s+\d{4}/gi,
+  /all\s+rights\s+reserved/gi,
+  /\u00a9\s*\d{4}/g,
+
+  // Ad-related
+  /advertisement/gi,
+  /sponsored\s+content/gi,
+  /partner\s+content/gi,
+];
+
+// Helper function to clean boilerplate from articles
+// Removes common patterns and sentences that appear in multiple articles
+async function cleanBoilerplateWithReclean(newText, category) {
+  console.log(`\n[Boilerplate Cleaner] Starting for category: ${category}`);
+  console.log(`[Boilerplate Cleaner] Original text length: ${newText.length} chars`);
+
+  const cleaningLog = {
+    originalLength: newText.length,
+    patternMatches: [],
+    sharedSentences: [],
+    existingArticlesRecleaned: [],
+    finalLength: 0
+  };
+
+  // Step 1: Remove common boilerplate patterns (regex-based)
+  let cleanedText = newText;
+  for (const pattern of BOILERPLATE_PATTERNS) {
+    const matches = cleanedText.match(pattern);
+    if (matches) {
+      cleaningLog.patternMatches.push({
+        pattern: pattern.toString().substring(0, 50),
+        count: matches.length,
+        samples: matches.slice(0, 2)
+      });
+      cleanedText = cleanedText.replace(pattern, ' ');
+    }
+  }
+
+  // Normalize whitespace after pattern removal
+  cleanedText = cleanedText.replace(/\s+/g, ' ').trim();
+
+  console.log(`[Boilerplate Cleaner] After pattern removal: ${cleanedText.length} chars (${cleaningLog.patternMatches.length} patterns matched)`);
+
+  // Step 2: Find cross-article shared sentences within same category
+  const existingArticles = await database.getArticlesByCategory(category);
+
+  const splitSentences = (text) => {
+    if (!text) return [];
+    return text
+      .split(/(?<=[.!?])\s+(?=[A-Z])/)
+      .map(s => s.trim())
+      .filter(s => s.length > 15);  // Increased threshold to reduce false positives
+  };
+
+  const newSentences = splitSentences(cleanedText);
+
+  // Build map: sentence (lowercase) -> list of article IDs containing it
+  const sentenceToArticles = new Map();
+  for (const article of existingArticles) {
+    const articleSentences = splitSentences(article.content);
+    for (const sentence of articleSentences) {
+      const key = sentence.toLowerCase().trim();
+      if (!sentenceToArticles.has(key)) {
+        sentenceToArticles.set(key, []);
+      }
+      sentenceToArticles.get(key).push(article.id);
+    }
+  }
+
+  // Find sentences in new article that match existing articles
+  const matchingSentences = new Set();
+  const articlesToReclean = new Set();
+
+  for (const sentence of newSentences) {
+    const key = sentence.toLowerCase().trim();
+    if (sentenceToArticles.has(key)) {
+      matchingSentences.add(key);
+      cleaningLog.sharedSentences.push(sentence.substring(0, 80) + (sentence.length > 80 ? '...' : ''));
+      sentenceToArticles.get(key).forEach(id => articlesToReclean.add(id));
+    }
+  }
+
+  console.log(`[Boilerplate Cleaner] Shared sentences found: ${matchingSentences.size}`);
+
+  // Clean new article: remove matching sentences
+  const cleanedNewSentences = newSentences.filter(s => !matchingSentences.has(s.toLowerCase().trim()));
+  const finalText = cleanedNewSentences.join(' ');
+
+  console.log(`[Boilerplate Cleaner] After shared sentence removal: ${finalText.length} chars`);
+
+  // Step 3: Re-clean existing articles that had matching sentences AND regenerate embeddings
+  const updatedArticleIds = [];
+  for (const articleId of articlesToReclean) {
+    const article = existingArticles.find(a => a.id === articleId);
+    if (!article) continue;
+
+    const articleSentences = splitSentences(article.content);
+    const cleanedArticleSentences = articleSentences.filter(s => !matchingSentences.has(s.toLowerCase().trim()));
+    const cleanedArticleText = cleanedArticleSentences.join(' ');
+
+    // Only update if content actually changed and has enough remaining content
+    if (cleanedArticleText !== article.content && cleanedArticleText.length > 50) {
+      await database.updateArticleContent(articleId, cleanedArticleText, article.title);
+      updatedArticleIds.push(articleId);
+      cleaningLog.existingArticlesRecleaned.push({
+        id: articleId,
+        oldLength: article.content.length,
+        newLength: cleanedArticleText.length
+      });
+      console.log(`[Boilerplate Cleaner] Re-cleaned article ID ${articleId}: ${article.content.length} -> ${cleanedArticleText.length} chars (embedding regenerated)`);
+    }
+  }
+
+  cleaningLog.finalLength = finalText.length > 50 ? finalText.length : newText.length;
+
+  // Summary log
+  console.log(`[Boilerplate Cleaner] === SUMMARY ===`);
+  console.log(`[Boilerplate Cleaner] Original: ${cleaningLog.originalLength} chars`);
+  console.log(`[Boilerplate Cleaner] Final: ${cleaningLog.finalLength} chars`);
+  console.log(`[Boilerplate Cleaner] Reduction: ${cleaningLog.originalLength - cleaningLog.finalLength} chars (${((cleaningLog.originalLength - cleaningLog.finalLength) / cleaningLog.originalLength * 100).toFixed(1)}%)`);
+  console.log(`[Boilerplate Cleaner] Pattern matches: ${cleaningLog.patternMatches.length}`);
+  console.log(`[Boilerplate Cleaner] Shared sentences removed: ${matchingSentences.size}`);
+  console.log(`[Boilerplate Cleaner] Existing articles re-cleaned: ${updatedArticleIds.length}`);
+  console.log(`[Boilerplate Cleaner] =================\n`);
+
+  return {
+    cleanedText: finalText.length > 50 ? finalText : newText,  // Fallback if too aggressive
+    matchingSentences: Array.from(matchingSentences),
+    updatedArticleIds,
+    cleaningLog
+  };
+}
+
 ipcMain.handle('save-article', async (event, category, manualTickers = []) => {
   try {
     const browserView = getActiveBrowserView();
@@ -416,11 +724,51 @@ ipcMain.handle('save-article', async (event, category, manualTickers = []) => {
 
     // Extract clean article content using Readability.js
     const articleData = await articleExtractor.extractFromWebContents(browserView.webContents);
-    const { url, title, text, publishedDate, tickers: autoTickers } = articleData;
+    let { url, title, text, publishedDate, tickers: autoTickers } = articleData;
 
     // Only extract tickers and dates for 'stock_news' category
     // For 'not_good' articles, skip ticker/date extraction
     const shouldExtractStockData = (category === 'stock_news');
+
+    // Apply boilerplate cleaning for stock_news and not_good categories (NOT 'good')
+    const shouldCleanBoilerplate = ['stock_news', 'not_good'].includes(category);
+    let cleaningResult = null;
+
+    if (shouldCleanBoilerplate) {
+      cleaningResult = await cleanBoilerplateWithReclean(text, category);
+      text = cleaningResult.cleanedText;
+
+      // Detailed cleaning report
+      console.log(`\n===== Boilerplate Cleaning Report for "${category}" =====`);
+      console.log(`Article: "${title?.substring(0, 60)}${title?.length > 60 ? '...' : ''}"`);
+      console.log(`Original length: ${cleaningResult.cleaningLog.originalLength} chars`);
+      console.log(`Cleaned length: ${cleaningResult.cleaningLog.finalLength} chars`);
+
+      if (cleaningResult.cleaningLog.patternMatches.length > 0) {
+        console.log(`\nPatterns removed (${cleaningResult.cleaningLog.patternMatches.length}):`);
+        cleaningResult.cleaningLog.patternMatches.forEach(pm => {
+          console.log(`  - ${pm.pattern}: ${pm.count} match(es)`);
+        });
+      }
+
+      if (cleaningResult.matchingSentences.length > 0) {
+        console.log(`\nShared sentences removed: ${cleaningResult.matchingSentences.length}`);
+        cleaningResult.cleaningLog.sharedSentences.slice(0, 3).forEach(s => {
+          console.log(`  - "${s}"`);
+        });
+        if (cleaningResult.cleaningLog.sharedSentences.length > 3) {
+          console.log(`  ... and ${cleaningResult.cleaningLog.sharedSentences.length - 3} more`);
+        }
+      }
+
+      if (cleaningResult.updatedArticleIds.length > 0) {
+        console.log(`\nExisting articles re-cleaned (with embedding regeneration):`);
+        cleaningResult.cleaningLog.existingArticlesRecleaned.forEach(a => {
+          console.log(`  - ID ${a.id}: ${a.oldLength} -> ${a.newLength} chars`);
+        });
+      }
+      console.log(`================================================\n`);
+    }
 
     // Merge auto-extracted tickers with manual tickers
     let finalTickers = [];
@@ -548,6 +896,27 @@ ipcMain.handle('clear-news-volume', async (event) => {
   }
 });
 
+// Get setting from database
+ipcMain.handle('get-setting', async (event, key, defaultValue) => {
+  try {
+    return await database.getSetting(key, defaultValue);
+  } catch (error) {
+    console.error('Error getting setting:', error);
+    return defaultValue;
+  }
+});
+
+// Set setting in database
+ipcMain.handle('set-setting', async (event, key, value) => {
+  try {
+    await database.setSetting(key, value);
+    return { success: true };
+  } catch (error) {
+    console.error('Error setting setting:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Semantic search handler
 ipcMain.handle('search-similarity', async (event, query, options) => {
   try {
@@ -555,6 +924,17 @@ ipcMain.handle('search-similarity', async (event, query, options) => {
     return { success: true, results };
   } catch (error) {
     console.error('Error searching:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Browser-based article extraction (handles JavaScript-rendered pages and consent dialogs)
+ipcMain.handle('extract-article-via-browser', async (event, url, options = {}) => {
+  try {
+    const article = await extractArticleViaBrowser(url, options);
+    return { success: true, article };
+  } catch (error) {
+    console.error('Error extracting article via browser:', error);
     return { success: false, error: error.message };
   }
 });
@@ -730,7 +1110,7 @@ ipcMain.handle('analyze-stock-events', async (event, ticker, options = {}) => {
   try {
     const {
       benchmark = 'SPY',
-      days = 1700,
+      days = 200,
       minEvents = 15,
       fetchNews = true,
       newsDayRange = 1,
@@ -747,23 +1127,7 @@ ipcMain.handle('analyze-stock-events', async (event, ticker, options = {}) => {
       minEvents,
     });
 
-    let newsArticlesFetched = 0;
-
-    // Fetch news from Yahoo Finance if enabled
-    if (fetchNews && result.events.length > 0) {
-      console.log(`\nFetching Yahoo Finance news for events...`);
-      await stockAnalyzer.fetchEventNews(result.events, ticker, {
-        dayRange: newsDayRange,
-        maxArticlesPerEvent: maxArticles
-      });
-
-      // Count fetched articles
-      newsArticlesFetched = result.events.reduce(
-        (sum, e) => sum + (e.fetchedArticles?.length || 0), 0
-      );
-    }
-
-    // Find related articles from existing DB for each event
+    // Find related articles from existing DB for each event (fast, immediate)
     console.log(`\nFinding related articles for ${result.events.length} events...`);
     for (const eventData of result.events) {
       // Get existing DB articles
@@ -773,21 +1137,12 @@ ipcMain.handle('analyze-stock-events', async (event, ticker, options = {}) => {
         3
       );
 
-      // Merge with fetched articles, avoiding duplicates
-      const allArticles = [...existingArticles];
-      if (eventData.fetchedArticles) {
-        for (const fetched of eventData.fetchedArticles) {
-          if (!allArticles.find(a => a.url === fetched.url)) {
-            allArticles.push(fetched);
-          }
-        }
-      }
-
       // Calculate similarities between articles
-      eventData.articles = await stockAnalyzer.calculateArticleSimilarities(allArticles);
+      eventData.articles = await stockAnalyzer.calculateArticleSimilarities(existingArticles);
+      eventData.fetchedArticles = []; // Start with no fetched articles
     }
 
-    // Generate HTML report
+    // Generate HTML report with events and existing articles (return immediately)
     const html = stockAnalyzer.generateAnalysisHTML(
       result.data,
       result.events,
@@ -795,18 +1150,68 @@ ipcMain.handle('analyze-stock-events', async (event, ticker, options = {}) => {
     );
 
     console.log(`\nAnalysis complete: ${result.events.length} events found`);
-    if (fetchNews) {
-      console.log(`News articles fetched: ${newsArticlesFetched}`);
+    console.log(`Events display ready - fetching news in background...`);
+
+    // START: Fetch news in background (don't wait, user sees events immediately)
+    if (fetchNews && result.events.length > 0) {
+      // Background task - doesn't block the response
+      // Use setTimeout to give renderer time to create the new tab first
+      setTimeout(async () => {
+        // Get the BrowserView NOW (after renderer has created the tab)
+        const analysisBrowserView = getActiveBrowserView();
+        const analysisTabId = activeTabId;
+        try {
+          console.log(`\nBackground: Fetching Yahoo Finance news for events...`);
+          await stockAnalyzer.fetchEventNews(result.events, ticker, {
+            dayRange: newsDayRange,
+            maxArticlesPerEvent: maxArticles
+          });
+          console.log(`\nBackground: News fetch and storage complete`);
+
+          // Re-run article finding now that news is in the database
+          console.log(`Background: Re-finding articles with newly saved news...`);
+          for (const eventData of result.events) {
+            const existingArticles = await stockAnalyzer.findRelatedArticles(
+              eventData.date,
+              ticker,
+              3
+            );
+            eventData.articles = await stockAnalyzer.calculateArticleSimilarities(existingArticles);
+          }
+
+          // Re-generate HTML with updated articles
+          const updatedHtml = stockAnalyzer.generateAnalysisHTML(
+            result.data,
+            result.events,
+            ticker
+          );
+
+          // Load the new HTML into the BrowserView
+          if (analysisBrowserView && analysisBrowserView.webContents) {
+            try {
+              console.log(`Background: Loading updated analysis page for ${ticker}...`);
+              const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(updatedHtml);
+              await analysisBrowserView.webContents.loadURL(dataUrl);
+              console.log(`Background: Updated analysis page loaded successfully`);
+            } catch (error) {
+              console.error(`Background: Failed to load updated page: ${error.message}`);
+            }
+          } else {
+            console.log(`Background: BrowserView not available for update`);
+          }
+
+        } catch (error) {
+          console.error('Background: Error fetching news:', error.message);
+        }
+      }, 500); // 500ms delay to let renderer create the tab first
     }
 
     return {
       success: true,
       html,
       eventCount: result.events.length,
-      stats: {
-        ...result.stats,
-        newsArticlesFetched
-      },
+      newsLoadingInBackground: fetchNews && result.events.length > 0,
+      stats: result.stats
     };
   } catch (error) {
     console.error('Error analyzing stock events:', error);
@@ -943,6 +1348,10 @@ app.whenReady().then(async () => {
   // Initialize stock analyzer
   stockAnalyzer = new StockAnalysisService(database);
 
+  // Inject browser-based extractor into articleExtractor for JavaScript-rendered pages
+  articleExtractor.setBrowserExtractor(extractArticleViaBrowser);
+  console.log('✓ Browser-based article extraction enabled');
+
   // Initialize news harvester
   newsHarvester = new NewsHarvesterService(database);
 
@@ -954,15 +1363,22 @@ app.whenReady().then(async () => {
     priceTracker.startPolling(parseInt(pollingInterval));
   }
 
-  // Check if news harvester is enabled in settings
-  const harvesterEnabled = await database.getSetting('news_harvester_enabled', 'false');
-  const harvesterInterval = await database.getSetting('news_harvester_interval', '60');
+  // Check if watchlist auto-harvest is enabled (defaults to true)
+  const watchlistAutoHarvest = await database.getSetting('watchlist_auto_harvest', 'true');
 
-  if (harvesterEnabled === 'true') {
-    newsHarvester.start({
-      intervalMinutes: parseInt(harvesterInterval),
-      runImmediately: false // Don't run immediately on startup, wait for first interval
-    });
+  if (watchlistAutoHarvest === 'true') {
+    const INITIAL_DELAY_MS = 10 * 60 * 1000;  // 10 minutes
+    const HOURLY_INTERVAL = 60;                // 60 minutes
+
+    console.log('NewsHarvester: Will start in 10 minutes, then run hourly');
+
+    setTimeout(() => {
+      console.log('NewsHarvester: Starting initial harvest after 10-minute delay');
+      newsHarvester.start({
+        intervalMinutes: HOURLY_INTERVAL,
+        runImmediately: true  // Run immediately when timer fires
+      });
+    }, INITIAL_DELAY_MS);
   }
 
   createWindow();

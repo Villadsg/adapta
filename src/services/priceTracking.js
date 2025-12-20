@@ -1,14 +1,36 @@
 const https = require('https');
+const bunBridge = require('./bunBridge');
 
 /**
  * Price Tracking Service
  * Fetches stock price data from Yahoo Finance and manages price updates
+ *
+ * Supports optional Bun worker for faster HTTP requests.
  */
 class PriceTrackingService {
-  constructor(database) {
+  constructor(database, options = {}) {
     this.database = database;
     this.pollingInterval = null;
     this.pollingIntervalMs = 15 * 60 * 1000; // Default 15 minutes
+    this.useBun = options.useBun !== false; // Default to true, set false to disable
+    this.bunChecked = false;
+    this.bunAvailable = false;
+  }
+
+  /**
+   * Check if Bun is available (cached check)
+   * @returns {Promise<boolean>}
+   */
+  async checkBunAvailable() {
+    if (this.bunChecked) {
+      return this.bunAvailable;
+    }
+    this.bunChecked = true;
+    this.bunAvailable = await bunBridge.isBunAvailable();
+    if (this.bunAvailable && this.useBun) {
+      console.log('📦 Bun detected - using Bun workers for faster HTTP requests');
+    }
+    return this.bunAvailable;
   }
 
   /**
@@ -264,11 +286,32 @@ class PriceTrackingService {
   }
 
   /**
-   * Fetch JSON data from URL using https
+   * Fetch JSON data from URL
+   * Uses Bun worker if available, falls back to Node.js https
    * @param {string} url - URL to fetch
    * @returns {Promise<Object>} Parsed JSON response
    */
-  fetchJSON(url) {
+  async fetchJSON(url) {
+    // Try Bun worker first if available
+    if (this.useBun && await this.checkBunAvailable()) {
+      try {
+        return await bunBridge.fetchJSON(url);
+      } catch (error) {
+        console.warn(`[PriceTracking] Bun worker failed, falling back to Node.js: ${error.message}`);
+        // Fall through to Node.js implementation
+      }
+    }
+
+    // Node.js fallback
+    return this.fetchJSONNode(url);
+  }
+
+  /**
+   * Fetch JSON data from URL using Node.js https (fallback)
+   * @param {string} url - URL to fetch
+   * @returns {Promise<Object>} Parsed JSON response
+   */
+  fetchJSONNode(url) {
     return new Promise((resolve, reject) => {
       https.get(url, (res) => {
         let data = '';

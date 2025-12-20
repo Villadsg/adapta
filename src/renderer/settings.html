@@ -359,139 +359,20 @@
 
     <div id="message" class="message"></div>
 
-    <!-- Database Statistics -->
+    <!-- Watchlist Settings -->
     <div class="section">
-      <h2>Database Statistics</h2>
+      <h2>Watchlist Settings</h2>
 
-      <!-- Overview Stats -->
-      <div class="stats">
-        <div class="stat-card stat-blue">
-          <div class="stat-value" id="stat-total">0</div>
-          <div class="stat-label">Total Articles</div>
-        </div>
-        <div class="stat-card stat-green">
-          <div class="stat-value" id="stat-stock-news">0</div>
-          <div class="stat-label">Stock News</div>
-        </div>
-        <div class="stat-card stat-red">
-          <div class="stat-value" id="stat-not-good">0</div>
-          <div class="stat-label">Not Good Articles</div>
-        </div>
-        <div class="stat-card stat-purple">
-          <div class="stat-value" id="stat-news-volume">0</div>
-          <div class="stat-label">News Volume Records</div>
-        </div>
-      </div>
-
-      <!-- Stock News Metrics -->
-      <h3 style="margin-top: 30px; margin-bottom: 15px; color: #cccccc;">Stock News Metrics</h3>
-      <div class="stats">
-        <div class="stat-card stat-green">
-          <div class="stat-value" id="stat-unique-tickers">0</div>
-          <div class="stat-label">Unique Tickers</div>
-        </div>
-        <div class="stat-card stat-green">
-          <div class="stat-value" id="stat-articles-with-tickers">0</div>
-          <div class="stat-label">Articles with Tickers</div>
-        </div>
-        <div class="stat-card stat-orange">
-          <div class="stat-value" id="stat-articles-with-dates">0</div>
-          <div class="stat-label">Articles with Dates</div>
-        </div>
-        <div class="stat-card stat-orange">
-          <div class="stat-value" id="stat-db-size">0 MB</div>
-          <div class="stat-label">Database Size</div>
-        </div>
-      </div>
-
-      <!-- Top Tickers -->
-      <h3 style="margin-top: 30px; margin-bottom: 15px; color: #cccccc;">Top 10 Tickers</h3>
-      <div class="domain-list" id="ticker-list">
-        <div style="color: #666; font-style: italic;">Loading...</div>
-      </div>
-    </div>
-
-    <!-- Stock Price Tracking -->
-    <div class="section">
-      <h2>Stock Price Tracking</h2>
-
-      <!-- Price Statistics -->
-      <h3 style="margin-bottom: 15px; color: #cccccc;">Price Data Statistics</h3>
-      <div class="stats">
-        <div class="stat-card stat-blue">
-          <div class="stat-value" id="stat-total-prices">0</div>
-          <div class="stat-label">Total Price Records</div>
-        </div>
-        <div class="stat-card stat-green">
-          <div class="stat-value" id="stat-price-tickers">0</div>
-          <div class="stat-label">Tickers with Prices</div>
-        </div>
-        <div class="stat-card stat-purple">
-          <div class="stat-value" id="stat-watched-tickers">0</div>
-          <div class="stat-label">Watched Tickers</div>
-        </div>
-        <div class="stat-card stat-orange">
-          <div class="stat-value" id="stat-price-date-range">-</div>
-          <div class="stat-label">Date Range</div>
-        </div>
-      </div>
-
-      <!-- Auto-Polling Configuration -->
-      <h3 style="margin-top: 30px; margin-bottom: 15px; color: #cccccc;">Automatic Price Updates</h3>
       <div class="form-group">
-        <label>
-          <input type="checkbox" id="auto-polling-enabled" style="width: auto; height: auto; margin-right: 8px;">
-          Enable automatic price updates
+        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+          <input type="checkbox" id="watchlist-auto-harvest" style="width: 18px; height: 18px; cursor: pointer;" />
+          <span>Auto-harvest news for watched tickers</span>
         </label>
-        <small>Automatically fetch latest prices for watched tickers in the background</small>
-      </div>
-
-      <div class="form-group">
-        <label for="polling-interval">Update Interval (minutes)</label>
-        <select id="polling-interval">
-          <option value="5">Every 5 minutes</option>
-          <option value="15" selected>Every 15 minutes (recommended)</option>
-          <option value="30">Every 30 minutes</option>
-          <option value="60">Every hour</option>
-        </select>
-        <small>How often to check for price updates. Lower intervals may hit API rate limits.</small>
+        <small>When enabled, checks for news 10 minutes after startup, then hourly. Requires restart to take effect.</small>
       </div>
 
       <div class="button-group">
-        <button class="btn-primary" id="btn-save-polling">Save Settings</button>
-        <button class="btn-secondary" id="btn-refresh-all-prices">Refresh All Prices Now</button>
-      </div>
-
-      <!-- Polling Status -->
-      <div id="polling-status" style="margin-top: 20px; padding: 12px; background: #1e1e1e; border: 1px solid #404040; border-radius: 4px; color: #cccccc; font-size: 14px;">
-        Status: <span id="polling-status-text">Loading...</span>
-      </div>
-    </div>
-
-    <!-- News Volume Tracking -->
-    <div class="section">
-      <h2>Recent News Volume Counts</h2>
-      <p style="color: #888888; margin-bottom: 20px; font-size: 14px;">
-        Track news volume over time using the "📊 Count News" button on ticker news pages.
-      </p>
-
-      <div id="news-volume-container" style="max-height: 400px; overflow-y: auto; background: #1e1e1e; border: 1px solid #404040; border-radius: 6px; padding: 16px;">
-        <div style="color: #666; font-style: italic;">Loading...</div>
-      </div>
-    </div>
-
-    <!-- Database Management -->
-    <div class="section">
-      <h2>Database Management</h2>
-
-      <div class="button-group">
-        <button id="btn-clear-all" class="btn-danger-dark">Clear All Articles</button>
-        <button id="btn-clear-news-volume" class="btn-danger">Clear News Volume Data</button>
-      </div>
-
-      <div class="warning-text">
-        <strong>Clear All Articles:</strong> Deletes all saved articles (stock_news and not_good). This action cannot be undone!<br>
-        <strong>Clear News Volume Data:</strong> Removes all news volume count records while preserving your saved articles.
+        <button id="btn-save-watchlist-settings" class="btn-primary">Save Settings</button>
       </div>
     </div>
 
@@ -532,8 +413,6 @@
   <script>
     // Get DOM elements
     const message = document.getElementById('message');
-    const btnClearAll = document.getElementById('btn-clear-all');
-    const btnClearNewsVolume = document.getElementById('btn-clear-news-volume');
 
     // Show message
     function showMessage(text, type = 'info') {
@@ -545,122 +424,6 @@
       }, 5000);
     }
 
-    // Load stats
-    async function loadStats() {
-      try {
-        const stats = await window.electronAPI.getStockStats();
-
-        // Basic counts
-        document.getElementById('stat-total').textContent = stats.total.toLocaleString();
-        document.getElementById('stat-stock-news').textContent = stats.stockNews.toLocaleString();
-        document.getElementById('stat-not-good').textContent = stats.notGood.toLocaleString();
-        document.getElementById('stat-news-volume').textContent = stats.newsVolumeRecords.toLocaleString();
-
-        // Stock news metrics
-        document.getElementById('stat-unique-tickers').textContent = stats.uniqueTickers.toLocaleString();
-        document.getElementById('stat-articles-with-tickers').textContent = stats.articlesWithTickers.toLocaleString();
-        document.getElementById('stat-articles-with-dates').textContent = stats.articlesWithDates.toLocaleString();
-        document.getElementById('stat-db-size').textContent = `${stats.dbSizeMB} MB`;
-
-        // Top tickers
-        const tickerList = document.getElementById('ticker-list');
-        if (stats.topTickers && stats.topTickers.length > 0) {
-          tickerList.innerHTML = stats.topTickers.map(t => `
-            <div class="domain-item">
-              <div class="domain-name">${t.ticker}</div>
-              <div class="domain-count">${t.count.toLocaleString()}</div>
-            </div>
-          `).join('');
-        } else {
-          tickerList.innerHTML = '<div style="color: #666; font-style: italic;">No tickers yet</div>';
-        }
-
-        // News volume records
-        await loadNewsVolume();
-      } catch (error) {
-        console.error('Error loading stats:', error);
-      }
-    }
-
-    // Load recent news volume counts
-    async function loadNewsVolume() {
-      try {
-        const volumeData = await window.electronAPI.getRecentNewsVolume();
-        const container = document.getElementById('news-volume-container');
-
-        if (volumeData && volumeData.length > 0) {
-          container.innerHTML = volumeData.map(v => {
-            const date = new Date(v.recorded_at).toLocaleString();
-            return `
-              <div class="domain-item">
-                <div style="flex: 1;">
-                  <div class="domain-name">${v.ticker}</div>
-                  <div style="font-size: 12px; color: #666666; margin-top: 2px;">${date} · ${v.source || 'Unknown'}</div>
-                </div>
-                <div class="domain-count">${v.article_count.toLocaleString()} articles</div>
-              </div>
-            `;
-          }).join('');
-        } else {
-          container.innerHTML = '<div style="color: #666; font-style: italic;">No news volume records yet. Use the "📊 Count News" button to start tracking.</div>';
-        }
-      } catch (error) {
-        console.error('Error loading news volume:', error);
-        document.getElementById('news-volume-container').innerHTML = '<div style="color: #f44336;">Error loading news volume data</div>';
-      }
-    }
-
-
-    // Clear all articles
-    btnClearAll.addEventListener('click', async () => {
-      const confirm = window.confirm(
-        '⚠️ WARNING: This will delete ALL articles from the database!\n\n' +
-        'This includes:\n' +
-        '- All stock news articles\n' +
-        '- All "not good" articles\n\n' +
-        'News volume records will NOT be deleted.\n\n' +
-        'This action CANNOT be undone!\n\n' +
-        'Click OK to continue.'
-      );
-
-      if (!confirm) return;
-
-      const confirmText = window.prompt('Type "DELETE ALL ARTICLES" to confirm:');
-      if (confirmText !== 'DELETE ALL ARTICLES') {
-        showMessage('Clear articles cancelled', 'info');
-        return;
-      }
-
-      try {
-        showMessage('Clearing all articles...', 'info');
-        await window.electronAPI.clearAllData();
-        showMessage('✓ All articles cleared successfully', 'success');
-        await loadStats();
-      } catch (error) {
-        showMessage('Error clearing data: ' + error.message, 'error');
-      }
-    });
-
-    // Clear news volume data
-    btnClearNewsVolume.addEventListener('click', async () => {
-      const confirm = window.confirm(
-        '⚠️ WARNING: This will delete all news volume count records!\n\n' +
-        'Your saved articles will NOT be affected.\n\n' +
-        'Continue?'
-      );
-
-      if (!confirm) return;
-
-      try {
-        showMessage('Clearing news volume data...', 'info');
-        await window.electronAPI.clearNewsVolume();
-        showMessage('✓ News volume data cleared successfully', 'success');
-        await loadStats();
-      } catch (error) {
-        showMessage('Error clearing news volume: ' + error.message, 'error');
-      }
-    });
-
     // SQL Query Interface
     const sqlQuery = document.getElementById('sql-query');
     const btnExecuteSQL = document.getElementById('btn-execute-sql');
@@ -669,13 +432,10 @@
     const sqlResultsInfo = document.getElementById('sql-results-info');
     const sqlResultsContainer = document.getElementById('sql-results-container');
 
-    let lastQueryResult = null;
-
     // Clear query
     btnClearQuery.addEventListener('click', () => {
       sqlQuery.value = '';
       sqlResults.style.display = 'none';
-      lastQueryResult = null;
     });
 
     // Execute SQL query
@@ -703,8 +463,6 @@
           return;
         }
 
-        lastQueryResult = result;
-
         if (result.type === 'select') {
           // Display SELECT results
           displayQueryResults(result);
@@ -713,9 +471,6 @@
           // Display mutation results
           sqlResults.style.display = 'none';
           showMessage(`✓ ${result.message} (${result.executionTime}ms)`, 'success');
-
-          // Refresh stats if data was modified
-          await loadStats();
         }
       } catch (error) {
         btnExecuteSQL.disabled = false;
@@ -785,105 +540,33 @@
       return div.innerHTML;
     }
 
-    // === Price Tracking Functions ===
+    // === Watchlist Settings ===
+    const watchlistAutoHarvest = document.getElementById('watchlist-auto-harvest');
+    const btnSaveWatchlistSettings = document.getElementById('btn-save-watchlist-settings');
 
-    // Load price statistics
-    async function loadPriceStats() {
+    // Load watchlist settings on page load
+    async function loadWatchlistSettings() {
       try {
-        const result = await window.electronAPI.getPriceStats();
-        if (result.success) {
-          const stats = result.stats;
-          document.getElementById('stat-total-prices').textContent = stats.totalPrices.toLocaleString();
-          document.getElementById('stat-price-tickers').textContent = stats.uniqueTickers.toLocaleString();
-          document.getElementById('stat-watched-tickers').textContent = stats.watchedCount.toLocaleString();
-
-          if (stats.earliestDate && stats.latestDate) {
-            const earliest = stats.earliestDate.split('T')[0];
-            const latest = stats.latestDate.split('T')[0];
-            document.getElementById('stat-price-date-range').textContent = `${earliest} to ${latest}`;
-          } else {
-            document.getElementById('stat-price-date-range').textContent = 'No data';
-          }
-        }
+        const autoHarvest = await window.electronAPI.getSetting('watchlist_auto_harvest', 'true');
+        watchlistAutoHarvest.checked = autoHarvest === 'true';
       } catch (error) {
-        console.error('Error loading price stats:', error);
+        console.error('Error loading watchlist settings:', error);
       }
     }
 
-    // Load polling status and settings
-    async function loadPollingSettings() {
+    // Save watchlist settings
+    btnSaveWatchlistSettings.addEventListener('click', async () => {
       try {
-        const statusResult = await window.electronAPI.getPollingStatus();
-        if (statusResult.success) {
-          document.getElementById('auto-polling-enabled').checked = statusResult.isActive;
-          document.getElementById('polling-interval').value = statusResult.intervalMinutes.toString();
-
-          const statusText = statusResult.isActive ?
-            `Active (updating every ${statusResult.intervalMinutes} minutes)` :
-            'Inactive';
-          document.getElementById('polling-status-text').textContent = statusText;
-        }
+        const autoHarvest = watchlistAutoHarvest.checked ? 'true' : 'false';
+        await window.electronAPI.setSetting('watchlist_auto_harvest', autoHarvest);
+        showMessage('Watchlist settings saved. Restart the browser for changes to take effect.', 'success');
       } catch (error) {
-        console.error('Error loading polling settings:', error);
-      }
-    }
-
-    // Save polling settings
-    document.getElementById('btn-save-polling').addEventListener('click', async () => {
-      try {
-        const enabled = document.getElementById('auto-polling-enabled').checked;
-        const interval = parseInt(document.getElementById('polling-interval').value);
-
-        const result = await window.electronAPI.togglePricePolling(enabled, interval);
-
-        if (result.success) {
-          showMessage(`Price polling ${enabled ? 'enabled' : 'disabled'} successfully`, 'success');
-          await loadPollingSettings();
-        } else {
-          showMessage('Error saving settings: ' + result.error, 'error');
-        }
-      } catch (error) {
-        showMessage('Error: ' + error.message, 'error');
+        showMessage('Error saving settings: ' + error.message, 'error');
       }
     });
 
-    // Refresh all prices now
-    document.getElementById('btn-refresh-all-prices').addEventListener('click', async () => {
-      try {
-        showMessage('Refreshing prices for all watched tickers...', 'info');
-
-        const watchedResult = await window.electronAPI.getWatchedTickers(false);
-        if (!watchedResult.success) {
-          showMessage('Error getting watched tickers: ' + watchedResult.error, 'error');
-          return;
-        }
-
-        if (watchedResult.tickers.length === 0) {
-          showMessage('No watched tickers to update', 'info');
-          return;
-        }
-
-        let successCount = 0;
-        for (const ticker of watchedResult.tickers) {
-          const result = await window.electronAPI.updateLatestPrice(ticker.ticker);
-          if (result.success) {
-            successCount++;
-          }
-        }
-
-        showMessage(`Updated ${successCount} of ${watchedResult.tickers.length} tickers`, 'success');
-        await loadPriceStats();
-      } catch (error) {
-        showMessage('Error refreshing prices: ' + error.message, 'error');
-      }
-    });
-
-    // Initialize
-    (async () => {
-      await loadStats();
-      await loadPriceStats();
-      await loadPollingSettings();
-    })();
+    // Load settings on page load
+    loadWatchlistSettings();
   </script>
 </body>
 </html>

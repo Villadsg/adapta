@@ -8,18 +8,24 @@
  *
  * Over time, this accumulates enough data to calculate meaningful
  * uniqueness scores for articles associated with stock events.
+ *
+ * Supports optional Bun worker for faster batch article extraction.
  */
 
 const YahooNewsService = require('./yahooNewsService');
 const articleExtractor = require('./articleExtractor');
+const bunBridge = require('./bunBridge');
 
 class NewsHarvesterService {
-  constructor(database) {
+  constructor(database, options = {}) {
     this.database = database;
     this.yahooNews = new YahooNewsService();
     this.isRunning = false;
     this.intervalId = null;
     this.lastHarvestTime = null;
+    this.useBun = options.useBun !== false; // Default to true
+    this.bunChecked = false;
+    this.bunAvailable = false;
     this.stats = {
       totalHarvests: 0,
       articlesCollected: 0,
@@ -27,6 +33,22 @@ class NewsHarvesterService {
       articlesFailed: 0,
       lastError: null
     };
+  }
+
+  /**
+   * Check if Bun is available (cached check)
+   * @returns {Promise<boolean>}
+   */
+  async checkBunAvailable() {
+    if (this.bunChecked) {
+      return this.bunAvailable;
+    }
+    this.bunChecked = true;
+    this.bunAvailable = await bunBridge.isBunAvailable();
+    if (this.bunAvailable && this.useBun) {
+      console.log('NewsHarvester: Bun detected - using Bun workers for faster article extraction');
+    }
+    return this.bunAvailable;
   }
 
   /**
@@ -168,16 +190,114 @@ class NewsHarvesterService {
 
     console.log(`  Found ${newsItems.length} news items`);
 
-    // Process each news item
+    // Filter out existing articles first
+    const newNewsItems = [];
     for (const news of newsItems) {
-      try {
-        // Check if article already exists
-        const exists = await this.articleExists(news.link);
-        if (exists) {
-          results.duplicate++;
+      const exists = await this.articleExists(news.link);
+      if (exists) {
+        results.duplicate++;
+      } else {
+        newNewsItems.push(news);
+      }
+    }
+
+    if (newNewsItems.length === 0) {
+      console.log(`  All articles already exist`);
+      return results;
+    }
+
+    console.log(`  ${newNewsItems.length} new articles to process`);
+
+    // Try batch extraction with Bun if available
+    if (this.useBun && await this.checkBunAvailable()) {
+      return this.harvestTickerBatch(ticker, newNewsItems, results);
+    }
+
+    // Fallback to sequential processing
+    return this.harvestTickerSequential(ticker, newNewsItems, results);
+  }
+
+  /**
+   * Harvest articles using Bun batch processing
+   * @private
+   */
+  async harvestTickerBatch(ticker, newsItems, results) {
+    const urls = newsItems.map(n => n.link);
+
+    try {
+      console.log(`  Using Bun batch extraction for ${urls.length} articles...`);
+      const articles = await bunBridge.batchFetchArticles(urls);
+
+      // Process results
+      for (let i = 0; i < articles.length; i++) {
+        const article = articles[i];
+        const news = newsItems[i];
+
+        if (!article.success) {
+          const dateStr = news.publishTime
+            ? news.publishTime.toISOString().split('T')[0]
+            : 'no date';
+          console.log(`    Failed [${dateStr}]: ${news.title.substring(0, 40)}...`);
+          results.failed++;
           continue;
         }
 
+        // Skip if no meaningful content
+        if (!article.text || article.text.length < 100) {
+          results.failed++;
+          continue;
+        }
+
+        // Prepare ticker list
+        const tickers = [...(article.tickers || [])];
+        if (!tickers.includes(ticker)) {
+          tickers.push(ticker);
+        }
+
+        // Use Yahoo's publish time if extraction didn't find one
+        const publishedDate = article.publishedDate ||
+          (news.publishTime ? news.publishTime.toISOString() : null);
+
+        try {
+          // Save to database with embedding
+          await this.database.saveArticle(
+            article.url,
+            article.title,
+            article.text,
+            'stock_news',
+            {
+              publishedDate: publishedDate,
+              tickers: tickers,
+              generateEmbedding: true
+            }
+          );
+
+          const dateStr = news.publishTime
+            ? news.publishTime.toISOString().split('T')[0]
+            : 'no date';
+          console.log(`    Saved [${dateStr}]: ${(article.title || news.title).substring(0, 50)}...`);
+          results.new++;
+        } catch (error) {
+          console.error(`    Error saving article: ${error.message}`);
+          results.failed++;
+        }
+      }
+    } catch (error) {
+      console.warn(`  Bun batch extraction failed: ${error.message}, falling back to sequential`);
+      return this.harvestTickerSequential(ticker, newsItems, results);
+    }
+
+    console.log(`  ${ticker}: ${results.new} new, ${results.duplicate} duplicate, ${results.failed} failed`);
+    return results;
+  }
+
+  /**
+   * Harvest articles sequentially (fallback method)
+   * @private
+   */
+  async harvestTickerSequential(ticker, newsItems, results) {
+    for (const news of newsItems) {
+      try {
         // Extract article content
         const dateStr = news.publishTime
           ? news.publishTime.toISOString().split('T')[0]
