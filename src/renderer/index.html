@@ -66,6 +66,14 @@
             <input type="number" id="analysis-events-input" placeholder="15" value="15" min="1" max="100" />
           </div>
         </div>
+        <div class="form-row">
+          <label for="analysis-api-select">Data Source</label>
+          <select id="analysis-api-select">
+            <option value="auto">Auto (Twelve Data → EODHD fallback)</option>
+            <option value="twelvedata">Twelve Data (US markets)</option>
+            <option value="eodhd">EODHD (International markets)</option>
+          </select>
+        </div>
         <div class="form-row-checkbox">
           <label class="checkbox-label">
             <input type="checkbox" id="analysis-fetch-news" checked />

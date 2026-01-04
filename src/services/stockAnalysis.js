@@ -6,13 +6,11 @@
  */
 
 const { linearRegression } = require('simple-statistics');
-const YahooFinance = require('yahoo-finance2').default;
 const embeddingService = require('./embeddings');
 
-// Create singleton instance with v3 configuration
-const yahooFinance = new YahooFinance({
-  suppressNotices: ['yahooSurvey']
-});
+// API keys from environment variables
+const TWELVE_DATA_API_KEY = process.env.TWELVE_DATA_API_KEY || null;
+const EODHD_API_KEY = process.env.EODHD_API_KEY || null;
 
 class StockAnalysisService {
   constructor(database) {
@@ -20,53 +18,145 @@ class StockAnalysisService {
   }
 
   /**
-   * Fetch stock data from Yahoo Finance
+   * Fetch stock data from Twelve Data (primary source)
    * @param {string} ticker - Stock ticker symbol
    * @param {string} startDate - Start date (YYYY-MM-DD)
    * @param {string} endDate - End date (YYYY-MM-DD)
    * @returns {Promise<Array>} Array of stock bars
    */
-  async fetchStockData(ticker, startDate, endDate) {
-    console.log(`Fetching ${ticker} data from Yahoo Finance...`);
-
-    try {
-      const queryOptions = {
-        period1: startDate,
-        period2: endDate,
-        interval: '1d',
-      };
-
-      const result = await yahooFinance.chart(ticker, queryOptions);
-
-      if (!result.quotes || result.quotes.length === 0) {
-        throw new Error(`No data returned for ${ticker}`);
-      }
-
-      const bars = result.quotes
-        .filter(
-          (q) =>
-            q.open !== null &&
-            q.high !== null &&
-            q.low !== null &&
-            q.close !== null &&
-            q.volume !== null
-        )
-        .map((q) => ({
-          date: new Date(q.date),
-          open: q.open,
-          high: q.high,
-          low: q.low,
-          close: q.close,
-          volume: q.volume,
-        }));
-
-      bars.sort((a, b) => a.date.getTime() - b.date.getTime());
-      console.log(`${ticker} data: ${bars.length} days`);
-      return bars;
-    } catch (error) {
-      console.error(`Error fetching data from Yahoo Finance: ${error}`);
-      throw new Error(`No data available for ${ticker}: ${error.message}`);
+  async fetchFromTwelveData(ticker, startDate, endDate) {
+    if (!TWELVE_DATA_API_KEY) {
+      throw new Error('TWELVE_DATA_API_KEY environment variable not set');
     }
+
+    console.log(`Fetching ${ticker} from Twelve Data...`);
+
+    const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(ticker)}&interval=1day&start_date=${startDate}&end_date=${endDate}&apikey=${TWELVE_DATA_API_KEY}`;
+
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.status === 'error') {
+      throw new Error(`Twelve Data error: ${data.message}`);
+    }
+
+    if (!data.values || data.values.length === 0) {
+      throw new Error(`No data returned from Twelve Data for ${ticker}`);
+    }
+
+    const bars = data.values
+      .map(v => ({
+        date: new Date(v.datetime),
+        open: parseFloat(v.open),
+        high: parseFloat(v.high),
+        low: parseFloat(v.low),
+        close: parseFloat(v.close),
+        volume: parseInt(v.volume, 10),
+      }))
+      .filter(bar => !isNaN(bar.volume))
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    console.log(`${ticker} data (Twelve Data): ${bars.length} days`);
+    return bars;
+  }
+
+  /**
+   * Fetch stock data from EODHD (fallback)
+   * @param {string} ticker - Stock ticker symbol
+   * @param {string} startDate - Start date (YYYY-MM-DD)
+   * @param {string} endDate - End date (YYYY-MM-DD)
+   * @param {string} exchange - Exchange code (default: US)
+   * @returns {Promise<Array>} Array of stock bars
+   */
+  async fetchFromEODHD(ticker, startDate, endDate, exchange = 'US') {
+    if (!EODHD_API_KEY) {
+      throw new Error('EODHD_API_KEY environment variable not set');
+    }
+
+    console.log(`Fetching ${ticker} from EODHD (fallback)...`);
+
+    // EODHD format: SYMBOL.EXCHANGE (e.g., AAPL.US, VOW.XETRA, 7203.TSE)
+    const symbol = ticker.includes('.') ? ticker : `${ticker}.${exchange}`;
+    const url = `https://eodhd.com/api/eod/${symbol}?api_token=${EODHD_API_KEY}&fmt=json&from=${startDate}&to=${endDate}`;
+
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.error) {
+      throw new Error(`EODHD error: ${data.error}`);
+    }
+
+    if (!Array.isArray(data) || data.length === 0) {
+      throw new Error(`No data returned from EODHD for ${ticker}`);
+    }
+
+    const bars = data
+      .map(d => ({
+        date: new Date(d.date),
+        open: parseFloat(d.open),
+        high: parseFloat(d.high),
+        low: parseFloat(d.low),
+        close: parseFloat(d.adjusted_close || d.close),
+        volume: parseInt(d.volume, 10),
+      }))
+      .filter(bar => !isNaN(bar.volume) && !isNaN(bar.close))
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    console.log(`${ticker} data (EODHD): ${bars.length} days`);
+    return bars;
+  }
+
+  /**
+   * Fetch stock data (Twelve Data primary, EODHD fallback)
+   * @param {string} ticker - Stock ticker symbol
+   * @param {string} startDate - Start date (YYYY-MM-DD)
+   * @param {string} endDate - End date (YYYY-MM-DD)
+   * @param {string} dataSource - Data source: 'auto', 'twelvedata', or 'eodhd'
+   * @returns {Promise<Array>} Array of stock bars
+   */
+  async fetchStockData(ticker, startDate, endDate, dataSource = 'auto') {
+    // If specific source requested, try only that source
+    if (dataSource === 'twelvedata') {
+      if (!TWELVE_DATA_API_KEY) {
+        throw new Error('TWELVE_DATA_API_KEY not set');
+      }
+      return await this.fetchFromTwelveData(ticker, startDate, endDate);
+    }
+
+    if (dataSource === 'eodhd') {
+      if (!EODHD_API_KEY) {
+        throw new Error('EODHD_API_KEY not set');
+      }
+      return await this.fetchFromEODHD(ticker, startDate, endDate);
+    }
+
+    // Auto mode: Try Twelve Data first, then EODHD
+    let primaryError;
+
+    // Try Twelve Data first (primary)
+    if (TWELVE_DATA_API_KEY) {
+      try {
+        return await this.fetchFromTwelveData(ticker, startDate, endDate);
+      } catch (error) {
+        primaryError = error;
+        console.log(`Twelve Data failed: ${error.message}`);
+      }
+    } else {
+      primaryError = new Error('TWELVE_DATA_API_KEY not set');
+      console.log('Twelve Data: API key not configured');
+    }
+
+    // Try EODHD as fallback
+    if (EODHD_API_KEY) {
+      try {
+        return await this.fetchFromEODHD(ticker, startDate, endDate);
+      } catch (eodhdError) {
+        console.error(`EODHD fallback also failed: ${eodhdError.message}`);
+        throw new Error(`No data available for ${ticker}: Twelve Data (${primaryError.message}), EODHD (${eodhdError.message})`);
+      }
+    }
+
+    throw new Error(`No data available for ${ticker}: ${primaryError.message}. Set TWELVE_DATA_API_KEY or EODHD_API_KEY.`);
   }
 
   /**
@@ -266,7 +356,7 @@ class StockAnalysisService {
    * @returns {Promise<Object>} Analysis results
    */
   async analyzeStock(ticker, options = {}) {
-    const { benchmark = 'SPY', days = 200, minEvents = 15 } = options;
+    const { benchmark = 'SPY', days = 200, minEvents = 15, dataSource = 'auto' } = options;
 
     const endDate = new Date().toISOString().split('T')[0];
     const startDateObj = new Date();
@@ -276,10 +366,12 @@ class StockAnalysisService {
     console.log(`\n=== STOCK ANALYSIS ===`);
     console.log(`Analyzing ${ticker} vs ${benchmark}`);
     console.log(`Date range: ${startDate} to ${endDate}`);
+    console.log(`Data source: ${dataSource}`);
 
-    // Fetch data
-    const stockData = await this.fetchStockData(ticker, startDate, endDate);
-    const marketData = await this.fetchStockData(benchmark, startDate, endDate);
+    // Fetch data (with delay between requests to avoid rate limiting)
+    const stockData = await this.fetchStockData(ticker, startDate, endDate, dataSource);
+    await new Promise(resolve => setTimeout(resolve, 2000)); // 2s delay between tickers
+    const marketData = await this.fetchStockData(benchmark, startDate, endDate, dataSource);
 
     // Filter market movements
     console.log('\nFiltering out market movements...');

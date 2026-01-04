@@ -1112,19 +1112,21 @@ ipcMain.handle('analyze-stock-events', async (event, ticker, options = {}) => {
       benchmark = 'SPY',
       days = 200,
       minEvents = 15,
+      dataSource = 'auto',
       fetchNews = true,
       newsDayRange = 1,
       maxArticles = 10
     } = options;
 
     console.log(`\nAnalyzing stock events for ${ticker}...`);
-    console.log(`Options: benchmark=${benchmark}, days=${days}, minEvents=${minEvents}, fetchNews=${fetchNews}`);
+    console.log(`Options: benchmark=${benchmark}, days=${days}, minEvents=${minEvents}, dataSource=${dataSource}, fetchNews=${fetchNews}`);
 
     // Run analysis pipeline
     const result = await stockAnalyzer.analyzeStock(ticker, {
       benchmark,
       days,
       minEvents,
+      dataSource,
     });
 
     // Find related articles from existing DB for each event (fast, immediate)

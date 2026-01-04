@@ -26,6 +26,7 @@ const analysisTickerInput = document.getElementById('analysis-ticker-input');
 const analysisBenchmarkInput = document.getElementById('analysis-benchmark-input');
 const analysisDaysInput = document.getElementById('analysis-days-input');
 const analysisEventsInput = document.getElementById('analysis-events-input');
+const analysisApiSelect = document.getElementById('analysis-api-select');
 const analysisFetchNewsCheckbox = document.getElementById('analysis-fetch-news');
 const analysisAddWatchlistCheckbox = document.getElementById('analysis-add-watchlist');
 const modalCancel = document.getElementById('modal-cancel');
@@ -893,6 +894,7 @@ modalAnalyze.addEventListener('click', async () => {
   const benchmark = (analysisBenchmarkInput.value.trim() || 'SPY').toUpperCase();
   const days = parseInt(analysisDaysInput.value, 10) || 200;
   const minEvents = parseInt(analysisEventsInput.value, 10) || 15;
+  const dataSource = analysisApiSelect.value;
   const fetchNews = analysisFetchNewsCheckbox.checked;
   const addToWatchlistChecked = analysisAddWatchlistCheckbox.checked;
 
@@ -915,6 +917,7 @@ modalAnalyze.addEventListener('click', async () => {
       benchmark,
       days,
       minEvents,
+      dataSource,
       fetchNews
     });
 
