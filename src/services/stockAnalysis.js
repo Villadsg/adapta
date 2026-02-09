@@ -7,6 +7,7 @@
 
 const { linearRegression } = require('simple-statistics');
 const embeddingService = require('./embeddings');
+const ChronosForecastService = require('./chronosForecast');
 
 // API keys from environment variables
 const TWELVE_DATA_API_KEY = process.env.TWELVE_DATA_API_KEY || null;
@@ -56,7 +57,9 @@ class StockAnalysisService {
       .filter(bar => !isNaN(bar.volume))
       .sort((a, b) => a.date.getTime() - b.date.getTime());
 
-    console.log(`${ticker} data (Twelve Data): ${bars.length} days`);
+    const firstDate = bars.length > 0 ? bars[0].date.toISOString().split('T')[0] : 'none';
+    const lastDate = bars.length > 0 ? bars[bars.length - 1].date.toISOString().split('T')[0] : 'none';
+    console.log(`${ticker} data (Twelve Data): ${bars.length} days, range: ${firstDate} to ${lastDate} (requested end: ${endDate})`);
     return bars;
   }
 
@@ -102,7 +105,177 @@ class StockAnalysisService {
       .filter(bar => !isNaN(bar.volume) && !isNaN(bar.close))
       .sort((a, b) => a.date.getTime() - b.date.getTime());
 
-    console.log(`${ticker} data (EODHD): ${bars.length} days`);
+    const firstDate = bars.length > 0 ? bars[0].date.toISOString().split('T')[0] : 'none';
+    const lastDate = bars.length > 0 ? bars[bars.length - 1].date.toISOString().split('T')[0] : 'none';
+    console.log(`${ticker} data (EODHD): ${bars.length} days, range: ${firstDate} to ${lastDate} (requested end: ${endDate})`);
+    return bars;
+  }
+
+  /**
+   * Fetch real-time quote from Twelve Data
+   * @param {string} ticker - Stock ticker symbol
+   * @returns {Promise<Object|null>} Quote data or null if unavailable
+   */
+  async fetchRealtimeFromTwelveData(ticker) {
+    if (!TWELVE_DATA_API_KEY) {
+      return null;
+    }
+
+    try {
+      const url = `https://api.twelvedata.com/quote?symbol=${encodeURIComponent(ticker)}&apikey=${TWELVE_DATA_API_KEY}`;
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.status === 'error' || !data.close) {
+        return null;
+      }
+
+      return {
+        date: new Date(),
+        open: parseFloat(data.open),
+        high: parseFloat(data.high),
+        low: parseFloat(data.low),
+        close: parseFloat(data.close),
+        volume: parseInt(data.volume, 10),
+        isRealtime: true
+      };
+    } catch (error) {
+      console.log(`Twelve Data realtime quote failed: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Fetch real-time quote from EODHD
+   * @param {string} ticker - Stock ticker symbol
+   * @param {string} exchange - Exchange code (default: US)
+   * @returns {Promise<Object|null>} Quote data or null if unavailable
+   */
+  async fetchRealtimeFromEODHD(ticker, exchange = 'US') {
+    if (!EODHD_API_KEY) {
+      return null;
+    }
+
+    try {
+      const symbol = ticker.includes('.') ? ticker : `${ticker}.${exchange}`;
+      const url = `https://eodhd.com/api/real-time/${symbol}?api_token=${EODHD_API_KEY}&fmt=json`;
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.code === 'NOT_FOUND' || !data.close) {
+        return null;
+      }
+
+      return {
+        date: new Date(data.timestamp * 1000),
+        open: parseFloat(data.open),
+        high: parseFloat(data.high),
+        low: parseFloat(data.low),
+        close: parseFloat(data.close),
+        volume: parseInt(data.volume, 10),
+        isRealtime: true
+      };
+    } catch (error) {
+      console.log(`EODHD realtime quote failed: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Check if US market is closed for the day
+   * @returns {boolean} True if market has closed
+   */
+  isUSMarketClosed() {
+    const now = new Date();
+    // Convert to ET (Eastern Time)
+    const etTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const hours = etTime.getHours();
+    const minutes = etTime.getMinutes();
+    const dayOfWeek = etTime.getDay();
+
+    // Market is closed on weekends
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+      return true;
+    }
+
+    // Market closes at 4:00 PM ET
+    return hours > 16 || (hours === 16 && minutes >= 0);
+  }
+
+  /**
+   * Check if a date is a weekend
+   * @param {Date} date - Date to check
+   * @returns {boolean} True if weekend
+   */
+  isWeekend(date) {
+    const day = date.getDay();
+    return day === 0 || day === 6;
+  }
+
+  /**
+   * Get today's date in ET timezone as YYYY-MM-DD
+   * @returns {string} Today's date string
+   */
+  getTodayET() {
+    const now = new Date();
+    const etDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    return etDate.toISOString().split('T')[0];
+  }
+
+  /**
+   * Supplement EOD data with real-time quote for current day if missing
+   * @param {Array} bars - EOD bar data
+   * @param {string} ticker - Stock ticker symbol
+   * @param {string} dataSource - Data source preference
+   * @returns {Promise<Array>} Bars with today's data appended if applicable
+   */
+  async supplementWithRealtime(bars, ticker, dataSource = 'auto') {
+    // Check if market has closed today
+    if (!this.isUSMarketClosed()) {
+      console.log('Market still open - skipping realtime supplement');
+      return bars;
+    }
+
+    const todayET = this.getTodayET();
+    const todayDate = new Date(todayET);
+
+    // Skip if today is a weekend
+    if (this.isWeekend(todayDate)) {
+      console.log('Today is weekend - no trading data expected');
+      return bars;
+    }
+
+    // Check if we already have today's data
+    if (bars.length > 0) {
+      const lastBarDate = bars[bars.length - 1].date.toISOString().split('T')[0];
+      if (lastBarDate === todayET) {
+        console.log('Already have today\'s data');
+        return bars;
+      }
+    }
+
+    console.log(`Fetching realtime quote for ${ticker} to supplement missing ${todayET} data...`);
+
+    // Try to get realtime quote
+    let realtimeBar = null;
+
+    if (dataSource === 'twelvedata' || dataSource === 'auto') {
+      realtimeBar = await this.fetchRealtimeFromTwelveData(ticker);
+    }
+
+    if (!realtimeBar && (dataSource === 'eodhd' || dataSource === 'auto')) {
+      realtimeBar = await this.fetchRealtimeFromEODHD(ticker);
+    }
+
+    if (realtimeBar) {
+      // Normalize the date to today (midnight)
+      realtimeBar.date = todayDate;
+      bars.push(realtimeBar);
+      console.log(`Added realtime data for ${todayET}: close=${realtimeBar.close}, volume=${realtimeBar.volume}`);
+    } else {
+      console.log('Could not fetch realtime quote');
+    }
+
     return bars;
   }
 
@@ -115,19 +288,23 @@ class StockAnalysisService {
    * @returns {Promise<Array>} Array of stock bars
    */
   async fetchStockData(ticker, startDate, endDate, dataSource = 'auto') {
+    let bars;
+
     // If specific source requested, try only that source
     if (dataSource === 'twelvedata') {
       if (!TWELVE_DATA_API_KEY) {
         throw new Error('TWELVE_DATA_API_KEY not set');
       }
-      return await this.fetchFromTwelveData(ticker, startDate, endDate);
+      bars = await this.fetchFromTwelveData(ticker, startDate, endDate);
+      return await this.supplementWithRealtime(bars, ticker, dataSource);
     }
 
     if (dataSource === 'eodhd') {
       if (!EODHD_API_KEY) {
         throw new Error('EODHD_API_KEY not set');
       }
-      return await this.fetchFromEODHD(ticker, startDate, endDate);
+      bars = await this.fetchFromEODHD(ticker, startDate, endDate);
+      return await this.supplementWithRealtime(bars, ticker, dataSource);
     }
 
     // Auto mode: Try Twelve Data first, then EODHD
@@ -136,7 +313,8 @@ class StockAnalysisService {
     // Try Twelve Data first (primary)
     if (TWELVE_DATA_API_KEY) {
       try {
-        return await this.fetchFromTwelveData(ticker, startDate, endDate);
+        bars = await this.fetchFromTwelveData(ticker, startDate, endDate);
+        return await this.supplementWithRealtime(bars, ticker, dataSource);
       } catch (error) {
         primaryError = error;
         console.log(`Twelve Data failed: ${error.message}`);
@@ -149,7 +327,8 @@ class StockAnalysisService {
     // Try EODHD as fallback
     if (EODHD_API_KEY) {
       try {
-        return await this.fetchFromEODHD(ticker, startDate, endDate);
+        bars = await this.fetchFromEODHD(ticker, startDate, endDate);
+        return await this.supplementWithRealtime(bars, ticker, dataSource);
       } catch (eodhdError) {
         console.error(`EODHD fallback also failed: ${eodhdError.message}`);
         throw new Error(`No data available for ${ticker}: Twelve Data (${primaryError.message}), EODHD (${eodhdError.message})`);
@@ -423,6 +602,78 @@ class StockAnalysisService {
         dateRange: { start: startDate, end: endDate },
       },
     };
+  }
+
+  /**
+   * Generate price forecast using Chronos-2 based on analysis results
+   * @param {object} analysisResult - Result from analyzeStock()
+   * @param {object} options - Forecast options
+   * @returns {Promise<object>} Forecast with event context
+   */
+  async forecastFromAnalysis(analysisResult, options = {}) {
+    const {
+      days = 14,
+      modelSize = 'small',
+      pythonPath = 'python3',
+    } = options;
+
+    const forecaster = new ChronosForecastService({
+      modelSize,
+      pythonPath,
+      defaultDays: days,
+    });
+
+    return forecaster.forecastFromAnalysis(analysisResult, days);
+  }
+
+  /**
+   * Analyze stock and generate forecast in one call
+   * @param {string} ticker - Stock ticker
+   * @param {object} options - Analysis and forecast options
+   * @returns {Promise<object>} Analysis with forecast
+   */
+  async analyzeStockWithForecast(ticker, options = {}) {
+    const {
+      benchmark = 'SPY',
+      days = 200,
+      minEvents = 15,
+      dataSource = 'auto',
+      forecastDays = 14,
+      modelSize = 'small',
+      pythonPath = 'python3',
+    } = options;
+
+    // Run standard analysis
+    const analysis = await this.analyzeStock(ticker, {
+      benchmark,
+      days,
+      minEvents,
+      dataSource,
+    });
+
+    // Generate forecast
+    console.log('\n=== GENERATING FORECAST ===');
+    console.log(`Forecasting ${forecastDays} days with Chronos-2 (${modelSize})...`);
+
+    try {
+      const forecast = await this.forecastFromAnalysis(analysis, {
+        days: forecastDays,
+        modelSize,
+        pythonPath,
+      });
+
+      return {
+        ...analysis,
+        forecast,
+      };
+    } catch (error) {
+      console.error(`Forecast failed: ${error.message}`);
+      return {
+        ...analysis,
+        forecast: null,
+        forecastError: error.message,
+      };
+    }
   }
 
   /**

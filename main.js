@@ -1,3 +1,4 @@
+require('dotenv').config();
 const { app, BrowserWindow, BrowserView, ipcMain } = require('electron');
 const path = require('path');
 const ArticleDatabase = require('./src/services/database');
