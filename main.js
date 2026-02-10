@@ -1,9 +1,25 @@
 require('dotenv').config();
+
+// Patch global fetch to use a real browser User-Agent for Yahoo Finance domains.
+// yahoo-finance2's getCrumb.js hardcodes a bot-like User-Agent that Yahoo blocks with 429.
+// See: https://github.com/gadicc/yahoo-finance2/issues/977
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+const _origFetch = global.fetch;
+global.fetch = function(url, opts = {}) {
+  const urlStr = typeof url === 'string' ? url : url?.toString?.() || '';
+  if (urlStr.includes('yahoo.com')) {
+    opts = { ...opts };
+    opts.headers = { ...opts.headers, 'User-Agent': BROWSER_UA };
+  }
+  return _origFetch.call(this, url, opts);
+};
+
 const { app, BrowserWindow, BrowserView, ipcMain } = require('electron');
 const path = require('path');
 const ArticleDatabase = require('./src/services/database');
 const PriceTrackingService = require('./src/services/priceTracking');
 const StockAnalysisService = require('./src/services/stockAnalysis');
+const OptionsAnalysisService = require('./src/services/optionsAnalysis');
 const NewsHarvesterService = require('./src/services/newsHarvester');
 const articleExtractor = require('./src/services/articleExtractor');
 const newsScraper = require('./src/services/newsScraper');
@@ -12,6 +28,7 @@ let mainWindow;
 let database;
 let priceTracker;
 let stockAnalyzer;
+let optionsAnalyzer;
 let newsHarvester;
 
 // Tab management
@@ -1114,13 +1131,11 @@ ipcMain.handle('analyze-stock-events', async (event, ticker, options = {}) => {
       days = 200,
       minEvents = 15,
       dataSource = 'auto',
-      fetchNews = true,
-      newsDayRange = 1,
-      maxArticles = 10
+      analyzeOptions = false
     } = options;
 
     console.log(`\nAnalyzing stock events for ${ticker}...`);
-    console.log(`Options: benchmark=${benchmark}, days=${days}, minEvents=${minEvents}, dataSource=${dataSource}, fetchNews=${fetchNews}`);
+    console.log(`Options: benchmark=${benchmark}, days=${days}, minEvents=${minEvents}, dataSource=${dataSource}`);
 
     // Run analysis pipeline
     const result = await stockAnalyzer.analyzeStock(ticker, {
@@ -1145,75 +1160,35 @@ ipcMain.handle('analyze-stock-events', async (event, ticker, options = {}) => {
       eventData.fetchedArticles = []; // Start with no fetched articles
     }
 
+    // Options analysis (if enabled)
+    let optionsData = null;
+    if (analyzeOptions) {
+      try {
+        optionsData = await optionsAnalyzer.analyzeCurrentOptions(ticker);
+        if (optionsData) {
+          await optionsAnalyzer.saveSnapshot(optionsData);
+          optionsData.history = await optionsAnalyzer.getSnapshotHistory(ticker, days);
+          optionsData.historicalVolatility = stockAnalyzer.computeHistoricalVolatility(result.data);
+        }
+      } catch (optErr) {
+        console.error('Options analysis failed (non-fatal):', optErr.message);
+      }
+    }
+
     // Generate HTML report with events and existing articles (return immediately)
     const html = stockAnalyzer.generateAnalysisHTML(
       result.data,
       result.events,
-      ticker
+      ticker,
+      optionsData
     );
 
     console.log(`\nAnalysis complete: ${result.events.length} events found`);
-    console.log(`Events display ready - fetching news in background...`);
-
-    // START: Fetch news in background (don't wait, user sees events immediately)
-    if (fetchNews && result.events.length > 0) {
-      // Background task - doesn't block the response
-      // Use setTimeout to give renderer time to create the new tab first
-      setTimeout(async () => {
-        // Get the BrowserView NOW (after renderer has created the tab)
-        const analysisBrowserView = getActiveBrowserView();
-        const analysisTabId = activeTabId;
-        try {
-          console.log(`\nBackground: Fetching Yahoo Finance news for events...`);
-          await stockAnalyzer.fetchEventNews(result.events, ticker, {
-            dayRange: newsDayRange,
-            maxArticlesPerEvent: maxArticles
-          });
-          console.log(`\nBackground: News fetch and storage complete`);
-
-          // Re-run article finding now that news is in the database
-          console.log(`Background: Re-finding articles with newly saved news...`);
-          for (const eventData of result.events) {
-            const existingArticles = await stockAnalyzer.findRelatedArticles(
-              eventData.date,
-              ticker,
-              3
-            );
-            eventData.articles = await stockAnalyzer.calculateArticleSimilarities(existingArticles);
-          }
-
-          // Re-generate HTML with updated articles
-          const updatedHtml = stockAnalyzer.generateAnalysisHTML(
-            result.data,
-            result.events,
-            ticker
-          );
-
-          // Load the new HTML into the BrowserView
-          if (analysisBrowserView && analysisBrowserView.webContents) {
-            try {
-              console.log(`Background: Loading updated analysis page for ${ticker}...`);
-              const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(updatedHtml);
-              await analysisBrowserView.webContents.loadURL(dataUrl);
-              console.log(`Background: Updated analysis page loaded successfully`);
-            } catch (error) {
-              console.error(`Background: Failed to load updated page: ${error.message}`);
-            }
-          } else {
-            console.log(`Background: BrowserView not available for update`);
-          }
-
-        } catch (error) {
-          console.error('Background: Error fetching news:', error.message);
-        }
-      }, 500); // 500ms delay to let renderer create the tab first
-    }
 
     return {
       success: true,
       html,
       eventCount: result.events.length,
-      newsLoadingInBackground: fetchNews && result.events.length > 0,
       stats: result.stats
     };
   } catch (error) {
@@ -1350,6 +1325,9 @@ app.whenReady().then(async () => {
 
   // Initialize stock analyzer
   stockAnalyzer = new StockAnalysisService(database);
+
+  // Initialize options analyzer
+  optionsAnalyzer = new OptionsAnalysisService(database);
 
   // Inject browser-based extractor into articleExtractor for JavaScript-rendered pages
   articleExtractor.setBrowserExtractor(extractArticleViaBrowser);

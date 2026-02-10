@@ -145,6 +145,36 @@ class ArticleDatabase {
       )
     `;
 
+    const createOptionsSnapshotsSequence = `
+      CREATE SEQUENCE IF NOT EXISTS options_snapshots_id_seq START 1
+    `;
+
+    const createOptionsSnapshotsTable = `
+      CREATE TABLE IF NOT EXISTS options_snapshots (
+        id INTEGER PRIMARY KEY DEFAULT nextval('options_snapshots_id_seq'),
+        ticker TEXT NOT NULL,
+        snapshot_date TIMESTAMP NOT NULL,
+        expiration_date DATE NOT NULL,
+        current_price DECIMAL(10,2),
+        total_call_volume BIGINT,
+        total_put_volume BIGINT,
+        put_call_ratio DECIMAL(6,3),
+        total_call_oi BIGINT,
+        total_put_oi BIGINT,
+        put_call_oi_ratio DECIMAL(6,3),
+        atm_call_iv DECIMAL(6,4),
+        atm_put_iv DECIMAL(6,4),
+        avg_call_iv DECIMAL(6,4),
+        avg_put_iv DECIMAL(6,4),
+        max_call_volume_strike DECIMAL(10,2),
+        max_put_volume_strike DECIMAL(10,2),
+        max_call_oi_strike DECIMAL(10,2),
+        max_put_oi_strike DECIMAL(10,2),
+        unusual_volume_count INTEGER,
+        UNIQUE(ticker, snapshot_date, expiration_date)
+      )
+    `;
+
     return new Promise((resolve, reject) => {
       // Create articles sequence
       this.connection.run(createArticlesSequence, (err) => {
@@ -223,6 +253,20 @@ class ArticleDatabase {
                               return;
                             }
 
+                            // Create options_snapshots sequence
+                            this.connection.run(createOptionsSnapshotsSequence, (err) => {
+                              if (err) {
+                                reject(err);
+                                return;
+                              }
+
+                              // Create options_snapshots table
+                              this.connection.run(createOptionsSnapshotsTable, (err) => {
+                                if (err) {
+                                  reject(err);
+                                  return;
+                                }
+
                             // Initialize default settings
                             this.initializeSettings()
                               .then(() => {
@@ -237,6 +281,8 @@ class ArticleDatabase {
                                   .catch(reject);
                               })
                               .catch(reject);
+                              });
+                            });
                           });
                         });
                       });
@@ -267,7 +313,10 @@ class ArticleDatabase {
       'CREATE INDEX IF NOT EXISTS idx_stock_prices_ticker ON stock_prices(ticker)',
       'CREATE INDEX IF NOT EXISTS idx_stock_prices_date ON stock_prices(date)',
       'CREATE INDEX IF NOT EXISTS idx_stock_prices_ticker_date ON stock_prices(ticker, date)',
-      'CREATE INDEX IF NOT EXISTS idx_watched_tickers_ticker ON watched_tickers(ticker)'
+      'CREATE INDEX IF NOT EXISTS idx_watched_tickers_ticker ON watched_tickers(ticker)',
+      'CREATE INDEX IF NOT EXISTS idx_options_snapshots_ticker ON options_snapshots(ticker)',
+      'CREATE INDEX IF NOT EXISTS idx_options_snapshots_date ON options_snapshots(snapshot_date)',
+      'CREATE INDEX IF NOT EXISTS idx_options_snapshots_ticker_date ON options_snapshots(ticker, snapshot_date)'
     ];
 
     for (const indexSQL of indexes) {
@@ -1350,6 +1399,135 @@ class ArticleDatabase {
           });
         }
       );
+    });
+  }
+
+  // ===== Options Snapshot Methods =====
+
+  /**
+   * Save options snapshot to database
+   * @param {string} ticker - Stock ticker symbol
+   * @param {string} snapshotDate - Snapshot timestamp (ISO string)
+   * @param {string} expirationDate - Expiration date (YYYY-MM-DD)
+   * @param {number} currentPrice - Current stock price
+   * @param {Object} metrics - Options metrics from computeExpirationMetrics
+   * @returns {Promise<Object>} Saved record
+   */
+  async saveOptionsSnapshot(ticker, snapshotDate, expirationDate, currentPrice, metrics) {
+    const sql = `
+      INSERT INTO options_snapshots (
+        ticker, snapshot_date, expiration_date, current_price,
+        total_call_volume, total_put_volume, put_call_ratio,
+        total_call_oi, total_put_oi, put_call_oi_ratio,
+        atm_call_iv, atm_put_iv, avg_call_iv, avg_put_iv,
+        max_call_volume_strike, max_put_volume_strike,
+        max_call_oi_strike, max_put_oi_strike,
+        unusual_volume_count
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+      ON CONFLICT (ticker, snapshot_date, expiration_date) DO UPDATE SET
+        current_price = $4,
+        total_call_volume = $5,
+        total_put_volume = $6,
+        put_call_ratio = $7,
+        total_call_oi = $8,
+        total_put_oi = $9,
+        put_call_oi_ratio = $10,
+        atm_call_iv = $11,
+        atm_put_iv = $12,
+        avg_call_iv = $13,
+        avg_put_iv = $14,
+        max_call_volume_strike = $15,
+        max_put_volume_strike = $16,
+        max_call_oi_strike = $17,
+        max_put_oi_strike = $18,
+        unusual_volume_count = $19
+      RETURNING id
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(
+        sql,
+        ticker.toUpperCase(),
+        snapshotDate,
+        expirationDate,
+        currentPrice,
+        metrics.totalCallVolume,
+        metrics.totalPutVolume,
+        metrics.putCallRatio,
+        metrics.totalCallOI,
+        metrics.totalPutOI,
+        metrics.putCallOIRatio,
+        metrics.atmCallIV,
+        metrics.atmPutIV,
+        metrics.avgCallIV,
+        metrics.avgPutIV,
+        metrics.maxCallVolumeStrike,
+        metrics.maxPutVolumeStrike,
+        metrics.maxCallOIStrike,
+        metrics.maxPutOIStrike,
+        metrics.unusualVolumeCount,
+        (err, result) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve({
+            id: result[0]?.id,
+            ticker: ticker.toUpperCase(),
+            snapshotDate,
+            expirationDate
+          });
+        }
+      );
+    });
+  }
+
+  /**
+   * Get options snapshots for a ticker within a date range
+   * @param {string} ticker - Stock ticker symbol
+   * @param {number} days - Number of days to look back (default: 30)
+   * @returns {Promise<Array>} Array of snapshot records
+   */
+  async getOptionsSnapshots(ticker, days = 30) {
+    const sql = `
+      SELECT *
+      FROM options_snapshots
+      WHERE ticker = $1
+        AND snapshot_date >= CURRENT_TIMESTAMP - INTERVAL '${days} days'
+      ORDER BY snapshot_date DESC
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ticker.toUpperCase(), (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  /**
+   * Get latest options snapshot for a ticker
+   * @param {string} ticker - Stock ticker symbol
+   * @returns {Promise<Array>} Latest snapshot records (one per expiration)
+   */
+  async getLatestOptionsSnapshot(ticker) {
+    const sql = `
+      SELECT *
+      FROM options_snapshots
+      WHERE ticker = $1
+        AND snapshot_date = (
+          SELECT MAX(snapshot_date)
+          FROM options_snapshots
+          WHERE ticker = $1
+        )
+      ORDER BY expiration_date ASC
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ticker.toUpperCase(), (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
     });
   }
 

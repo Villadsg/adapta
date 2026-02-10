@@ -529,6 +529,28 @@ class StockAnalysisService {
   }
 
   /**
+   * Compute annualized historical (realized) volatility from daily returns
+   * @param {Array} data - Analyzed stock data with stockReturn values
+   * @returns {Object} { annualizedHV, dailyStdDev, sampleSize }
+   */
+  computeHistoricalVolatility(data) {
+    const dailyReturns = data
+      .map(bar => bar.stockReturn)
+      .filter(r => r !== undefined && r !== null && !isNaN(r));
+
+    if (dailyReturns.length < 5) {
+      return { annualizedHV: 0, dailyStdDev: 0, sampleSize: dailyReturns.length };
+    }
+
+    const mean = dailyReturns.reduce((sum, r) => sum + r, 0) / dailyReturns.length;
+    const variance = dailyReturns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / dailyReturns.length;
+    const dailyStdDev = Math.sqrt(variance);
+    const annualizedHV = dailyStdDev * Math.sqrt(252);
+
+    return { annualizedHV, dailyStdDev, sampleSize: dailyReturns.length };
+  }
+
+  /**
    * Run full analysis pipeline
    * @param {string} ticker - Stock ticker
    * @param {Object} options - Analysis options
@@ -804,256 +826,6 @@ class StockAnalysisService {
   }
 
   /**
-   * Save all ticker news to database without date range filtering
-   * This builds up the corpus regardless of event dates
-   * @param {string} ticker - Stock ticker symbol
-   * @param {Array} newsItems - News items from Yahoo Finance
-   * @returns {Promise<Object>} Statistics {new, duplicate, failed}
-   */
-  async saveAllTickerNews(ticker, newsItems) {
-    const articleExtractor = require('./articleExtractor');
-    const stats = {
-      new: 0,
-      duplicate: 0,
-      failed: 0
-    };
-
-    for (const news of newsItems) {
-      try {
-        // Check if article already exists in DB (by URL)
-        const existing = await this.checkArticleExists(news.link);
-        if (existing) {
-          stats.duplicate++;
-          continue;
-        }
-
-        // Fetch and extract article content
-        let article;
-        try {
-          article = await articleExtractor.extractFromURL(news.link, { timeout: 15000 });
-        } catch (extractError) {
-          stats.failed++;
-          continue;
-        }
-
-        // Skip if no meaningful content extracted
-        if (!article.text || article.text.length < 100) {
-          stats.failed++;
-          continue;
-        }
-
-        // Use Yahoo's publish time if we couldn't extract one
-        const publishedDate = article.publishedDate || (news.publishTime ? news.publishTime.toISOString() : null);
-
-        // Ensure ticker is included
-        if (!article.tickers.includes(ticker)) {
-          article.tickers.push(ticker);
-        }
-
-        // Save to database (generates embedding automatically)
-        await this.database.saveArticle(
-          article.url,
-          article.title,
-          article.text,
-          'stock_news',
-          {
-            publishedDate: publishedDate,
-            tickers: article.tickers,
-            generateEmbedding: true
-          }
-        );
-
-        stats.new++;
-
-        // Rate limiting: 1.5 seconds between requests to avoid blocking
-        await new Promise(resolve => setTimeout(resolve, 1500));
-
-      } catch (error) {
-        stats.failed++;
-        // Continue with next article
-      }
-    }
-
-    return stats;
-  }
-
-  /**
-   * Fetch and store news articles for stock events from Yahoo Finance
-   * @param {Array} events - Array of detected events
-   * @param {string} ticker - Stock ticker symbol
-   * @param {Object} options - Options
-   * @returns {Promise<Array>} Events with fetched articles
-   */
-  async fetchEventNews(events, ticker, options = {}) {
-    const { dayRange = 1, maxArticlesPerEvent = 10 } = options;
-
-    const YahooNewsService = require('./yahooNewsService');
-    const yahooNews = new YahooNewsService();
-
-    console.log(`\nFetching Yahoo Finance news for ${ticker}...`);
-
-    // Fetch all news for ticker
-    const allNews = await yahooNews.fetchTickerNews(ticker, 100);
-
-    if (allNews.length === 0) {
-      console.log('  No news found from Yahoo Finance');
-      return events;
-    }
-
-    console.log(`  Found ${allNews.length} news items`);
-
-    // PHASE 1: Save ALL news to database to build corpus
-    const saveStats = await this.saveAllTickerNews(ticker, allNews);
-    console.log(`  Corpus: Saved ${saveStats.new} new, ${saveStats.duplicate} duplicate, ${saveStats.failed} failed`);
-
-    // PHASE 2: Match saved articles to events by date range
-    // Determine the date range of available news
-    const newsDates = allNews.filter(n => n.publishTime).map(n => n.publishTime.getTime());
-    const oldestNewsDate = newsDates.length > 0 ? new Date(Math.min(...newsDates)) : null;
-    const newestNewsDate = newsDates.length > 0 ? new Date(Math.max(...newsDates)) : null;
-
-    // Process each event
-    let eventsWithNews = 0;
-    let eventsOutOfRange = 0;
-
-    for (const event of events) {
-      const eventTime = new Date(event.date).getTime();
-      const msPerDay = 24 * 60 * 60 * 1000;
-
-      // Check if event is within news date range (with dayRange buffer)
-      if (oldestNewsDate && newestNewsDate) {
-        const inRange = eventTime >= (oldestNewsDate.getTime() - dayRange * msPerDay) &&
-                       eventTime <= (newestNewsDate.getTime() + dayRange * msPerDay);
-        if (!inRange) {
-          eventsOutOfRange++;
-          event.fetchedArticles = [];
-          continue;
-        }
-      }
-
-      // Filter news by date range for this event
-      const relevantNews = yahooNews.filterNewsByDateRange(allNews, event.date, dayRange);
-
-      if (relevantNews.length > 0) {
-        console.log(`  Event ${event.dateStr}: ${relevantNews.length} news items in \u00b1${dayRange} day range`);
-        eventsWithNews++;
-
-        // Fetch the actual saved articles from DB that match these URLs
-        // Articles were already saved in PHASE 1 with embeddings
-        const eventArticles = [];
-        for (const news of relevantNews) {
-          const savedArticle = await this.checkArticleExists(news.link);
-          if (savedArticle) {
-            // Get full article with embeddings
-            const fullArticle = await this.getArticleById(savedArticle.id);
-            if (fullArticle) {
-              eventArticles.push(fullArticle);
-            }
-          }
-        }
-        event.fetchedArticles = eventArticles;
-      } else {
-        event.fetchedArticles = [];
-      }
-    }
-
-    // Summary
-    if (eventsOutOfRange > 0) {
-      console.log(`  Note: ${eventsOutOfRange} events are outside the available news date range`);
-      console.log(`        Yahoo Finance only provides recent news (typically last 1-2 weeks)`);
-    }
-    if (eventsWithNews === 0 && events.length > 0) {
-      console.log(`  No news found matching any event dates`);
-    }
-
-    return events;
-  }
-
-  /**
-   * Process news items: fetch content, generate embeddings, store in DB
-   * @param {Array} newsItems - News items from Yahoo Finance
-   * @param {string} ticker - Stock ticker
-   * @param {Date} eventDate - Associated event date
-   * @returns {Promise<Array>} Processed and stored articles
-   */
-  async processEventNews(newsItems, ticker, eventDate) {
-    const articleExtractor = require('./articleExtractor');
-    const processedArticles = [];
-
-    for (const news of newsItems) {
-      try {
-        // Check if article already exists in DB (by URL)
-        const existing = await this.checkArticleExists(news.link);
-        if (existing) {
-          const existingDateStr = news.publishTime
-            ? news.publishTime.toISOString().split('T')[0]
-            : 'no date';
-          console.log(`    Skipping [${existingDateStr}]: ${news.title.substring(0, 40)}... (exists)`);
-          processedArticles.push(existing);
-          continue;
-        }
-
-        // Fetch and extract article content
-        const dateStr = news.publishTime
-          ? news.publishTime.toISOString().split('T')[0]
-          : 'no date';
-        console.log(`    Fetching [${dateStr}]: ${news.title.substring(0, 50)}...`);
-
-        let article;
-        try {
-          article = await articleExtractor.extractFromURL(news.link, { timeout: 15000 });
-        } catch (extractError) {
-          console.log(`    Failed to extract content: ${extractError.message}`);
-          continue;
-        }
-
-        // Skip if no meaningful content extracted
-        if (!article.text || article.text.length < 100) {
-          console.log(`    Skipping: insufficient content`);
-          continue;
-        }
-
-        // Use Yahoo's publish time if we couldn't extract one
-        const publishedDate = article.publishedDate || (news.publishTime ? news.publishTime.toISOString() : null);
-
-        // Ensure ticker is included
-        if (!article.tickers.includes(ticker)) {
-          article.tickers.push(ticker);
-        }
-
-        // Save to database (generates embedding automatically)
-        const saved = await this.database.saveArticle(
-          article.url,
-          article.title,
-          article.text,
-          'stock_news',
-          {
-            publishedDate: publishedDate,
-            tickers: article.tickers,
-            generateEmbedding: true
-          }
-        );
-
-        // Add metadata for display
-        saved.publisher = news.publisher;
-        saved.isNew = true;
-
-        processedArticles.push(saved);
-
-        // Rate limiting: 1.5 seconds between requests to avoid blocking
-        await new Promise(resolve => setTimeout(resolve, 1500));
-
-      } catch (error) {
-        console.error(`    Error processing ${news.link}: ${error.message}`);
-        // Continue with next article
-      }
-    }
-
-    console.log(`    Processed ${processedArticles.length} articles for this event`);
-    return processedArticles;
-  }
-
-  /**
    * Check if article URL already exists in database
    * @param {string} url - Article URL
    * @returns {Promise<Object|null>} Existing article or null
@@ -1195,7 +967,7 @@ class StockAnalysisService {
    * @param {string} ticker - Stock ticker
    * @returns {string} HTML content
    */
-  generateAnalysisHTML(data, events, ticker) {
+  generateAnalysisHTML(data, events, ticker, optionsData = null) {
     const classificationColors = {
       negative_anticipated: 'orange',
       surprising_negative: 'red',
@@ -1251,6 +1023,69 @@ class StockAnalysisService {
     const threshold = earningsData.length > 0
       ? Math.min(...earningsData.map((b) => b.volumeGapProduct ?? 0))
       : 0;
+
+    // Generate top-level options sentiment section (current snapshot — "is something about to happen?")
+    const optionsSectionHTML = optionsData?.summary ? (() => {
+      const s = optionsData.summary;
+      const sentimentClass = s.sentiment;
+      const pcRatio = s.avgPutCallRatio.toFixed(2);
+      const ivPct = (s.avgAtmIV * 100).toFixed(1);
+      const ivClass = s.avgAtmIV > 0.6 ? 'iv-high' : s.avgAtmIV > 0.35 ? 'iv-elevated' : 'iv-normal';
+
+      // Interpret the signals for the user
+      const pcSignal = s.avgPutCallRatio < 0.7 ? 'More calls than puts — traders leaning bullish'
+        : s.avgPutCallRatio > 1.0 ? 'More puts than calls — traders hedging or bearish'
+        : 'Balanced put/call activity';
+      const ivSignal = s.avgAtmIV > 0.6 ? 'Very high IV — market expects a large move soon'
+        : s.avgAtmIV > 0.35 ? 'Elevated IV — some anticipation of movement'
+        : 'Low IV — no unusual expectation of movement';
+      const unusualSignal = s.totalUnusualVolume > 10 ? 'Heavy unusual activity — strong anticipation of an event'
+        : s.totalUnusualVolume > 3 ? 'Some unusual activity — possible event anticipation'
+        : 'No significant unusual volume';
+
+      // Per-expiration details
+      const expRows = (optionsData.expirations || []).map(exp => {
+        const expDate = new Date(exp.expirationDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        return `
+          <tr>
+            <td>${expDate}</td>
+            <td>${exp.putCallRatio.toFixed(2)}</td>
+            <td>${(exp.atmCallIV * 100).toFixed(1)}%</td>
+            <td>${(exp.atmPutIV * 100).toFixed(1)}%</td>
+            <td>${exp.totalCallVolume.toLocaleString()}</td>
+            <td>${exp.totalPutVolume.toLocaleString()}</td>
+            <td>${exp.unusualVolumeCount}</td>
+          </tr>`;
+      }).join('');
+
+      return `
+      <div class="options-section">
+        <h2>Current Options Market Sentiment</h2>
+        <p class="options-timestamp">Snapshot taken ${new Date(optionsData.snapshotDate).toLocaleString()}</p>
+        <div class="options-badges">
+          <span class="options-badge ${sentimentClass}">${s.sentiment.toUpperCase()}</span>
+          <span class="options-badge ${sentimentClass}">P/C Ratio: ${pcRatio}</span>
+          <span class="options-badge ${ivClass}">ATM IV: ${ivPct}%</span>
+          ${s.totalUnusualVolume > 0 ? `<span class="options-badge unusual">Unusual Vol: ${s.totalUnusualVolume} contracts</span>` : ''}
+        </div>
+        <div class="options-signals">
+          <div class="signal-row"><span class="signal-icon">${s.avgPutCallRatio < 0.7 ? '🟢' : s.avgPutCallRatio > 1.0 ? '🔴' : '⚪'}</span> <strong>Put/Call Ratio (${pcRatio}):</strong> ${pcSignal}</div>
+          <div class="signal-row"><span class="signal-icon">${s.avgAtmIV > 0.6 ? '🟠' : s.avgAtmIV > 0.35 ? '🟡' : '🟢'}</span> <strong>Implied Volatility (${ivPct}%):</strong> ${ivSignal}</div>
+          <div class="signal-row"><span class="signal-icon">${s.totalUnusualVolume > 10 ? '🟠' : s.totalUnusualVolume > 3 ? '🟡' : '⚪'}</span> <strong>Unusual Volume (${s.totalUnusualVolume}):</strong> ${unusualSignal}</div>
+        </div>
+        <div class="options-volume-summary">
+          Call Volume: ${s.totalCallVolume.toLocaleString()} | Put Volume: ${s.totalPutVolume.toLocaleString()} |
+          Call OI: ${s.totalCallOI.toLocaleString()} | Put OI: ${s.totalPutOI.toLocaleString()}
+        </div>
+        ${expRows ? `
+        <table class="options-table">
+          <thead><tr>
+            <th>Expiration</th><th>P/C</th><th>ATM Call IV</th><th>ATM Put IV</th><th>Call Vol</th><th>Put Vol</th><th>Unusual</th>
+          </tr></thead>
+          <tbody>${expRows}</tbody>
+        </table>` : ''}
+      </div>`;
+    })() : '';
 
     // Generate events HTML with articles
     const eventsHTML = events
@@ -1542,11 +1377,111 @@ class StockAnalysisService {
       color: #63b3ed;
       cursor: help;
     }
+    .options-section {
+      max-width: 1400px;
+      margin: 20px auto;
+    }
+    .options-section h2 {
+      color: #a8b5a2;
+      border-bottom: 2px solid #333;
+      padding-bottom: 10px;
+    }
+    .options-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 10px 0;
+    }
+    .options-badge {
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: bold;
+      color: #000;
+    }
+    .options-badge.bullish {
+      background: #48bb78;
+    }
+    .options-badge.bearish {
+      background: #fc8181;
+    }
+    .options-badge.neutral {
+      background: #a0aec0;
+    }
+    .options-badge.iv-high {
+      background: #f6ad55;
+      color: #000;
+    }
+    .options-badge.iv-elevated {
+      background: #fbd38d;
+      color: #000;
+    }
+    .options-badge.iv-normal {
+      background: #68d391;
+      color: #000;
+    }
+    .options-badge.unusual {
+      background: #b794f4;
+      color: #000;
+    }
+    .options-detail {
+      font-size: 12px;
+      color: #888;
+      margin-top: 4px;
+    }
+    .options-timestamp {
+      color: #666;
+      font-size: 13px;
+      margin: 0 0 15px 0;
+    }
+    .options-signals {
+      margin: 15px 0;
+    }
+    .signal-row {
+      padding: 8px 12px;
+      margin-bottom: 6px;
+      background: #0f3460;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    .signal-icon {
+      margin-right: 8px;
+    }
+    .options-volume-summary {
+      font-size: 13px;
+      color: #888;
+      margin: 12px 0;
+    }
+    .options-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+      font-size: 13px;
+    }
+    .options-table th {
+      text-align: left;
+      padding: 8px 10px;
+      border-bottom: 2px solid #333;
+      color: #a8b5a2;
+      font-size: 12px;
+    }
+    .options-table td {
+      padding: 6px 10px;
+      border-bottom: 1px solid #2a2a4a;
+    }
   </style>
 </head>
 <body>
   <h1>${ticker} Stock Event Analysis</h1>
   <p class="subtitle">Events detected using volume \u00d7 price gap analysis with market movement filtering</p>
+
+  ${optionsSectionHTML}
+
+  ${optionsData?.history?.length > 1 ? `
+  <div class="chart-container">
+    <canvas id="optionsChart"></canvas>
+  </div>
+  ` : ''}
 
   <div class="legend">
     <div class="legend-item"><div class="legend-color" style="background: darkgreen"></div> Surprising Positive</div>
@@ -1762,6 +1697,93 @@ class StockAnalysisService {
         }
       }
     });
+
+    // Chart 6: Options Activity (if data available)
+    ${optionsData?.history?.length > 1 ? `
+    (function() {
+      const optionsHistory = ${JSON.stringify(
+        // Deduplicate by snapshot_date, keeping first per date, sorted chronologically
+        (() => {
+          if (!optionsData?.history) return [];
+          const byDate = new Map();
+          for (const snap of optionsData.history) {
+            const dateKey = new Date(snap.snapshot_date).toISOString().split('T')[0];
+            if (!byDate.has(dateKey)) {
+              byDate.set(dateKey, snap);
+            }
+          }
+          return Array.from(byDate.values()).sort((a, b) =>
+            new Date(a.snapshot_date) - new Date(b.snapshot_date)
+          );
+        })(),
+        // DuckDB returns BIGINT columns as BigInt — convert to Number for JSON
+        (key, value) => typeof value === 'bigint' ? Number(value) : value
+      )};
+
+      if (optionsHistory.length > 1) {
+        const optLabels = optionsHistory.map(s => new Date(s.snapshot_date).toISOString().split('T')[0]);
+        const pcRatios = optionsHistory.map(s => s.put_call_ratio);
+        const atmIVs = optionsHistory.map(s => ((s.atm_call_iv + s.atm_put_iv) / 2 * 100));
+
+        const pcColors = pcRatios.map(r => r > 1.0 ? 'rgba(252, 129, 129, 0.8)' : r < 0.7 ? 'rgba(72, 187, 120, 0.8)' : 'rgba(160, 174, 192, 0.8)');
+
+        new Chart(document.getElementById('optionsChart'), {
+          type: 'bar',
+          data: {
+            labels: optLabels,
+            datasets: [
+              {
+                label: 'Put/Call Ratio',
+                data: pcRatios,
+                backgroundColor: pcColors,
+                borderWidth: 0,
+                yAxisID: 'y'
+              },
+              {
+                label: 'ATM IV (%)',
+                data: atmIVs,
+                type: 'line',
+                borderColor: 'rgba(246, 173, 85, 0.9)',
+                backgroundColor: 'rgba(246, 173, 85, 0.1)',
+                borderWidth: 2,
+                pointRadius: 4,
+                fill: false,
+                yAxisID: 'y1'
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { labels: { color: '#b0b0b0' } },
+              title: { display: true, text: 'Options Activity Over Time (P/C Ratio + ATM IV)', color: '#b0b0b0' }
+            },
+            scales: {
+              x: {
+                ticks: { color: '#909090' },
+                grid: { color: '#2a2a4a' }
+              },
+              y: {
+                type: 'linear',
+                position: 'left',
+                title: { display: true, text: 'Put/Call Ratio', color: '#909090' },
+                ticks: { color: '#909090' },
+                grid: { color: '#2a2a4a' }
+              },
+              y1: {
+                type: 'linear',
+                position: 'right',
+                title: { display: true, text: 'ATM IV (%)', color: '#909090' },
+                ticks: { color: '#909090' },
+                grid: { drawOnChartArea: false }
+              }
+            }
+          }
+        });
+      }
+    })();
+    ` : ''}
   </script>
 </body>
 </html>`;

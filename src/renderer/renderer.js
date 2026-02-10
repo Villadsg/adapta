@@ -28,6 +28,7 @@ const analysisDaysInput = document.getElementById('analysis-days-input');
 const analysisEventsInput = document.getElementById('analysis-events-input');
 const analysisApiSelect = document.getElementById('analysis-api-select');
 const analysisFetchNewsCheckbox = document.getElementById('analysis-fetch-news');
+const analysisOptionsCheckbox = document.getElementById('analysis-options-activity');
 const analysisAddWatchlistCheckbox = document.getElementById('analysis-add-watchlist');
 const modalCancel = document.getElementById('modal-cancel');
 const modalAnalyze = document.getElementById('modal-analyze');
@@ -847,6 +848,7 @@ btnAnalyzeEvents.addEventListener('click', async () => {
   analysisDaysInput.value = '200';
   analysisEventsInput.value = '15';
   analysisFetchNewsCheckbox.checked = true;
+  analysisOptionsCheckbox.checked = true;
   analysisAddWatchlistCheckbox.checked = true;
   analysisTickerInput.focus();
 
@@ -896,6 +898,7 @@ modalAnalyze.addEventListener('click', async () => {
   const minEvents = parseInt(analysisEventsInput.value, 10) || 15;
   const dataSource = analysisApiSelect.value;
   const fetchNews = analysisFetchNewsCheckbox.checked;
+  const analyzeOptions = analysisOptionsCheckbox.checked;
   const addToWatchlistChecked = analysisAddWatchlistCheckbox.checked;
 
   analysisModal.style.display = 'none';
@@ -911,14 +914,16 @@ modalAnalyze.addEventListener('click', async () => {
 
   try {
     const fetchNewsMsg = fetchNews ? ' Fetching news articles...' : '';
-    showToast('Analyzing...', `Running event analysis for ${upperTicker} vs ${benchmark}.${fetchNewsMsg} This may take a minute...`, 'info', fetchNews ? 60000 : 10000);
+    const optionsMsg = analyzeOptions ? ' Analyzing options activity...' : '';
+    showToast('Analyzing...', `Running event analysis for ${upperTicker} vs ${benchmark}.${fetchNewsMsg}${optionsMsg} This may take a minute...`, 'info', (fetchNews || analyzeOptions) ? 60000 : 10000);
 
     const result = await window.electronAPI.analyzeStockEvents(upperTicker, {
       benchmark,
       days,
       minEvents,
       dataSource,
-      fetchNews
+      fetchNews,
+      analyzeOptions
     });
 
     if (!result.success) {
