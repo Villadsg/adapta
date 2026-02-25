@@ -40,10 +40,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   fetchHistoricalPrices: (ticker, options) => ipcRenderer.invoke('fetch-historical-prices', ticker, options),
   getPriceHistory: (ticker, options) => ipcRenderer.invoke('get-price-history', ticker, options),
   getLatestPrice: (ticker) => ipcRenderer.invoke('get-latest-price', ticker),
-  addWatchedTicker: (ticker, autoUpdate) => ipcRenderer.invoke('add-watched-ticker', ticker, autoUpdate),
-  removeWatchedTicker: (ticker) => ipcRenderer.invoke('remove-watched-ticker', ticker),
-  getWatchedTickers: (autoUpdateOnly) => ipcRenderer.invoke('get-watched-tickers', autoUpdateOnly),
-  isTickerWatched: (ticker) => ipcRenderer.invoke('is-ticker-watched', ticker),
   getPriceStats: () => ipcRenderer.invoke('get-price-stats'),
   togglePricePolling: (enabled, intervalMinutes) => ipcRenderer.invoke('toggle-price-polling', enabled, intervalMinutes),
   getPollingStatus: () => ipcRenderer.invoke('get-polling-status'),
@@ -51,13 +47,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Stock event analysis
   analyzeStockEvents: (ticker, options) => ipcRenderer.invoke('analyze-stock-events', ticker, options),
-
-  // News harvester
-  toggleNewsHarvester: (enabled, intervalMinutes) => ipcRenderer.invoke('toggle-news-harvester', enabled, intervalMinutes),
-  getHarvesterStatus: () => ipcRenderer.invoke('get-harvester-status'),
-  triggerHarvest: () => ipcRenderer.invoke('trigger-harvest'),
-  harvestTickers: (tickers) => ipcRenderer.invoke('harvest-tickers', tickers),
-  getCorpusStats: () => ipcRenderer.invoke('get-corpus-stats'),
 
   // Modal support (hide/show BrowserView)
   showModal: () => ipcRenderer.invoke('show-modal'),

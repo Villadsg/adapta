@@ -343,6 +343,13 @@ class ArticleDatabase {
       // Migration 3: Add tickers column for stock ticker associations
       await this.addColumnIfNotExists('articles', 'tickers', 'TEXT[]');
 
+      // Migration 4: Add dollar conviction + fresh positioning columns to options_snapshots
+      await this.addColumnIfNotExists('options_snapshots', 'call_voi', 'DECIMAL(8,4)');
+      await this.addColumnIfNotExists('options_snapshots', 'put_voi', 'DECIMAL(8,4)');
+      await this.addColumnIfNotExists('options_snapshots', 'total_call_dollar_volume', 'DECIMAL(18,2)');
+      await this.addColumnIfNotExists('options_snapshots', 'total_put_dollar_volume', 'DECIMAL(18,2)');
+      await this.addColumnIfNotExists('options_snapshots', 'conviction_ratio', 'DECIMAL(8,4)');
+
       console.log('✓ Database migrations completed');
     } catch (error) {
       console.error('Error running migrations:', error);
@@ -1422,8 +1429,9 @@ class ArticleDatabase {
         atm_call_iv, atm_put_iv, avg_call_iv, avg_put_iv,
         max_call_volume_strike, max_put_volume_strike,
         max_call_oi_strike, max_put_oi_strike,
-        unusual_volume_count
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        unusual_volume_count,
+        call_voi, put_voi, total_call_dollar_volume, total_put_dollar_volume, conviction_ratio
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
       ON CONFLICT (ticker, snapshot_date, expiration_date) DO UPDATE SET
         current_price = $4,
         total_call_volume = $5,
@@ -1440,7 +1448,12 @@ class ArticleDatabase {
         max_put_volume_strike = $16,
         max_call_oi_strike = $17,
         max_put_oi_strike = $18,
-        unusual_volume_count = $19
+        unusual_volume_count = $19,
+        call_voi = $20,
+        put_voi = $21,
+        total_call_dollar_volume = $22,
+        total_put_dollar_volume = $23,
+        conviction_ratio = $24
       RETURNING id
     `;
 
@@ -1466,6 +1479,11 @@ class ArticleDatabase {
         metrics.maxCallOIStrike,
         metrics.maxPutOIStrike,
         metrics.unusualVolumeCount,
+        metrics.callVOI || null,
+        metrics.putVOI || null,
+        metrics.totalCallDollarVolume || null,
+        metrics.totalPutDollarVolume || null,
+        metrics.convictionRatio || null,
         (err, result) => {
           if (err) {
             reject(err);
@@ -1494,7 +1512,7 @@ class ArticleDatabase {
       FROM options_snapshots
       WHERE ticker = $1
         AND snapshot_date >= CURRENT_TIMESTAMP - INTERVAL '${days} days'
-      ORDER BY snapshot_date DESC
+      ORDER BY snapshot_date DESC, expiration_date ASC
     `;
 
     return new Promise((resolve, reject) => {

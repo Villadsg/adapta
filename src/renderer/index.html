@@ -88,27 +88,11 @@
             <span class="checkbox-hint">(fetches put/call ratios, IV, unusual volume from Yahoo Finance)</span>
           </label>
         </div>
-        <div class="form-row-checkbox">
-          <label class="checkbox-label">
-            <input type="checkbox" id="analysis-add-watchlist" checked />
-            <span>Add to watchlist</span>
-            <span class="checkbox-hint">(enables automatic news harvesting for this ticker)</span>
-          </label>
-        </div>
-      </div>
-
-      <!-- Watchlist Section -->
-      <div class="watchlist-section">
-        <div class="watchlist-header">
-          <h4>Watched Tickers</h4>
-          <span id="corpus-stats" class="corpus-stats"></span>
-        </div>
-        <div id="watchlist-container" class="watchlist-container">
-          <span class="watchlist-empty">No tickers in watchlist</span>
-        </div>
-        <div class="harvester-controls">
-          <button id="btn-harvest-now" class="btn-harvest" title="Manually trigger news collection">🔄 Harvest Now</button>
-          <span id="harvester-status" class="harvester-status"></span>
+        <div class="form-row-inline">
+          <div class="form-field">
+            <label for="analysis-max-expirations">Max Expirations</label>
+            <input type="number" id="analysis-max-expirations" value="4" min="1" max="12" />
+          </div>
         </div>
       </div>
 

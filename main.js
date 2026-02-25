@@ -20,7 +20,6 @@ const ArticleDatabase = require('./src/services/database');
 const PriceTrackingService = require('./src/services/priceTracking');
 const StockAnalysisService = require('./src/services/stockAnalysis');
 const OptionsAnalysisService = require('./src/services/optionsAnalysis');
-const NewsHarvesterService = require('./src/services/newsHarvester');
 const articleExtractor = require('./src/services/articleExtractor');
 const newsScraper = require('./src/services/newsScraper');
 
@@ -29,7 +28,6 @@ let database;
 let priceTracker;
 let stockAnalyzer;
 let optionsAnalyzer;
-let newsHarvester;
 
 // Tab management
 const tabs = new Map(); // tabId -> BrowserView
@@ -1028,50 +1026,6 @@ ipcMain.handle('get-latest-price', async (event, ticker) => {
   }
 });
 
-// Add ticker to watchlist
-ipcMain.handle('add-watched-ticker', async (event, ticker, autoUpdate = true) => {
-  try {
-    const result = await database.addWatchedTicker(ticker, autoUpdate);
-    return { success: true, ticker: result };
-  } catch (error) {
-    console.error('Error adding watched ticker:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-// Remove ticker from watchlist
-ipcMain.handle('remove-watched-ticker', async (event, ticker) => {
-  try {
-    await database.removeWatchedTicker(ticker);
-    return { success: true };
-  } catch (error) {
-    console.error('Error removing watched ticker:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-// Get all watched tickers
-ipcMain.handle('get-watched-tickers', async (event, autoUpdateOnly = false) => {
-  try {
-    const tickers = await database.getWatchedTickers(autoUpdateOnly);
-    return { success: true, tickers };
-  } catch (error) {
-    console.error('Error getting watched tickers:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-// Check if ticker is watched
-ipcMain.handle('is-ticker-watched', async (event, ticker) => {
-  try {
-    const isWatched = await database.isTickerWatched(ticker);
-    return { success: true, isWatched };
-  } catch (error) {
-    console.error('Error checking if ticker is watched:', error);
-    return { success: false, error: error.message };
-  }
-});
-
 // Get price statistics
 ipcMain.handle('get-price-stats', async (event) => {
   try {
@@ -1131,7 +1085,8 @@ ipcMain.handle('analyze-stock-events', async (event, ticker, options = {}) => {
       days = 200,
       minEvents = 15,
       dataSource = 'auto',
-      analyzeOptions = false
+      analyzeOptions = false,
+      maxExpirations = 4
     } = options;
 
     console.log(`\nAnalyzing stock events for ${ticker}...`);
@@ -1164,11 +1119,16 @@ ipcMain.handle('analyze-stock-events', async (event, ticker, options = {}) => {
     let optionsData = null;
     if (analyzeOptions) {
       try {
-        optionsData = await optionsAnalyzer.analyzeCurrentOptions(ticker);
+        optionsData = await optionsAnalyzer.analyzeCurrentOptions(ticker, { maxExpirations });
         if (optionsData) {
           await optionsAnalyzer.saveSnapshot(optionsData);
           optionsData.history = await optionsAnalyzer.getSnapshotHistory(ticker, days);
           optionsData.historicalVolatility = stockAnalyzer.computeHistoricalVolatility(result.data);
+          optionsData.rollingHV = stockAnalyzer.computeRollingHV(result.data, 20);
+          optionsData.eventAnticipation = optionsAnalyzer.computeEventAnticipation(
+            optionsData.summary, optionsData.expirations,
+            optionsData.historicalVolatility, optionsData.history
+          );
         }
       } catch (optErr) {
         console.error('Options analysis failed (non-fatal):', optErr.message);
@@ -1245,70 +1205,6 @@ ipcMain.handle('get-embedding-stats', async (event) => {
   }
 });
 
-// === News Harvester Handlers ===
-
-// Start/stop news harvester
-ipcMain.handle('toggle-news-harvester', async (event, enabled, intervalMinutes = 60) => {
-  try {
-    if (enabled) {
-      newsHarvester.start({ intervalMinutes, runImmediately: false });
-      await database.setSetting('news_harvester_enabled', 'true');
-      await database.setSetting('news_harvester_interval', intervalMinutes.toString());
-    } else {
-      newsHarvester.stop();
-      await database.setSetting('news_harvester_enabled', 'false');
-    }
-    return { success: true, enabled, intervalMinutes };
-  } catch (error) {
-    console.error('Error toggling news harvester:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-// Get harvester status
-ipcMain.handle('get-harvester-status', async (event) => {
-  try {
-    const status = newsHarvester.getStatus();
-    return { success: true, ...status };
-  } catch (error) {
-    console.error('Error getting harvester status:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-// Manually trigger a harvest
-ipcMain.handle('trigger-harvest', async (event) => {
-  try {
-    const results = await newsHarvester.harvest();
-    return { success: true, results };
-  } catch (error) {
-    console.error('Error triggering harvest:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-// Harvest specific tickers
-ipcMain.handle('harvest-tickers', async (event, tickers) => {
-  try {
-    const results = await newsHarvester.harvestTickers(tickers);
-    return { success: true, results };
-  } catch (error) {
-    console.error('Error harvesting tickers:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-// Get corpus statistics
-ipcMain.handle('get-corpus-stats', async (event) => {
-  try {
-    const stats = await database.getCorpusStats();
-    return { success: true, stats };
-  } catch (error) {
-    console.error('Error getting corpus stats:', error);
-    return { success: false, error: error.message };
-  }
-});
-
 // App lifecycle
 app.whenReady().then(async () => {
   // Initialize database
@@ -1333,33 +1229,12 @@ app.whenReady().then(async () => {
   articleExtractor.setBrowserExtractor(extractArticleViaBrowser);
   console.log('✓ Browser-based article extraction enabled');
 
-  // Initialize news harvester
-  newsHarvester = new NewsHarvesterService(database);
-
   // Check if auto-polling is enabled in settings
   const autoPolling = await database.getSetting('price_auto_polling', 'false');
   const pollingInterval = await database.getSetting('price_polling_interval', '15');
 
   if (autoPolling === 'true') {
     priceTracker.startPolling(parseInt(pollingInterval));
-  }
-
-  // Check if watchlist auto-harvest is enabled (defaults to true)
-  const watchlistAutoHarvest = await database.getSetting('watchlist_auto_harvest', 'true');
-
-  if (watchlistAutoHarvest === 'true') {
-    const INITIAL_DELAY_MS = 10 * 60 * 1000;  // 10 minutes
-    const HOURLY_INTERVAL = 60;                // 60 minutes
-
-    console.log('NewsHarvester: Will start in 10 minutes, then run hourly');
-
-    setTimeout(() => {
-      console.log('NewsHarvester: Starting initial harvest after 10-minute delay');
-      newsHarvester.start({
-        intervalMinutes: HOURLY_INTERVAL,
-        runImmediately: true  // Run immediately when timer fires
-      });
-    }, INITIAL_DELAY_MS);
   }
 
   createWindow();
@@ -1369,11 +1244,6 @@ app.on('window-all-closed', async () => {
   // Stop price polling
   if (priceTracker) {
     priceTracker.stopPolling();
-  }
-
-  // Stop news harvester
-  if (newsHarvester) {
-    newsHarvester.stop();
   }
 
   // Close database connection

@@ -551,6 +551,31 @@ class StockAnalysisService {
   }
 
   /**
+   * Compute rolling annualized HV time series from daily returns
+   * @param {Array} data - Analyzed stock data with date and stockReturn
+   * @param {number} window - Rolling window size in trading days (default 20)
+   * @returns {Array} [{ date, hv }] — annualized HV at each point
+   */
+  computeRollingHV(data, window = 20) {
+    const series = [];
+    for (let i = window; i < data.length; i++) {
+      const slice = data.slice(i - window, i);
+      const returns = slice
+        .map(bar => bar.stockReturn)
+        .filter(r => r !== undefined && r !== null && !isNaN(r));
+      if (returns.length < window * 0.6) continue; // need at least 60% of window filled
+      const mean = returns.reduce((s, r) => s + r, 0) / returns.length;
+      const variance = returns.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / returns.length;
+      const annualizedHV = Math.sqrt(variance) * Math.sqrt(252);
+      series.push({
+        date: data[i].date.toISOString().split('T')[0],
+        hv: annualizedHV
+      });
+    }
+    return series;
+  }
+
+  /**
    * Run full analysis pipeline
    * @param {string} ticker - Stock ticker
    * @param {Object} options - Analysis options
@@ -1024,66 +1049,144 @@ class StockAnalysisService {
       ? Math.min(...earningsData.map((b) => b.volumeGapProduct ?? 0))
       : 0;
 
-    // Generate top-level options sentiment section (current snapshot — "is something about to happen?")
-    const optionsSectionHTML = optionsData?.summary ? (() => {
-      const s = optionsData.summary;
-      const sentimentClass = s.sentiment;
-      const pcRatio = s.avgPutCallRatio.toFixed(2);
-      const ivPct = (s.avgAtmIV * 100).toFixed(1);
-      const ivClass = s.avgAtmIV > 0.6 ? 'iv-high' : s.avgAtmIV > 0.35 ? 'iv-elevated' : 'iv-normal';
+    // Compute historical volatility values at method scope (used in both options section and chart)
+    const hv = optionsData?.historicalVolatility?.annualizedHV || 0;
+    const hvPct = (hv * 100).toFixed(1);
 
-      // Interpret the signals for the user
-      const pcSignal = s.avgPutCallRatio < 0.7 ? 'More calls than puts — traders leaning bullish'
-        : s.avgPutCallRatio > 1.0 ? 'More puts than calls — traders hedging or bearish'
-        : 'Balanced put/call activity';
-      const ivSignal = s.avgAtmIV > 0.6 ? 'Very high IV — market expects a large move soon'
-        : s.avgAtmIV > 0.35 ? 'Elevated IV — some anticipation of movement'
-        : 'Low IV — no unusual expectation of movement';
-      const unusualSignal = s.totalUnusualVolume > 10 ? 'Heavy unusual activity — strong anticipation of an event'
-        : s.totalUnusualVolume > 3 ? 'Some unusual activity — possible event anticipation'
-        : 'No significant unusual volume';
+    // Generate Event Anticipation panel
+    const ea = optionsData?.eventAnticipation;
+    const anticipationPanelHTML = ea ? (() => {
+      const idx = ea.compositeIndex;
+      const badgeClass = idx >= 70 ? 'extreme' : idx >= 50 ? 'high' : idx >= 30 ? 'moderate' : idx >= 15 ? 'low' : 'none';
+      const barColor = (score, max) => {
+        const pct = max > 0 ? score / max : 0;
+        if (pct >= 0.7) return '#e53e3e';
+        if (pct >= 0.5) return '#dd6b20';
+        if (pct >= 0.3) return '#d69e2e';
+        return '#38a169';
+      };
 
-      // Per-expiration details
-      const expRows = (optionsData.expirations || []).map(exp => {
-        const expDate = new Date(exp.expirationDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-        return `
-          <tr>
-            <td>${expDate}</td>
-            <td>${exp.putCallRatio.toFixed(2)}</td>
-            <td>${(exp.atmCallIV * 100).toFixed(1)}%</td>
-            <td>${(exp.atmPutIV * 100).toFixed(1)}%</td>
-            <td>${exp.totalCallVolume.toLocaleString()}</td>
-            <td>${exp.totalPutVolume.toLocaleString()}</td>
-            <td>${exp.unusualVolumeCount}</td>
-          </tr>`;
-      }).join('');
+      const componentHTML = (name, score, maxScore, signal, detailHTML, extraClass = '') => `
+        <div class="component-row${detailHTML ? ' expandable' : ''}${extraClass ? ' ' + extraClass : ''}">
+          <div class="component-header">
+            <span class="component-name">${name}</span>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span class="component-score">${score}/${maxScore}</span>
+              ${detailHTML ? '<span class="component-toggle">&#9654;</span>' : ''}
+            </div>
+          </div>
+          <div class="component-bar">
+            <div class="component-bar-fill" style="width:${maxScore > 0 ? (score / maxScore * 100) : 0}%;background:${barColor(score, maxScore)}"></div>
+          </div>
+          <div class="component-signal">${signal}</div>
+          ${detailHTML ? '<div class="component-detail">' + detailHTML + '</div>' : ''}
+        </div>`;
+
+      const c = ea.components;
+      const s = optionsData?.summary || {};
+      const calloutsHTML = ea.callouts.length > 0
+        ? `<div class="anticipation-callouts">${ea.callouts.map(c => `<p>${c}</p>`).join('')}</div>`
+        : '';
+
+      // Term structure mini data for chart
+      const termData = c.termStructure.data || [];
+      const hasTermChart = termData.length >= 2;
+
+      // --- Detail HTML for expandable component cards ---
+      const hasRollingHV = (optionsData?.rollingHV?.length || 0) > 5;
+
+      const vrpDetail = '<table class="detail-table">'
+        + '<tr><td>Call IV (OTM avg)</td><td>' + ((s.avgCallIV || 0) * 100).toFixed(1) + '%</td></tr>'
+        + '<tr><td>Put IV (OTM avg)</td><td>' + ((s.avgPutIV || 0) * 100).toFixed(1) + '%</td></tr>'
+        + '<tr><td>Blended IV</td><td>' + ((s.avgAtmIV || 0) * 100).toFixed(1) + '%</td></tr>'
+        + '<tr><td>Historical Volatility</td><td>' + hvPct + '%</td></tr>'
+        + '<tr><td>VRP Ratio (IV / HV)</td><td>' + (c.vrp.ratio > 0 ? c.vrp.ratio.toFixed(2) + 'x' : 'N/A') + '</td></tr>'
+        + '<tr><td>VRP Spread (IV &minus; HV)</td><td>' + (c.vrp.ratio > 0 ? (c.vrp.spread * 100).toFixed(1) + 'pp' : 'N/A') + '</td></tr>'
+        + '</table>'
+        + '<div class="detail-interp">&gt;1.50x Strong event premium · 1.20–1.50x Moderate · 0.80–1.20x Normal · &lt;0.80x Compression</div>'
+        + (hasRollingHV ? '<div class="detail-chart"><canvas id="vrpMiniChart"></canvas></div>' : '');
+
+      const tsData = c.termStructure.data || [];
+      const termDetail = '<table class="detail-table">'
+        + '<tr><td>Shape</td><td>' + c.termStructure.shape + '</td></tr>'
+        + '<tr><td>Slope (per 30d)</td><td>' + (c.termStructure.slope ? (c.termStructure.slope * 100).toFixed(2) + 'pp' : 'N/A') + '</td></tr>'
+        + (c.termStructure.kink ? '<tr><td>Kink detected</td><td>' + c.termStructure.kink.signal + '</td></tr>' : '')
+        + '</table>'
+        + (tsData.length > 0
+          ? '<table class="detail-table"><thead><tr><th>Expiry</th><th>DTE</th><th>Call IV</th><th>Put IV</th></tr></thead><tbody>'
+            + tsData.map(d =>
+              '<tr><td>' + new Date(d.expirationDate).toLocaleDateString('en-US', {month:'short',day:'numeric'}) + '</td>'
+              + '<td>' + d.daysToExpiry + 'd</td>'
+              + '<td>' + ((d.callIV || 0) * 100).toFixed(1) + '%</td>'
+              + '<td>' + ((d.putIV || 0) * 100).toFixed(1) + '%</td></tr>'
+            ).join('') + '</tbody></table>'
+          : '')
+        + (hasTermChart ? '<div class="detail-chart"><canvas id="termStructureChart"></canvas></div>' : '');
+
+      const vcPerExp = c.volumeConviction.perExpiration || [];
+      const hasConvictionChart = vcPerExp.length >= 2;
+      const volumeDetail = hasConvictionChart
+        ? '<div class="detail-chart"><canvas id="dollarConvictionChart"></canvas></div>'
+        + '<div id="strikeDrilldownWrap" style="display:none; margin-top:12px;"><div class="detail-chart"><canvas id="strikeDrilldownChart"></canvas></div></div>'
+        : (vcPerExp.length === 1
+          ? '<div class="detail-interp">Call IV: ' + (vcPerExp[0].atmCallIV * 100).toFixed(1) + '% &middot; Put IV: ' + (vcPerExp[0].atmPutIV * 100).toFixed(1) + '%'
+            + ' &middot; Conv. Ratio: ' + vcPerExp[0].convictionRatio.toFixed(2)
+            + '</div>'
+          : '');
+
+      const vcAllPerExp = c.volumeConvictionAll ? c.volumeConvictionAll.perExpiration || [] : [];
+      const hasConvictionChartAll = vcAllPerExp.length >= 2;
+      const volumeDetailAll = hasConvictionChartAll
+        ? '<div class="detail-chart"><canvas id="dollarConvictionChartAll"></canvas></div>'
+        + '<div id="strikeDrilldownWrapAll" style="display:none; margin-top:12px;"><div class="detail-chart"><canvas id="strikeDrilldownChartAll"></canvas></div></div>'
+        : (vcAllPerExp.length === 1
+          ? '<div class="detail-interp">Conv. Ratio: ' + vcAllPerExp[0].convictionRatio.toFixed(2)
+            + '</div>'
+          : '');
+
+      const hvc = c.historicalVolConviction;
+      const hvcHistory = hvc.history || [];
+      const fmtDollar = (v) => v >= 1_000_000 ? '$' + (v / 1_000_000).toFixed(1) + 'M' : v >= 1_000 ? '$' + (v / 1_000).toFixed(0) + 'K' : '$' + v.toFixed(0);
+      const hasVolConvChart = hvcHistory.length >= 2;
+
+      const volConvDetail = '<table class="detail-table">'
+        + '<tr><td>Today Call $</td><td>' + fmtDollar(hvc.totalCallDollar) + '</td></tr>'
+        + '<tr><td>Today Put $</td><td>' + fmtDollar(hvc.totalPutDollar) + '</td></tr>'
+        + '<tr><td>Call/Put Ratio</td><td>' + (hvc.ratio > 0 ? hvc.ratio.toFixed(2) + 'x' : 'N/A') + '</td></tr>'
+        + '</table>'
+        + (hvcHistory.length > 0
+          ? '<table class="detail-table"><thead><tr><th>Date</th><th>Call $</th><th>Put $</th></tr></thead><tbody>'
+            + hvcHistory.slice(-8).map(d =>
+              '<tr><td>' + new Date(d.date).toLocaleDateString('en-US', {month:'short',day:'numeric'}) + '</td>'
+              + '<td>' + fmtDollar(d.totalCallDollar) + '</td>'
+              + '<td>' + fmtDollar(d.totalPutDollar) + '</td></tr>'
+            ).join('') + '</tbody></table>'
+          : '')
+        + (hasVolConvChart ? '<div class="detail-chart"><canvas id="volConvictionChart"></canvas></div>' : '');
 
       return `
-      <div class="options-section">
-        <h2>Current Options Market Sentiment</h2>
-        <p class="options-timestamp">Snapshot taken ${new Date(optionsData.snapshotDate).toLocaleString()}</p>
-        <div class="options-badges">
-          <span class="options-badge ${sentimentClass}">${s.sentiment.toUpperCase()}</span>
-          <span class="options-badge ${sentimentClass}">P/C Ratio: ${pcRatio}</span>
-          <span class="options-badge ${ivClass}">ATM IV: ${ivPct}%</span>
-          ${s.totalUnusualVolume > 0 ? `<span class="options-badge unusual">Unusual Vol: ${s.totalUnusualVolume} contracts</span>` : ''}
+      <div class="anticipation-panel">
+        <h2>Event Anticipation</h2>
+        <div class="anticipation-headline">
+          <div class="anticipation-badge ${badgeClass}">${idx}</div>
+          <div class="anticipation-level">
+            <span class="level-label">${ea.compositeLevel}</span>
+            <span class="level-sub">Composite Event Anticipation Index (0–100)</span>
+          </div>
         </div>
-        <div class="options-signals">
-          <div class="signal-row"><span class="signal-icon">${s.avgPutCallRatio < 0.7 ? '🟢' : s.avgPutCallRatio > 1.0 ? '🔴' : '⚪'}</span> <strong>Put/Call Ratio (${pcRatio}):</strong> ${pcSignal}</div>
-          <div class="signal-row"><span class="signal-icon">${s.avgAtmIV > 0.6 ? '🟠' : s.avgAtmIV > 0.35 ? '🟡' : '🟢'}</span> <strong>Implied Volatility (${ivPct}%):</strong> ${ivSignal}</div>
-          <div class="signal-row"><span class="signal-icon">${s.totalUnusualVolume > 10 ? '🟠' : s.totalUnusualVolume > 3 ? '🟡' : '⚪'}</span> <strong>Unusual Volume (${s.totalUnusualVolume}):</strong> ${unusualSignal}</div>
+        <div class="anticipation-components">
+          ${componentHTML('Volatility Risk Premium', c.vrp.score, c.vrp.maxScore,
+            c.vrp.ratio > 0 ? `VRP ${c.vrp.ratio.toFixed(2)}x — ${c.vrp.signal}` : c.vrp.signal, vrpDetail, hasRollingHV ? 'has-chart' : '')}
+          ${componentHTML('Term Structure', c.termStructure.score, c.termStructure.maxScore,
+            `${c.termStructure.shape} — ${c.termStructure.signal}`, termDetail, hasTermChart ? 'has-chart' : '')}
+          ${componentHTML('Vol Conviction (5%+ OTM)', c.volumeConviction.score, c.volumeConviction.maxScore,
+            `${c.volumeConviction.signal}${vcPerExp.length > 0 ? ' — Max VOI: ' + Math.max(...vcPerExp.map(e => Math.max(e.callVOI, e.putVOI))).toFixed(2) : ''}`, volumeDetail, hasConvictionChart ? 'has-chart' : '')}
+          ${componentHTML('Vol Conviction (ITM+OTM)', c.volumeConvictionAll ? c.volumeConvictionAll.score : 0, c.volumeConvictionAll ? c.volumeConvictionAll.maxScore : 15,
+            `${c.volumeConvictionAll ? c.volumeConvictionAll.signal : 'N/A'}`, volumeDetailAll, hasConvictionChartAll ? 'has-chart' : '')}
+          ${componentHTML('Dollar Flow', hvc.score, hvc.maxScore,
+            `${hvc.signal}${hvc.ratio > 0 ? ' — ' + hvc.ratio.toFixed(2) + 'x Call/Put' : ''}`, volConvDetail, hasVolConvChart ? 'has-chart' : '')}
         </div>
-        <div class="options-volume-summary">
-          Call Volume: ${s.totalCallVolume.toLocaleString()} | Put Volume: ${s.totalPutVolume.toLocaleString()} |
-          Call OI: ${s.totalCallOI.toLocaleString()} | Put OI: ${s.totalPutOI.toLocaleString()}
-        </div>
-        ${expRows ? `
-        <table class="options-table">
-          <thead><tr>
-            <th>Expiration</th><th>P/C</th><th>ATM Call IV</th><th>ATM Put IV</th><th>Call Vol</th><th>Put Vol</th><th>Unusual</th>
-          </tr></thead>
-          <tbody>${expRows}</tbody>
-        </table>` : ''}
+        ${calloutsHTML}
       </div>`;
     })() : '';
 
@@ -1377,97 +1480,121 @@ class StockAnalysisService {
       color: #63b3ed;
       cursor: help;
     }
-    .options-section {
+    /* Event Anticipation Panel */
+    .anticipation-panel {
       max-width: 1400px;
       margin: 20px auto;
+      background: #16213e;
+      border-radius: 10px;
+      padding: 24px;
     }
-    .options-section h2 {
+    .anticipation-panel h2 {
       color: #a8b5a2;
+      margin: 0 0 16px 0;
       border-bottom: 2px solid #333;
       padding-bottom: 10px;
     }
-    .options-badges {
+    .anticipation-headline {
       display: flex;
+      align-items: center;
+      gap: 18px;
+      margin-bottom: 20px;
       flex-wrap: wrap;
-      gap: 8px;
-      margin: 10px 0;
     }
-    .options-badge {
-      padding: 4px 12px;
-      border-radius: 20px;
-      font-size: 12px;
+    .anticipation-badge {
+      font-size: 32px;
       font-weight: bold;
-      color: #000;
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
     }
-    .options-badge.bullish {
-      background: #48bb78;
+    .anticipation-badge.extreme { background: #e53e3e; color: #fff; }
+    .anticipation-badge.high { background: #dd6b20; color: #fff; }
+    .anticipation-badge.moderate { background: #d69e2e; color: #000; }
+    .anticipation-badge.low { background: #38a169; color: #fff; }
+    .anticipation-badge.none { background: #4a5568; color: #a0aec0; }
+    .anticipation-level {
+      font-size: 18px;
+      font-weight: 600;
     }
-    .options-badge.bearish {
-      background: #fc8181;
+    .anticipation-level .level-label { color: #eaeaea; }
+    .anticipation-level .level-sub { color: #a0aec0; font-size: 13px; font-weight: 400; display: block; margin-top: 2px; }
+    .anticipation-components {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
     }
-    .options-badge.neutral {
-      background: #a0aec0;
-    }
-    .options-badge.iv-high {
-      background: #f6ad55;
-      color: #000;
-    }
-    .options-badge.iv-elevated {
-      background: #fbd38d;
-      color: #000;
-    }
-    .options-badge.iv-normal {
-      background: #68d391;
-      color: #000;
-    }
-    .options-badge.unusual {
-      background: #b794f4;
-      color: #000;
-    }
-    .options-detail {
-      font-size: 12px;
-      color: #888;
-      margin-top: 4px;
-    }
-    .options-timestamp {
-      color: #666;
-      font-size: 13px;
-      margin: 0 0 15px 0;
-    }
-    .options-signals {
-      margin: 15px 0;
-    }
-    .signal-row {
-      padding: 8px 12px;
-      margin-bottom: 6px;
+    .component-row {
       background: #0f3460;
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+    .component-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .component-name { color: #a8b5a2; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .component-score { color: #eaeaea; font-size: 13px; font-weight: bold; }
+    .component-bar {
+      height: 6px;
+      background: #1a1a2e;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 6px;
+    }
+    .component-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.3s;
+    }
+    .component-signal { color: #a0aec0; font-size: 11px; line-height: 1.4; }
+    .component-row.expandable { cursor: pointer; }
+    .component-row.expandable:hover { background: #0e2d52; }
+    .component-toggle { font-size: 10px; color: #a0aec0; transition: transform 0.3s; display: inline-block; }
+    .component-row.expanded .component-toggle { transform: rotate(90deg); }
+    .component-detail { max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out; }
+    .component-row.expanded .component-detail { max-height: 800px; margin-top: 10px; }
+    .detail-chart { margin-top: 10px; height: 260px; }
+    .detail-chart canvas { height: 260px !important; }
+    .component-row.has-chart.expanded { grid-column: 1 / -1; }
+    .component-row.has-chart.expanded .component-detail { max-height: 1800px; }
+    .trend-dir { font-weight: 600; }
+    .trend-dir.rising { color: #fc8181; }
+    .trend-dir.falling { color: #48bb78; }
+    .trend-dir.flat { color: #a0aec0; }
+    .detail-table { width: 100%; font-size: 11px; border-collapse: collapse; margin: 8px 0; }
+    .detail-table th, .detail-table td { padding: 4px 8px; border-bottom: 1px solid #1a1a2e; text-align: left; }
+    .detail-table th { color: #a8b5a2; font-weight: 600; }
+    .detail-table td { color: #cbd5e0; }
+    .detail-interp { font-size: 11px; color: #718096; margin-top: 6px; line-height: 1.5; }
+    .directional-indicator { display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 20px; background: rgba(74, 111, 165, 0.12); }
+    .signal-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: bold; }
+    .signal-badge.pos { background: rgba(72, 187, 120, 0.2); color: #48bb78; }
+    .signal-badge.neg { background: rgba(252, 129, 129, 0.2); color: #fc8181; }
+    .signal-badge.zero { background: rgba(160, 174, 192, 0.2); color: #a0aec0; }
+    .anticipation-callouts {
+      margin-top: 16px;
+      padding: 12px 14px;
+      background: rgba(74, 111, 165, 0.08);
       border-radius: 6px;
-      font-size: 14px;
+      border-left: 3px solid #4a6fa5;
     }
-    .signal-icon {
-      margin-right: 8px;
-    }
-    .options-volume-summary {
+    .anticipation-callouts p {
+      margin: 4px 0;
       font-size: 13px;
-      color: #888;
-      margin: 12px 0;
+      color: #cbd5e0;
     }
-    .options-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 15px;
-      font-size: 13px;
-    }
-    .options-table th {
-      text-align: left;
-      padding: 8px 10px;
-      border-bottom: 2px solid #333;
-      color: #a8b5a2;
-      font-size: 12px;
-    }
-    .options-table td {
-      padding: 6px 10px;
-      border-bottom: 1px solid #2a2a4a;
+    .anticipation-callouts p::before {
+      content: '\u25B6 ';
+      color: #4a6fa5;
+      font-size: 10px;
     }
   </style>
 </head>
@@ -1475,13 +1602,7 @@ class StockAnalysisService {
   <h1>${ticker} Stock Event Analysis</h1>
   <p class="subtitle">Events detected using volume \u00d7 price gap analysis with market movement filtering</p>
 
-  ${optionsSectionHTML}
-
-  ${optionsData?.history?.length > 1 ? `
-  <div class="chart-container">
-    <canvas id="optionsChart"></canvas>
-  </div>
-  ` : ''}
+  ${anticipationPanelHTML}
 
   <div class="legend">
     <div class="legend-item"><div class="legend-color" style="background: darkgreen"></div> Surprising Positive</div>
@@ -1530,6 +1651,30 @@ class StockAnalysisService {
     const avgStrength = ${avgStrength};
 
     const classificationColors = ${JSON.stringify(classificationColors)};
+
+    // Expandable component cards (event delegation)
+    const compContainer = document.querySelector('.anticipation-components');
+    if (compContainer) {
+      compContainer.addEventListener('click', (e) => {
+        // Don't toggle card when clicking inside a chart canvas
+        if (e.target.tagName === 'CANVAS') return;
+        const row = e.target.closest('.component-row.expandable');
+        if (!row) return;
+        row.classList.toggle('expanded');
+        if (row.classList.contains('expanded')) {
+          const canvases = row.querySelectorAll('canvas');
+          canvases.forEach(canvas => {
+            if (canvas.dataset.init) return;
+            canvas.dataset.init = '1';
+            if (canvas.id === 'vrpMiniChart' && typeof initVrpMiniChart === 'function') initVrpMiniChart();
+            if (canvas.id === 'termStructureChart' && typeof initTermStructureChart === 'function') initTermStructureChart();
+            if (canvas.id === 'volConvictionChart' && typeof initVolConvictionChart === 'function') initVolConvictionChart();
+            if (canvas.id === 'dollarConvictionChart' && typeof initDollarConvictionChart === 'function') initDollarConvictionChart();
+            if (canvas.id === 'dollarConvictionChartAll' && typeof initDollarConvictionChartAll === 'function') initDollarConvictionChartAll();
+          });
+        }
+      });
+    }
 
     const chartOptions = {
       responsive: true,
@@ -1698,92 +1843,514 @@ class StockAnalysisService {
       }
     });
 
-    // Chart 6: Options Activity (if data available)
-    ${optionsData?.history?.length > 1 ? `
-    (function() {
-      const optionsHistory = ${JSON.stringify(
-        // Deduplicate by snapshot_date, keeping first per date, sorted chronologically
-        (() => {
-          if (!optionsData?.history) return [];
-          const byDate = new Map();
-          for (const snap of optionsData.history) {
-            const dateKey = new Date(snap.snapshot_date).toISOString().split('T')[0];
-            if (!byDate.has(dateKey)) {
-              byDate.set(dateKey, snap);
-            }
-          }
-          return Array.from(byDate.values()).sort((a, b) =>
-            new Date(a.snapshot_date) - new Date(b.snapshot_date)
-          );
-        })(),
-        // DuckDB returns BIGINT columns as BigInt — convert to Number for JSON
-        (key, value) => typeof value === 'bigint' ? Number(value) : value
-      )};
+    // Chart 7: Rolling HV with IV overlay — lazy init from card expand
+    ${(optionsData?.rollingHV?.length || 0) > 5 ? `
+    function initVrpMiniChart() {
+      const rollingHV = ${JSON.stringify(optionsData.rollingHV)};
+      const currentIV = ${JSON.stringify(optionsData?.summary?.avgAtmIV ? optionsData.summary.avgAtmIV * 100 : null)};
+      const overallHV = ${JSON.stringify(hv * 100)};
 
-      if (optionsHistory.length > 1) {
-        const optLabels = optionsHistory.map(s => new Date(s.snapshot_date).toISOString().split('T')[0]);
-        const pcRatios = optionsHistory.map(s => s.put_call_ratio);
-        const atmIVs = optionsHistory.map(s => ((s.atm_call_iv + s.atm_put_iv) / 2 * 100));
+      const hvLabels = rollingHV.map(d => d.date);
+      const hvValues = rollingHV.map(d => d.hv * 100);
 
-        const pcColors = pcRatios.map(r => r > 1.0 ? 'rgba(252, 129, 129, 0.8)' : r < 0.7 ? 'rgba(72, 187, 120, 0.8)' : 'rgba(160, 174, 192, 0.8)');
+      const datasets = [
+        {
+          label: '20-Day Rolling HV (%)',
+          data: hvValues,
+          borderColor: 'rgba(99, 179, 237, 0.9)',
+          backgroundColor: 'rgba(99, 179, 237, 0.08)',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: true,
+          tension: 0.3
+        },
+        {
+          label: 'Full-Period HV (%)',
+          data: hvLabels.map(() => overallHV),
+          borderColor: 'rgba(99, 179, 237, 0.4)',
+          borderWidth: 1,
+          borderDash: [4, 4],
+          pointRadius: 0,
+          fill: false
+        }
+      ];
 
-        new Chart(document.getElementById('optionsChart'), {
-          type: 'bar',
-          data: {
-            labels: optLabels,
-            datasets: [
-              {
-                label: 'Put/Call Ratio',
-                data: pcRatios,
-                backgroundColor: pcColors,
-                borderWidth: 0,
-                yAxisID: 'y'
-              },
-              {
-                label: 'ATM IV (%)',
-                data: atmIVs,
-                type: 'line',
-                borderColor: 'rgba(246, 173, 85, 0.9)',
-                backgroundColor: 'rgba(246, 173, 85, 0.1)',
-                borderWidth: 2,
-                pointRadius: 4,
-                fill: false,
-                yAxisID: 'y1'
-              }
-            ]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: { labels: { color: '#b0b0b0' } },
-              title: { display: true, text: 'Options Activity Over Time (P/C Ratio + ATM IV)', color: '#b0b0b0' }
-            },
-            scales: {
-              x: {
-                ticks: { color: '#909090' },
-                grid: { color: '#2a2a4a' }
-              },
-              y: {
-                type: 'linear',
-                position: 'left',
-                title: { display: true, text: 'Put/Call Ratio', color: '#909090' },
-                ticks: { color: '#909090' },
-                grid: { color: '#2a2a4a' }
-              },
-              y1: {
-                type: 'linear',
-                position: 'right',
-                title: { display: true, text: 'ATM IV (%)', color: '#909090' },
-                ticks: { color: '#909090' },
-                grid: { drawOnChartArea: false }
-              }
-            }
-          }
+      if (currentIV !== null) {
+        datasets.push({
+          label: 'Current ATM IV (%)',
+          data: hvLabels.map(() => currentIV),
+          borderColor: 'rgba(246, 173, 85, 0.9)',
+          borderWidth: 2,
+          borderDash: [8, 4],
+          pointRadius: 0,
+          fill: false
         });
       }
-    })();
+
+      new Chart(document.getElementById('vrpMiniChart'), {
+        type: 'line',
+        data: { labels: hvLabels, datasets: datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: '#b0b0b0' } },
+            title: { display: true, text: 'Rolling HV vs Implied Volatility', color: '#b0b0b0' }
+          },
+          scales: {
+            x: {
+              ticks: { color: '#909090', maxTicksLimit: 15 },
+              grid: { color: '#2a2a4a' }
+            },
+            y: {
+              title: { display: true, text: 'Annualized Volatility (%)', color: '#909090' },
+              ticks: { color: '#909090' },
+              grid: { color: '#2a2a4a' }
+            }
+          }
+        }
+      });
+    }
     ` : ''}
+
+
+    // Term Structure Chart (IV across expirations) — lazy init from card expand
+    ${ea && (ea.components?.termStructure?.data?.length || 0) >= 2 ? `
+    function initTermStructureChart() {
+      const termData = ${JSON.stringify(ea.components.termStructure.data)};
+      const hvLine = ${JSON.stringify(hv * 100)};
+
+      const labels = termData.map(d => {
+        const dt = new Date(d.expirationDate);
+        return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' (' + d.daysToExpiry + 'd)';
+      });
+      const callIVValues = termData.map(d => (d.callIV || 0) * 100);
+      const putIVValues = termData.map(d => (d.putIV || 0) * 100);
+      const datasets = [
+        {
+          label: 'Call IV (%)',
+          data: callIVValues,
+          borderColor: 'rgba(72, 187, 120, 0.9)',
+          backgroundColor: 'rgba(72, 187, 120, 0.08)',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointBackgroundColor: 'rgba(72, 187, 120, 1)',
+          fill: false,
+          tension: 0.2
+        },
+        {
+          label: 'Put IV (%)',
+          data: putIVValues,
+          borderColor: 'rgba(245, 101, 101, 0.9)',
+          backgroundColor: 'rgba(245, 101, 101, 0.08)',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointBackgroundColor: 'rgba(245, 101, 101, 1)',
+          fill: false,
+          tension: 0.2
+        }
+      ];
+
+      if (hvLine > 0) {
+        datasets.push({
+          label: 'Realized Vol (%)',
+          data: labels.map(() => hvLine),
+          borderColor: 'rgba(99, 179, 237, 0.8)',
+          borderWidth: 2,
+          borderDash: [6, 4],
+          pointRadius: 0,
+          fill: false
+        });
+      }
+
+      new Chart(document.getElementById('termStructureChart'), {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: '#b0b0b0' } },
+            title: { display: true, text: 'IV Term Structure (Call / Put)', color: '#b0b0b0' }
+          },
+          scales: {
+            x: {
+              ticks: { color: '#909090' },
+              grid: { color: '#2a2a4a' }
+            },
+            y: {
+              title: { display: true, text: 'Annualized IV (%)', color: '#909090' },
+              ticks: { color: '#909090' },
+              grid: { color: '#2a2a4a' }
+            }
+          }
+        }
+      });
+    }
+    ` : ''}
+
+    // Dollar Conviction Ratio Chart — Call$/Put$ ratio by expiration
+    ${(() => {
+      const vcPerExp = ea?.components?.volumeConviction?.perExpiration || [];
+      if (vcPerExp.length < 2) return '';
+      return `function initDollarConvictionChart() {
+      const crData = ${JSON.stringify(vcPerExp)};
+      const labels = crData.map(d => {
+        const dt = new Date(d.expirationDate);
+        return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      });
+
+      let drilldownChart = null;
+      const convChart = new Chart(document.getElementById('dollarConvictionChart'), {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Call $ Volume',
+              data: crData.map(d => d.totalCallDollarVolume || 0),
+              backgroundColor: 'rgba(72, 187, 120, 0.35)',
+              borderColor: 'rgba(72, 187, 120, 0.6)',
+              borderWidth: 1
+            },
+            {
+              label: 'Put $ Volume',
+              data: crData.map(d => d.totalPutDollarVolume || 0),
+              backgroundColor: 'rgba(245, 101, 101, 0.35)',
+              borderColor: 'rgba(245, 101, 101, 0.6)',
+              borderWidth: 1
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          onClick: function(evt, elements) {
+            if (!elements.length) return;
+            const idx = elements[0].index;
+            const exp = crData[idx];
+            if (!exp || !exp.contracts || !exp.contracts.length) return;
+            const expLabel = labels[idx];
+
+            // Group contracts by strike, separating call vs put
+            const strikeMap = {};
+            exp.contracts.forEach(c => {
+              if (!c.dollarVolume) return;
+              if (!strikeMap[c.strike]) strikeMap[c.strike] = { call: 0, put: 0 };
+              if (c.type === 'call') strikeMap[c.strike].call += c.dollarVolume;
+              else strikeMap[c.strike].put += c.dollarVolume;
+            });
+            const strikes = Object.keys(strikeMap).map(Number).sort((a, b) => a - b);
+            if (!strikes.length) return;
+            const callData = strikes.map(s => strikeMap[s].call);
+            const putData = strikes.map(s => strikeMap[s].put);
+            const strikeLabels = strikes.map(s => '$' + s);
+
+            const wrap = document.getElementById('strikeDrilldownWrap');
+            wrap.style.display = 'block';
+
+            if (drilldownChart) drilldownChart.destroy();
+            drilldownChart = new Chart(document.getElementById('strikeDrilldownChart'), {
+              type: 'bar',
+              data: {
+                labels: strikeLabels,
+                datasets: [
+                  {
+                    label: 'Call $ Volume',
+                    data: callData,
+                    backgroundColor: 'rgba(72, 187, 120, 0.5)',
+                    borderColor: 'rgba(72, 187, 120, 0.8)',
+                    borderWidth: 1
+                  },
+                  {
+                    label: 'Put $ Volume',
+                    data: putData,
+                    backgroundColor: 'rgba(245, 101, 101, 0.5)',
+                    borderColor: 'rgba(245, 101, 101, 0.8)',
+                    borderWidth: 1
+                  }
+                ]
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                  legend: { labels: { color: '#b0b0b0' } },
+                  title: { display: true, text: 'Strike Breakdown — ' + expLabel, color: '#b0b0b0' },
+                  tooltip: {
+                    callbacks: {
+                      label: function(ctx) {
+                        const v = ctx.parsed.y;
+                        return ctx.dataset.label + ': $' + (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v.toFixed(0));
+                      }
+                    }
+                  }
+                },
+                scales: {
+                  x: {
+                    ticks: { color: '#909090' },
+                    grid: { color: '#2a2a4a' }
+                  },
+                  y: {
+                    title: { display: true, text: '$ Volume', color: '#909090' },
+                    ticks: {
+                      color: '#909090',
+                      callback: function(v) { return v >= 1000 ? '$' + (v / 1000).toFixed(0) + 'k' : '$' + v; }
+                    },
+                    grid: { color: '#2a2a4a' },
+                    beginAtZero: true
+                  }
+                }
+              }
+            });
+          },
+          plugins: {
+            legend: { labels: { color: '#b0b0b0' } },
+            title: { display: true, text: 'Dollar Volume by Expiration — 5%+ OTM (click bar to drill down)', color: '#b0b0b0' },
+            tooltip: {
+              callbacks: {
+                label: function(ctx) {
+                  const v = ctx.parsed.y;
+                  return ctx.dataset.label + ': $' + (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v.toFixed(0));
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              ticks: { color: '#909090' },
+              grid: { color: '#2a2a4a' }
+            },
+            y: {
+              title: { display: true, text: '$ Volume', color: '#909090' },
+              ticks: {
+                color: '#909090',
+                callback: function(v) { return v >= 1000 ? '$' + (v / 1000).toFixed(0) + 'k' : '$' + v; }
+              },
+              grid: { color: '#2a2a4a' },
+              beginAtZero: true
+            }
+          }
+        }
+      });
+    }`;
+    })()}
+
+    // Dollar Conviction Ratio Chart — ITM+OTM (all contracts)
+    ${(() => {
+      const vcAllPerExp = ea?.components?.volumeConvictionAll?.perExpiration || [];
+      if (vcAllPerExp.length < 2) return '';
+      return `function initDollarConvictionChartAll() {
+      const crData = ${JSON.stringify(vcAllPerExp)};
+      const labels = crData.map(d => {
+        const dt = new Date(d.expirationDate);
+        return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      });
+
+      let drilldownChartAll = null;
+      const convChartAll = new Chart(document.getElementById('dollarConvictionChartAll'), {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Call $ Volume',
+              data: crData.map(d => d.totalCallDollarVolume || 0),
+              backgroundColor: 'rgba(72, 187, 120, 0.35)',
+              borderColor: 'rgba(72, 187, 120, 0.6)',
+              borderWidth: 1
+            },
+            {
+              label: 'Put $ Volume',
+              data: crData.map(d => d.totalPutDollarVolume || 0),
+              backgroundColor: 'rgba(245, 101, 101, 0.35)',
+              borderColor: 'rgba(245, 101, 101, 0.6)',
+              borderWidth: 1
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          onClick: function(evt, elements) {
+            if (!elements.length) return;
+            const idx = elements[0].index;
+            const exp = crData[idx];
+            if (!exp || !exp.contracts || !exp.contracts.length) return;
+            const expLabel = labels[idx];
+
+            const strikeMap = {};
+            exp.contracts.forEach(c => {
+              if (!c.dollarVolume) return;
+              if (!strikeMap[c.strike]) strikeMap[c.strike] = { call: 0, put: 0 };
+              if (c.type === 'call') strikeMap[c.strike].call += c.dollarVolume;
+              else strikeMap[c.strike].put += c.dollarVolume;
+            });
+            const strikes = Object.keys(strikeMap).map(Number).sort((a, b) => a - b);
+            if (!strikes.length) return;
+            const callData = strikes.map(s => strikeMap[s].call);
+            const putData = strikes.map(s => strikeMap[s].put);
+            const strikeLabels = strikes.map(s => '$' + s);
+
+            const wrap = document.getElementById('strikeDrilldownWrapAll');
+            wrap.style.display = 'block';
+
+            if (drilldownChartAll) drilldownChartAll.destroy();
+            drilldownChartAll = new Chart(document.getElementById('strikeDrilldownChartAll'), {
+              type: 'bar',
+              data: {
+                labels: strikeLabels,
+                datasets: [
+                  {
+                    label: 'Call $ Volume',
+                    data: callData,
+                    backgroundColor: 'rgba(72, 187, 120, 0.5)',
+                    borderColor: 'rgba(72, 187, 120, 0.8)',
+                    borderWidth: 1
+                  },
+                  {
+                    label: 'Put $ Volume',
+                    data: putData,
+                    backgroundColor: 'rgba(245, 101, 101, 0.5)',
+                    borderColor: 'rgba(245, 101, 101, 0.8)',
+                    borderWidth: 1
+                  }
+                ]
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                  legend: { labels: { color: '#b0b0b0' } },
+                  title: { display: true, text: 'Strike Breakdown — ' + expLabel, color: '#b0b0b0' },
+                  tooltip: {
+                    callbacks: {
+                      label: function(ctx) {
+                        const v = ctx.parsed.y;
+                        return ctx.dataset.label + ': $' + (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v.toFixed(0));
+                      }
+                    }
+                  }
+                },
+                scales: {
+                  x: {
+                    ticks: { color: '#909090' },
+                    grid: { color: '#2a2a4a' }
+                  },
+                  y: {
+                    title: { display: true, text: '$ Volume', color: '#909090' },
+                    ticks: {
+                      color: '#909090',
+                      callback: function(v) { return v >= 1000 ? '$' + (v / 1000).toFixed(0) + 'k' : '$' + v; }
+                    },
+                    grid: { color: '#2a2a4a' },
+                    beginAtZero: true
+                  }
+                }
+              }
+            });
+          },
+          plugins: {
+            legend: { labels: { color: '#b0b0b0' } },
+            title: { display: true, text: 'Dollar Volume by Expiration — ITM+OTM (click bar to drill down)', color: '#b0b0b0' },
+            tooltip: {
+              callbacks: {
+                label: function(ctx) {
+                  const v = ctx.parsed.y;
+                  return ctx.dataset.label + ': $' + (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v.toFixed(0));
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              ticks: { color: '#909090' },
+              grid: { color: '#2a2a4a' }
+            },
+            y: {
+              title: { display: true, text: '$ Volume', color: '#909090' },
+              ticks: {
+                color: '#909090',
+                callback: function(v) { return v >= 1000 ? '$' + (v / 1000).toFixed(0) + 'k' : '$' + v; }
+              },
+              grid: { color: '#2a2a4a' },
+              beginAtZero: true
+            }
+          }
+        }
+      });
+    }`;
+    })()}
+
+    // Dollar Flow Chart (Call$ vs Put$ over time) — lazy init from card expand
+    ${(() => {
+      const hvcData = ea?.components?.historicalVolConviction?.history || [];
+      if (hvcData.length < 2) return '';
+      return `
+    function initVolConvictionChart() {
+      const histData = ${JSON.stringify(hvcData)};
+
+      const labels = histData.map(d => {
+        const dt = new Date(d.date);
+        return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      });
+
+      new Chart(document.getElementById('volConvictionChart'), {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Call $ Volume',
+              data: histData.map(d => d.totalCallDollar),
+              backgroundColor: 'rgba(72, 187, 120, 0.7)',
+              borderColor: 'rgba(72, 187, 120, 1)',
+              borderWidth: 1
+            },
+            {
+              label: 'Put $ Volume',
+              data: histData.map(d => d.totalPutDollar),
+              backgroundColor: 'rgba(245, 101, 101, 0.7)',
+              borderColor: 'rgba(245, 101, 101, 1)',
+              borderWidth: 1
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: '#b0b0b0' } },
+            title: { display: true, text: 'OTM Dollar Volume Trend (2 Nearest Exp.)', color: '#b0b0b0' },
+            tooltip: {
+              callbacks: {
+                label: function(ctx) {
+                  const v = ctx.raw;
+                  return ctx.dataset.label + ': $' + (v >= 1e6 ? (v/1e6).toFixed(1) + 'M' : v >= 1e3 ? (v/1e3).toFixed(0) + 'K' : v.toFixed(0));
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              ticks: { color: '#909090' },
+              grid: { color: '#2a2a4a' }
+            },
+            y: {
+              title: { display: true, text: 'Dollar Volume ($)', color: '#909090' },
+              ticks: {
+                color: '#909090',
+                callback: function(v) { return v >= 1e6 ? '$' + (v/1e6).toFixed(1) + 'M' : v >= 1e3 ? '$' + (v/1e3).toFixed(0) + 'K' : '$' + v; }
+              },
+              grid: { color: '#2a2a4a' }
+            }
+          }
+        }
+      });
+    }
+
+    `;
+    })()}
   </script>
 </body>
 </html>`;

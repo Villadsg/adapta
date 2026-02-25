@@ -29,15 +29,9 @@ const analysisEventsInput = document.getElementById('analysis-events-input');
 const analysisApiSelect = document.getElementById('analysis-api-select');
 const analysisFetchNewsCheckbox = document.getElementById('analysis-fetch-news');
 const analysisOptionsCheckbox = document.getElementById('analysis-options-activity');
-const analysisAddWatchlistCheckbox = document.getElementById('analysis-add-watchlist');
+const analysisMaxExpirationsInput = document.getElementById('analysis-max-expirations');
 const modalCancel = document.getElementById('modal-cancel');
 const modalAnalyze = document.getElementById('modal-analyze');
-
-// Watchlist elements
-const watchlistContainer = document.getElementById('watchlist-container');
-const corpusStats = document.getElementById('corpus-stats');
-const btnHarvestNow = document.getElementById('btn-harvest-now');
-const harvesterStatus = document.getElementById('harvester-status');
 
 // Toast notification function
 function showToast(title, message, type = 'success', duration = 3000) {
@@ -692,153 +686,6 @@ btnClose.addEventListener('click', async () => {
 
 // ===== Stock Event Analysis =====
 
-// ===== Watchlist Management =====
-
-// Load and render the watchlist
-async function loadWatchlist() {
-  try {
-    const result = await window.electronAPI.getWatchedTickers(false);
-    if (!result.success) {
-      console.error('Error loading watchlist:', result.error);
-      return;
-    }
-
-    const tickers = result.tickers || [];
-    renderWatchlist(tickers);
-  } catch (error) {
-    console.error('Error loading watchlist:', error);
-  }
-}
-
-// Render watchlist tickers
-function renderWatchlist(tickers) {
-  watchlistContainer.innerHTML = '';
-
-  if (tickers.length === 0) {
-    watchlistContainer.innerHTML = '<span class="watchlist-empty">No tickers in watchlist</span>';
-    return;
-  }
-
-  for (const tickerRecord of tickers) {
-    const tickerEl = document.createElement('span');
-    tickerEl.className = 'watchlist-ticker';
-
-    const tickerName = document.createElement('span');
-    tickerName.textContent = tickerRecord.ticker;
-
-    const removeBtn = document.createElement('button');
-    removeBtn.className = 'remove-ticker';
-    removeBtn.textContent = '×';
-    removeBtn.title = `Remove ${tickerRecord.ticker} from watchlist`;
-    removeBtn.onclick = async (e) => {
-      e.stopPropagation();
-      await removeFromWatchlist(tickerRecord.ticker);
-    };
-
-    tickerEl.appendChild(tickerName);
-    tickerEl.appendChild(removeBtn);
-    watchlistContainer.appendChild(tickerEl);
-  }
-}
-
-// Add ticker to watchlist
-async function addToWatchlist(ticker) {
-  try {
-    const result = await window.electronAPI.addWatchedTicker(ticker.toUpperCase(), true);
-    if (result.success) {
-      await loadWatchlist();
-      return true;
-    } else {
-      console.error('Error adding to watchlist:', result.error);
-      return false;
-    }
-  } catch (error) {
-    console.error('Error adding to watchlist:', error);
-    return false;
-  }
-}
-
-// Remove ticker from watchlist
-async function removeFromWatchlist(ticker) {
-  try {
-    const result = await window.electronAPI.removeWatchedTicker(ticker);
-    if (result.success) {
-      await loadWatchlist();
-      showToast('Removed', `${ticker} removed from watchlist`, 'info', 2000);
-    } else {
-      console.error('Error removing from watchlist:', result.error);
-    }
-  } catch (error) {
-    console.error('Error removing from watchlist:', error);
-  }
-}
-
-// Load corpus stats
-async function loadCorpusStats() {
-  try {
-    const result = await window.electronAPI.getCorpusStats();
-    if (result.success && result.stats) {
-      const stats = result.stats;
-      if (stats.totalStockNews > 0) {
-        corpusStats.textContent = `${stats.totalStockNews} articles | ${stats.dateSpanDays}d span`;
-      } else {
-        corpusStats.textContent = 'No articles yet';
-      }
-    }
-  } catch (error) {
-    console.error('Error loading corpus stats:', error);
-    corpusStats.textContent = '';
-  }
-}
-
-// Load harvester status
-async function loadHarvesterStatus() {
-  try {
-    const result = await window.electronAPI.getHarvesterStatus();
-    if (result.success) {
-      if (result.isRunning) {
-        harvesterStatus.textContent = 'Auto-harvest: ON';
-        harvesterStatus.style.color = '#4caf50';
-      } else if (result.lastHarvestTime) {
-        const lastTime = new Date(result.lastHarvestTime);
-        harvesterStatus.textContent = `Last: ${lastTime.toLocaleTimeString()}`;
-      } else {
-        harvesterStatus.textContent = '';
-      }
-    }
-  } catch (error) {
-    console.error('Error loading harvester status:', error);
-  }
-}
-
-// Harvest now button handler
-btnHarvestNow.addEventListener('click', async () => {
-  try {
-    btnHarvestNow.disabled = true;
-    btnHarvestNow.textContent = '⏳ Harvesting...';
-    harvesterStatus.textContent = 'Collecting news...';
-
-    const result = await window.electronAPI.triggerHarvest();
-
-    if (result.success) {
-      const r = result.results;
-      showToast('Harvest Complete', `${r.articlesNew} new articles collected`, 'success');
-      harvesterStatus.textContent = `Done: ${r.articlesNew} new`;
-      await loadCorpusStats();
-    } else {
-      showToast('Harvest Failed', result.error, 'error');
-      harvesterStatus.textContent = 'Failed';
-    }
-  } catch (error) {
-    console.error('Error triggering harvest:', error);
-    showToast('Error', error.message, 'error');
-    harvesterStatus.textContent = 'Error';
-  } finally {
-    btnHarvestNow.disabled = false;
-    btnHarvestNow.textContent = '🔄 Harvest Now';
-  }
-});
-
 // Show modal when button clicked
 btnAnalyzeEvents.addEventListener('click', async () => {
   await window.electronAPI.showModal();
@@ -849,15 +696,7 @@ btnAnalyzeEvents.addEventListener('click', async () => {
   analysisEventsInput.value = '15';
   analysisFetchNewsCheckbox.checked = true;
   analysisOptionsCheckbox.checked = true;
-  analysisAddWatchlistCheckbox.checked = true;
   analysisTickerInput.focus();
-
-  // Load watchlist and stats when modal opens
-  await Promise.all([
-    loadWatchlist(),
-    loadCorpusStats(),
-    loadHarvesterStatus()
-  ]);
 });
 
 // Cancel modal
@@ -899,18 +738,10 @@ modalAnalyze.addEventListener('click', async () => {
   const dataSource = analysisApiSelect.value;
   const fetchNews = analysisFetchNewsCheckbox.checked;
   const analyzeOptions = analysisOptionsCheckbox.checked;
-  const addToWatchlistChecked = analysisAddWatchlistCheckbox.checked;
+  const maxExpirations = parseInt(analysisMaxExpirationsInput.value, 10) || 4;
 
   analysisModal.style.display = 'none';
   await window.electronAPI.hideModal();
-
-  // Add to watchlist if checkbox is checked
-  if (addToWatchlistChecked) {
-    const added = await addToWatchlist(upperTicker);
-    if (added) {
-      showToast('Watchlist', `${upperTicker} added to watchlist`, 'info', 2000);
-    }
-  }
 
   try {
     const fetchNewsMsg = fetchNews ? ' Fetching news articles...' : '';
@@ -923,7 +754,8 @@ modalAnalyze.addEventListener('click', async () => {
       minEvents,
       dataSource,
       fetchNews,
-      analyzeOptions
+      analyzeOptions,
+      maxExpirations
     });
 
     if (!result.success) {
