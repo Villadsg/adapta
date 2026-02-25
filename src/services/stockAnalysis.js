@@ -1164,6 +1164,20 @@ class StockAnalysisService {
           : '')
         + (hasVolConvChart ? '<div class="detail-chart"><canvas id="volConvictionChart"></canvas></div>' : '');
 
+      const hasRatioChart = vcAllPerExp.length >= 1;
+      const ratioCardHTML = hasRatioChart ? `
+        <div class="ratio-chart-card">
+          <h3>Call/Put Dollar Volume Ratio by Expiration</h3>
+          <p class="ratio-subtitle">ITM + OTM &mdash; Click a bar to view historical ratio trend</p>
+          <div class="ratio-main-chart"><canvas id="cpRatioChart"></canvas></div>
+          <div id="cpRatioNoHistory" style="display:none; margin-top:12px; color:#718096; font-size:12px; text-align:center;">
+            No historical data available for this expiration
+          </div>
+          <div id="cpRatioHistoryWrap" style="display:none; margin-top:12px;">
+            <div class="ratio-main-chart"><canvas id="cpRatioHistoryChart"></canvas></div>
+          </div>
+        </div>` : '';
+
       return `
       <div class="anticipation-panel">
         <h2>Event Anticipation</h2>
@@ -1187,6 +1201,7 @@ class StockAnalysisService {
             `${hvc.signal}${hvc.ratio > 0 ? ' — ' + hvc.ratio.toFixed(2) + 'x Call/Put' : ''}`, volConvDetail, hasVolConvChart ? 'has-chart' : '')}
         </div>
         ${calloutsHTML}
+        ${ratioCardHTML}
       </div>`;
     })() : '';
 
@@ -1595,6 +1610,31 @@ class StockAnalysisService {
       content: '\u25B6 ';
       color: #4a6fa5;
       font-size: 10px;
+    }
+    .ratio-chart-card {
+      margin-top: 20px;
+      background: #0f3460;
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .ratio-chart-card h3 {
+      color: #a8b5a2;
+      margin: 0 0 4px 0;
+      font-size: 14px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .ratio-subtitle {
+      color: #718096;
+      font-size: 11px;
+      margin: 0 0 12px 0;
+    }
+    .ratio-main-chart {
+      height: 280px;
+    }
+    .ratio-main-chart canvas {
+      height: 280px !important;
     }
   </style>
 </head>
@@ -2350,6 +2390,204 @@ class StockAnalysisService {
     }
 
     `;
+    })()}
+
+    // Call/Put Dollar Ratio by Expiration (ITM+OTM) — auto-init
+    ${(() => {
+      const vcRatioPerExp = ea?.components?.volumeConvictionAll?.perExpiration || [];
+      if (vcRatioPerExp.length < 1) return '';
+
+      // Slim down data for embedding (drop contracts array)
+      const ratioPerExp = vcRatioPerExp.map(e => ({
+        expirationDate: e.expirationDate,
+        convictionRatio: e.convictionRatio || 0,
+        totalCallDollarVolume: e.totalCallDollarVolume || 0,
+        totalPutDollarVolume: e.totalPutDollarVolume || 0
+      }));
+
+      // Build per-expiration historical ratio from saved snapshots (ITM+OTM columns, fallback to OTM)
+      const ratioHistByExp = {};
+      if (optionsData?.history) {
+        for (const snap of optionsData.history) {
+          const rawExp = snap.expiration_date;
+          if (!rawExp) continue;
+          const expKey = new Date(rawExp).toISOString().split('T')[0];
+          if (!ratioHistByExp[expKey]) ratioHistByExp[expKey] = [];
+          // Prefer ITM+OTM columns; fall back to OTM-only for older snapshots
+          const cd = Number(snap.total_call_dollar_volume_all) || Number(snap.total_call_dollar_volume) || 0;
+          const pd = Number(snap.total_put_dollar_volume_all) || Number(snap.total_put_dollar_volume) || 0;
+          ratioHistByExp[expKey].push({
+            date: new Date(snap.snapshot_date).toISOString().split('T')[0],
+            ratio: pd > 0 ? cd / pd : 0
+          });
+        }
+        for (const k of Object.keys(ratioHistByExp)) {
+          ratioHistByExp[k].sort((a, b) => a.date.localeCompare(b.date));
+        }
+      }
+
+      return `
+    (function() {
+      const cpRatioCanvas = document.getElementById('cpRatioChart');
+      if (!cpRatioCanvas) return;
+
+      const crData = ${JSON.stringify(ratioPerExp)};
+      const histByExp = ${JSON.stringify(ratioHistByExp)};
+
+      const labels = crData.map(function(d) {
+        var dt = new Date(d.expirationDate);
+        return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      });
+      const ratios = crData.map(function(d) { return d.convictionRatio; });
+      const barColors = ratios.map(function(r) { return r >= 1 ? 'rgba(72, 187, 120, 0.7)' : 'rgba(245, 101, 101, 0.7)'; });
+      const borderColors = ratios.map(function(r) { return r >= 1 ? 'rgba(72, 187, 120, 1)' : 'rgba(245, 101, 101, 1)'; });
+
+      var histChart = null;
+
+      new Chart(cpRatioCanvas, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Call/Put $ Ratio',
+              data: ratios,
+              backgroundColor: barColors,
+              borderColor: borderColors,
+              borderWidth: 1,
+              order: 1
+            },
+            {
+              label: 'Neutral (1.0)',
+              data: labels.map(function() { return 1.0; }),
+              type: 'line',
+              borderColor: 'rgba(160, 174, 192, 0.5)',
+              borderWidth: 1,
+              borderDash: [4, 4],
+              pointRadius: 0,
+              fill: false,
+              order: 0
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          onClick: function(evt, elements) {
+            if (!elements.length) return;
+            var idx = elements[0].index;
+            var exp = crData[idx];
+            if (!exp) return;
+
+            var expDateStr = new Date(exp.expirationDate).toISOString().split('T')[0];
+            var hist = histByExp[expDateStr] || [];
+
+            var noHistEl = document.getElementById('cpRatioNoHistory');
+            var wrapEl = document.getElementById('cpRatioHistoryWrap');
+
+            if (!hist.length) {
+              wrapEl.style.display = 'none';
+              noHistEl.style.display = 'block';
+              return;
+            }
+            noHistEl.style.display = 'none';
+            wrapEl.style.display = 'block';
+
+            var histLabels = hist.map(function(d) {
+              var dt = new Date(d.date);
+              return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            });
+            var histRatios = hist.map(function(d) { return d.ratio; });
+
+            if (histChart) histChart.destroy();
+            histChart = new Chart(document.getElementById('cpRatioHistoryChart'), {
+              type: 'line',
+              data: {
+                labels: histLabels,
+                datasets: [
+                  {
+                    label: 'Call/Put $ Ratio',
+                    data: histRatios,
+                    borderColor: 'rgba(99, 179, 237, 0.9)',
+                    backgroundColor: 'rgba(99, 179, 237, 0.08)',
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    pointBackgroundColor: histRatios.map(function(r) { return r >= 1 ? 'rgba(72, 187, 120, 1)' : 'rgba(245, 101, 101, 1)'; }),
+                    fill: true,
+                    tension: 0.2
+                  },
+                  {
+                    label: 'Neutral (1.0)',
+                    data: histLabels.map(function() { return 1.0; }),
+                    borderColor: 'rgba(160, 174, 192, 0.4)',
+                    borderWidth: 1,
+                    borderDash: [4, 4],
+                    pointRadius: 0,
+                    fill: false
+                  }
+                ]
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                  legend: { labels: { color: '#b0b0b0' } },
+                  title: { display: true, text: 'Historical Call/Put $ Ratio — Exp ' + labels[idx], color: '#b0b0b0' },
+                  tooltip: {
+                    callbacks: {
+                      label: function(ctx) {
+                        if (ctx.datasetIndex === 1) return 'Neutral: 1.0x';
+                        return 'Ratio: ' + ctx.raw.toFixed(2) + 'x';
+                      }
+                    }
+                  }
+                },
+                scales: {
+                  x: {
+                    ticks: { color: '#909090' },
+                    grid: { color: '#2a2a4a' }
+                  },
+                  y: {
+                    title: { display: true, text: 'Call/Put $ Ratio', color: '#909090' },
+                    ticks: {
+                      color: '#909090',
+                      callback: function(v) { return v.toFixed(1) + 'x'; }
+                    },
+                    grid: { color: '#2a2a4a' }
+                  }
+                }
+              }
+            });
+          },
+          plugins: {
+            legend: { labels: { color: '#b0b0b0' } },
+            title: { display: true, text: 'Call/Put Dollar Volume Ratio by Expiration (click bar for history)', color: '#b0b0b0' },
+            tooltip: {
+              callbacks: {
+                label: function(ctx) {
+                  if (ctx.datasetIndex === 1) return 'Neutral: 1.0x';
+                  return 'Ratio: ' + ctx.raw.toFixed(2) + 'x';
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              ticks: { color: '#909090' },
+              grid: { color: '#2a2a4a' }
+            },
+            y: {
+              title: { display: true, text: 'Call/Put $ Ratio', color: '#909090' },
+              ticks: {
+                color: '#909090',
+                callback: function(v) { return v.toFixed(1) + 'x'; }
+              },
+              grid: { color: '#2a2a4a' }
+            }
+          }
+        }
+      });
+    })();`;
     })()}
   </script>
 </body>

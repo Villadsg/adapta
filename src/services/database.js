@@ -350,6 +350,11 @@ class ArticleDatabase {
       await this.addColumnIfNotExists('options_snapshots', 'total_put_dollar_volume', 'DECIMAL(18,2)');
       await this.addColumnIfNotExists('options_snapshots', 'conviction_ratio', 'DECIMAL(8,4)');
 
+      // Migration 5: Add ITM+OTM dollar volume columns to options_snapshots
+      await this.addColumnIfNotExists('options_snapshots', 'total_call_dollar_volume_all', 'DECIMAL(18,2)');
+      await this.addColumnIfNotExists('options_snapshots', 'total_put_dollar_volume_all', 'DECIMAL(18,2)');
+      await this.addColumnIfNotExists('options_snapshots', 'conviction_ratio_all', 'DECIMAL(8,4)');
+
       console.log('✓ Database migrations completed');
     } catch (error) {
       console.error('Error running migrations:', error);
@@ -1430,8 +1435,9 @@ class ArticleDatabase {
         max_call_volume_strike, max_put_volume_strike,
         max_call_oi_strike, max_put_oi_strike,
         unusual_volume_count,
-        call_voi, put_voi, total_call_dollar_volume, total_put_dollar_volume, conviction_ratio
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+        call_voi, put_voi, total_call_dollar_volume, total_put_dollar_volume, conviction_ratio,
+        total_call_dollar_volume_all, total_put_dollar_volume_all, conviction_ratio_all
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
       ON CONFLICT (ticker, snapshot_date, expiration_date) DO UPDATE SET
         current_price = $4,
         total_call_volume = $5,
@@ -1453,7 +1459,10 @@ class ArticleDatabase {
         put_voi = $21,
         total_call_dollar_volume = $22,
         total_put_dollar_volume = $23,
-        conviction_ratio = $24
+        conviction_ratio = $24,
+        total_call_dollar_volume_all = $25,
+        total_put_dollar_volume_all = $26,
+        conviction_ratio_all = $27
       RETURNING id
     `;
 
@@ -1484,6 +1493,9 @@ class ArticleDatabase {
         metrics.totalCallDollarVolume || null,
         metrics.totalPutDollarVolume || null,
         metrics.convictionRatio || null,
+        metrics.totalCallDollarVolumeAll || null,
+        metrics.totalPutDollarVolumeAll || null,
+        metrics.convictionRatioAll || null,
         (err, result) => {
           if (err) {
             reject(err);
