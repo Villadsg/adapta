@@ -145,6 +145,19 @@ class ArticleDatabase {
       )
     `;
 
+    const createPortfolioHoldingsSequence = `
+      CREATE SEQUENCE IF NOT EXISTS portfolio_holdings_id_seq START 1
+    `;
+
+    const createPortfolioHoldingsTable = `
+      CREATE TABLE IF NOT EXISTS portfolio_holdings (
+        id INTEGER PRIMARY KEY DEFAULT nextval('portfolio_holdings_id_seq'),
+        ticker TEXT NOT NULL UNIQUE,
+        shares DECIMAL(12,4) NOT NULL,
+        added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+
     const createOptionsSnapshotsSequence = `
       CREATE SEQUENCE IF NOT EXISTS options_snapshots_id_seq START 1
     `;
@@ -267,6 +280,20 @@ class ArticleDatabase {
                                   return;
                                 }
 
+                                // Create portfolio_holdings sequence
+                                this.connection.run(createPortfolioHoldingsSequence, (err) => {
+                                  if (err) {
+                                    reject(err);
+                                    return;
+                                  }
+
+                                  // Create portfolio_holdings table
+                                  this.connection.run(createPortfolioHoldingsTable, (err) => {
+                                    if (err) {
+                                      reject(err);
+                                      return;
+                                    }
+
                             // Initialize default settings
                             this.initializeSettings()
                               .then(() => {
@@ -281,6 +308,8 @@ class ArticleDatabase {
                                   .catch(reject);
                               })
                               .catch(reject);
+                                  });
+                                });
                               });
                             });
                           });
@@ -355,12 +384,20 @@ class ArticleDatabase {
       await this.addColumnIfNotExists('options_snapshots', 'total_put_dollar_volume_all', 'DECIMAL(18,2)');
       await this.addColumnIfNotExists('options_snapshots', 'conviction_ratio_all', 'DECIMAL(8,4)');
 
+      // Migration 6: Add ITM+OTM average IV columns to options_snapshots
+      await this.addColumnIfNotExists('options_snapshots', 'avg_call_iv_all', 'DECIMAL(6,4)');
+      await this.addColumnIfNotExists('options_snapshots', 'avg_put_iv_all', 'DECIMAL(6,4)');
+
+      // Migration 7: Recreate portfolio_holdings with correct schema if shares column missing
+      await this.recreatePortfolioHoldingsIfNeeded();
+
       console.log('✓ Database migrations completed');
     } catch (error) {
       console.error('Error running migrations:', error);
       throw error;
     }
   }
+
 
   /**
    * Ensure database connection is active
@@ -408,6 +445,38 @@ class ArticleDatabase {
           console.log(`✓ Column '${columnName}' already exists in table '${tableName}'`);
           resolve();
         }
+      });
+    });
+  }
+
+  async recreatePortfolioHoldingsIfNeeded() {
+    return new Promise((resolve) => {
+      this.connection.all('SELECT shares FROM portfolio_holdings LIMIT 0', (err) => {
+        if (!err) {
+          // shares column exists, nothing to do
+          resolve();
+          return;
+        }
+        console.log('portfolio_holdings missing shares column — recreating table...');
+        this.connection.run('DROP TABLE IF EXISTS portfolio_holdings', (dropErr) => {
+          if (dropErr) {
+            console.error('Error dropping portfolio_holdings:', dropErr.message);
+            resolve();
+            return;
+          }
+          this.connection.run(`
+            CREATE TABLE portfolio_holdings (
+              id INTEGER PRIMARY KEY DEFAULT nextval('portfolio_holdings_id_seq'),
+              ticker TEXT NOT NULL UNIQUE,
+              shares DECIMAL(12,4) NOT NULL,
+              added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+          `, (createErr) => {
+            if (createErr) console.error('Error recreating portfolio_holdings:', createErr.message);
+            else console.log('✓ portfolio_holdings recreated with correct schema');
+            resolve();
+          });
+        });
       });
     });
   }
@@ -1436,8 +1505,9 @@ class ArticleDatabase {
         max_call_oi_strike, max_put_oi_strike,
         unusual_volume_count,
         call_voi, put_voi, total_call_dollar_volume, total_put_dollar_volume, conviction_ratio,
-        total_call_dollar_volume_all, total_put_dollar_volume_all, conviction_ratio_all
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+        total_call_dollar_volume_all, total_put_dollar_volume_all, conviction_ratio_all,
+        avg_call_iv_all, avg_put_iv_all
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
       ON CONFLICT (ticker, snapshot_date, expiration_date) DO UPDATE SET
         current_price = $4,
         total_call_volume = $5,
@@ -1462,7 +1532,9 @@ class ArticleDatabase {
         conviction_ratio = $24,
         total_call_dollar_volume_all = $25,
         total_put_dollar_volume_all = $26,
-        conviction_ratio_all = $27
+        conviction_ratio_all = $27,
+        avg_call_iv_all = $28,
+        avg_put_iv_all = $29
       RETURNING id
     `;
 
@@ -1496,6 +1568,8 @@ class ArticleDatabase {
         metrics.totalCallDollarVolumeAll || null,
         metrics.totalPutDollarVolumeAll || null,
         metrics.convictionRatioAll || null,
+        metrics.avgCallIVAll || null,
+        metrics.avgPutIVAll || null,
         (err, result) => {
           if (err) {
             reject(err);

@@ -52,6 +52,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   showModal: () => ipcRenderer.invoke('show-modal'),
   hideModal: () => ipcRenderer.invoke('hide-modal'),
 
+  // Portfolio diversification
+  portfolioGetHoldings: () => ipcRenderer.invoke('portfolio-get-holdings'),
+  portfolioSaveHolding: (ticker, shares) => ipcRenderer.invoke('portfolio-save-holding', ticker, shares),
+  portfolioRemoveHolding: (ticker) => ipcRenderer.invoke('portfolio-remove-holding', ticker),
+  analyzeDiversification: (params) => ipcRenderer.invoke('analyze-diversification', params),
+
   // Get current state
   getCurrentUrl: () => ipcRenderer.invoke('get-current-url'),
 

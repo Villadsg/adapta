@@ -185,11 +185,17 @@ class OptionsAnalysisService {
       return new Date(c.lastTradeDate).toISOString().split('T')[0] === latestTradeDay;
     };
 
-    // Average IV (5%+ OTM, fresh trades only — volume-weighted in averageIV)
-    const otmCalls = calls.filter(c => c.strike >= currentPrice * 1.05 && isFreshTrade(c));
-    const otmPuts = puts.filter(p => p.strike <= currentPrice * 0.95 && isFreshTrade(p));
+    // Average IV (2.5%+ OTM, fresh trades only — volume-weighted in averageIV)
+    const otmCalls = calls.filter(c => c.strike >= currentPrice * 1.025 && isFreshTrade(c));
+    const otmPuts = puts.filter(p => p.strike <= currentPrice * 0.975 && isFreshTrade(p));
     const avgCallIV = this.averageIV(otmCalls);
     const avgPutIV = this.averageIV(otmPuts);
+
+    // Average IV (all strikes, fresh trades with volume only — ITM+OTM)
+    const allFreshCalls = calls.filter(c => (c.volume || 0) > 0 && isFreshTrade(c));
+    const allFreshPuts = puts.filter(p => (p.volume || 0) > 0 && isFreshTrade(p));
+    const avgCallIVAll = this.averageIV(allFreshCalls);
+    const avgPutIVAll = this.averageIV(allFreshPuts);
 
     // Max volume strikes
     const maxCallVolumeStrike = this.findMaxBy(calls, 'volume')?.strike || 0;
@@ -231,9 +237,9 @@ class OptionsAnalysisService {
       };
     };
 
-    // Deep OTM only: 5%+ out of the money
-    const otmCalls2 = calls.filter(c => c.strike >= currentPrice * 1.05);
-    const otmPuts2 = puts.filter(p => p.strike <= currentPrice * 0.95);
+    // Deep OTM only: 2.5%+ out of the money
+    const otmCalls2 = calls.filter(c => c.strike >= currentPrice * 1.025);
+    const otmPuts2 = puts.filter(p => p.strike <= currentPrice * 0.975);
     const freshCalls = otmCalls2.filter(isFreshTrade);
     const freshPuts = otmPuts2.filter(isFreshTrade);
     console.log(`  Dollar vol filter: latestTradeDay=${latestTradeDay}, globalLatestTradeDay=${globalLatestTradeDay || 'N/A'}, OTM calls ${otmCalls2.length}→${freshCalls.length}, OTM puts ${otmPuts2.length}→${freshPuts.length}`);
@@ -300,6 +306,8 @@ class OptionsAnalysisService {
       atmPutIV,
       avgCallIV,
       avgPutIV,
+      avgCallIVAll,
+      avgPutIVAll,
       maxCallVolumeStrike,
       maxPutVolumeStrike,
       maxCallOIStrike,
@@ -398,57 +406,17 @@ class OptionsAnalysisService {
       }
     }
 
-    // Term structure: ATM IV per expiration with DTE
-    const now = new Date();
-    const termStructure = expirationMetrics
-      .filter(e => e.expirationDate)
-      .map(e => {
-        const expDate = new Date(e.expirationDate);
-        const daysToExpiry = Math.max(1, Math.round((expDate - now) / (1000 * 60 * 60 * 24)));
-        const callIV = e.avgCallIV || e.atmCallIV || 0;
-        const putIV = e.avgPutIV || e.atmPutIV || 0;
-        const atmIV = (callIV + putIV) / 2;
-        return { expirationDate: e.expirationDate, daysToExpiry, atmIV, callIV, putIV };
-      })
-      .filter(t => t.atmIV > 0)
-      .sort((a, b) => a.daysToExpiry - b.daysToExpiry);
+    // Term structure: OTM (2.5%+ out of the money)
+    const { termStructure, termStructureSlope, termStructureShape, maxIVJump } =
+      this._computeTermStructureMetrics(expirationMetrics, 'avgCallIV', 'avgPutIV');
 
-    // Term structure slope and shape
-    let termStructureSlope = 0;
-    let termStructureShape = 'insufficient data';
-    let maxIVJump = null;
-
-    if (termStructure.length >= 2) {
-      // Slope: IV change per 30 days between first and last
-      const first = termStructure[0];
-      const last = termStructure[termStructure.length - 1];
-      const dteDiff = last.daysToExpiry - first.daysToExpiry;
-      if (dteDiff > 0) {
-        termStructureSlope = ((last.atmIV - first.atmIV) / dteDiff) * 30; // per 30 days
-      }
-
-      // Shape classification
-      if (termStructureSlope > 0.005) termStructureShape = 'contango';
-      else if (termStructureSlope < -0.005) termStructureShape = 'backwardation';
-      else termStructureShape = 'flat';
-
-      // Find largest IV jump per day between consecutive expirations
-      for (let i = 1; i < termStructure.length; i++) {
-        const ivDiff = termStructure[i].atmIV - termStructure[i - 1].atmIV;
-        const daysDiff = termStructure[i].daysToExpiry - termStructure[i - 1].daysToExpiry;
-        const jumpPerDay = daysDiff > 0 ? ivDiff / daysDiff : 0;
-        if (maxIVJump === null || Math.abs(jumpPerDay) > Math.abs(maxIVJump.jumpPerDay)) {
-          maxIVJump = {
-            jumpPerDay,
-            ivDiff,
-            fromExpiration: termStructure[i - 1].expirationDate,
-            toExpiration: termStructure[i].expirationDate,
-            fromDTE: termStructure[i - 1].daysToExpiry,
-            toDTE: termStructure[i].daysToExpiry
-          };
-        }
-      }
-    }
+    // Term structure: ITM+OTM (all strikes)
+    const {
+      termStructure: termStructureAll,
+      termStructureSlope: termStructureSlopeAll,
+      termStructureShape: termStructureShapeAll,
+      maxIVJump: maxIVJumpAll
+    } = this._computeTermStructureMetrics(expirationMetrics, 'avgCallIVAll', 'avgPutIVAll');
 
     // Max volume conviction score across expirations
     const maxVolumeConviction = Math.max(0, ...expirationMetrics.map(e => e.volumeConvictionScore || 0));
@@ -501,6 +469,10 @@ class OptionsAnalysisService {
       termStructureSlope,
       termStructureShape,
       maxIVJump,
+      termStructureAll,
+      termStructureSlopeAll,
+      termStructureShapeAll,
+      maxIVJumpAll,
       maxVolumeConviction,
       sentiment,
       sentimentScore
@@ -600,6 +572,35 @@ class OptionsAnalysisService {
     if (termKink) termScore = Math.min(20, termScore + 5);
     termScore = Math.min(20, Math.max(0, termScore));
 
+    // === 2b. IV Term Structure Shape — ITM+OTM (informational, not scored in composite) ===
+    const termShapeAll = summary?.termStructureShapeAll || 'insufficient data';
+    const termSlopeAll = summary?.termStructureSlopeAll || 0;
+    const maxIVJumpAll = summary?.maxIVJumpAll || null;
+
+    let termSignalAll;
+    if (termShapeAll === 'backwardation') termSignalAll = 'Near-term event anticipated (IV backwardation)';
+    else if (termShapeAll === 'contango') termSignalAll = 'No specific near-term catalyst (normal contango)';
+    else if (termShapeAll === 'flat') termSignalAll = 'Flat term structure';
+    else termSignalAll = 'Insufficient data';
+
+    let termKinkAll = null;
+    if (maxIVJumpAll && Math.abs(maxIVJumpAll.ivDiff) > 0.03) {
+      termKinkAll = {
+        fromExpiration: maxIVJumpAll.fromExpiration,
+        toExpiration: maxIVJumpAll.toExpiration,
+        ivDiff: maxIVJumpAll.ivDiff,
+        signal: `Sharp IV jump between ${this.formatDate(maxIVJumpAll.fromExpiration)} and ${this.formatDate(maxIVJumpAll.toExpiration)} — event likely falls between these dates`
+      };
+    }
+
+    // Score for display only (same logic as OTM) — NOT added to composite
+    let termScoreAll = 0;
+    if (termShapeAll === 'backwardation') termScoreAll = 15 + Math.min(5, Math.abs(termSlopeAll) * 100);
+    else if (termShapeAll === 'flat') termScoreAll = 5;
+    else termScoreAll = 0;
+    if (termKinkAll) termScoreAll = Math.min(20, termScoreAll + 5);
+    termScoreAll = Math.min(20, Math.max(0, termScoreAll));
+
     // === 3. Implied Event Move (Straddle Decomposition) ===
     const now = new Date();
     const eventMovePerExpiration = (expirations || []).map(exp => {
@@ -676,6 +677,56 @@ class OptionsAnalysisService {
       }
     }
 
+    // Find the snapshot closest to 24 hours before the most recent snapshot
+    let prev24hCallDollar = 0;
+    let prev24hPutDollar = 0;
+    const prev24hByExp = []; // per-expiration 24h-ago data
+    if (snapshotHistory && snapshotHistory.length > 0) {
+      // snapshotHistory is ordered DESC by snapshot_date; first entry is most recent
+      const latestTime = new Date(snapshotHistory[0].snapshot_date).getTime();
+      const target = latestTime - 24 * 60 * 60 * 1000;
+
+      // Group rows by exact timestamp, skipping the current snapshot group
+      const byTimestamp = new Map();
+      for (const snap of snapshotHistory) {
+        const t = new Date(snap.snapshot_date).getTime();
+        if (t >= latestTime) continue;
+        if (!byTimestamp.has(t)) byTimestamp.set(t, []);
+        byTimestamp.get(t).push(snap);
+      }
+
+      // Pick timestamp closest to 24h ago
+      let best24hTime = null;
+      let bestDiff = Infinity;
+      for (const t of byTimestamp.keys()) {
+        const diff = Math.abs(t - target);
+        if (diff < bestDiff) { bestDiff = diff; best24hTime = t; }
+      }
+
+      if (best24hTime !== null) {
+        // Rows are in expiration_date ASC order
+        let count = 0;
+        for (const snap of byTimestamp.get(best24hTime)) {
+          // Per-expiration data for all expirations (used by per-exp charts)
+          if (snap.expiration_date) {
+            prev24hByExp.push({
+              expirationDate: new Date(snap.expiration_date).toISOString().split('T')[0],
+              callDollarOTM: Number(snap.total_call_dollar_volume) || 0,
+              putDollarOTM: Number(snap.total_put_dollar_volume) || 0,
+              callDollarAll: Number(snap.total_call_dollar_volume_all) || 0,
+              putDollarAll: Number(snap.total_put_dollar_volume_all) || 0,
+            });
+          }
+          // Aggregated 2-nearest for the trend chart
+          if (count < 2) {
+            prev24hCallDollar += Number(snap.total_call_dollar_volume) || 0;
+            prev24hPutDollar += Number(snap.total_put_dollar_volume) || 0;
+          }
+          count++;
+        }
+      }
+    }
+
     // Current snapshot totals (from live expirations, 2 nearest)
     const currentCallDollar = (expirations || []).slice(0, 2)
       .reduce((s, e) => s + (e.totalCallDollarVolume || 0), 0);
@@ -744,6 +795,15 @@ class OptionsAnalysisService {
           score: Math.round(termScore),
           maxScore: 20
         },
+        termStructureAll: {
+          shape: termShapeAll,
+          slope: termSlopeAll,
+          kink: termKinkAll,
+          signal: termSignalAll,
+          data: summary?.termStructureAll || [],
+          score: Math.round(termScoreAll),
+          maxScore: 20
+        },
         volumeConviction: {
           maxScore9: maxConviction,
           signal: convictionSignal,
@@ -763,6 +823,11 @@ class OptionsAnalysisService {
               strike: c.strike, dollarVolume: c.dollarVolume, type: c.type,
               lastTradeDate: c.lastTradeDate || null
             }))
+          })),
+          prev24hPerExpiration: prev24hByExp.map(e => ({
+            expirationDate: e.expirationDate,
+            totalCallDollarVolume: e.callDollarOTM,
+            totalPutDollarVolume: e.putDollarOTM
           }))
         },
         volumeConvictionAll: {
@@ -778,10 +843,17 @@ class OptionsAnalysisService {
               strike: c.strike, dollarVolume: c.dollarVolume, type: c.type,
               lastTradeDate: c.lastTradeDate || null
             }))
+          })),
+          prev24hPerExpiration: prev24hByExp.map(e => ({
+            expirationDate: e.expirationDate,
+            totalCallDollarVolume: e.callDollarAll,
+            totalPutDollarVolume: e.putDollarAll
           }))
         },
         historicalVolConviction: {
           history: dollarVolHistory,
+          prev24hCallDollar,
+          prev24hPutDollar,
           totalCallDollar: currentCallDollar,
           totalPutDollar: currentPutDollar,
           ratio: dollarConvictionRatio,
@@ -919,6 +991,64 @@ class OptionsAnalysisService {
     return options.reduce((max, opt) =>
       (opt[field] || 0) > (max[field] || 0) ? opt : max
     , options[0]);
+  }
+
+  /**
+   * Compute term structure metrics (slope, shape, max IV jump) from expiration data.
+   * @param {Array} expirationMetrics - Per-expiration metrics
+   * @param {string} ivCallKey - Key for call IV (e.g. 'avgCallIV' or 'avgCallIVAll')
+   * @param {string} ivPutKey - Key for put IV (e.g. 'avgPutIV' or 'avgPutIVAll')
+   * @returns {Object} { termStructure, termStructureSlope, termStructureShape, maxIVJump }
+   */
+  _computeTermStructureMetrics(expirationMetrics, ivCallKey, ivPutKey) {
+    const now = new Date();
+    const termStructure = expirationMetrics
+      .filter(e => e.expirationDate)
+      .map(e => {
+        const expDate = new Date(e.expirationDate);
+        const daysToExpiry = Math.max(1, Math.round((expDate - now) / (1000 * 60 * 60 * 24)));
+        const callIV = e[ivCallKey] || e.atmCallIV || 0;
+        const putIV = e[ivPutKey] || e.atmPutIV || 0;
+        const atmIV = (callIV + putIV) / 2;
+        return { expirationDate: e.expirationDate, daysToExpiry, atmIV, callIV, putIV };
+      })
+      .filter(t => t.atmIV > 0)
+      .sort((a, b) => a.daysToExpiry - b.daysToExpiry);
+
+    let termStructureSlope = 0;
+    let termStructureShape = 'insufficient data';
+    let maxIVJump = null;
+
+    if (termStructure.length >= 2) {
+      const first = termStructure[0];
+      const last = termStructure[termStructure.length - 1];
+      const dteDiff = last.daysToExpiry - first.daysToExpiry;
+      if (dteDiff > 0) {
+        termStructureSlope = ((last.atmIV - first.atmIV) / dteDiff) * 30;
+      }
+
+      if (termStructureSlope > 0.005) termStructureShape = 'contango';
+      else if (termStructureSlope < -0.005) termStructureShape = 'backwardation';
+      else termStructureShape = 'flat';
+
+      for (let i = 1; i < termStructure.length; i++) {
+        const ivDiff = termStructure[i].atmIV - termStructure[i - 1].atmIV;
+        const daysDiff = termStructure[i].daysToExpiry - termStructure[i - 1].daysToExpiry;
+        const jumpPerDay = daysDiff > 0 ? ivDiff / daysDiff : 0;
+        if (maxIVJump === null || Math.abs(jumpPerDay) > Math.abs(maxIVJump.jumpPerDay)) {
+          maxIVJump = {
+            jumpPerDay,
+            ivDiff,
+            fromExpiration: termStructure[i - 1].expirationDate,
+            toExpiration: termStructure[i].expirationDate,
+            fromDTE: termStructure[i - 1].daysToExpiry,
+            toDTE: termStructure[i].daysToExpiry
+          };
+        }
+      }
+    }
+
+    return { termStructure, termStructureSlope, termStructureShape, maxIVJump };
   }
 
   /**

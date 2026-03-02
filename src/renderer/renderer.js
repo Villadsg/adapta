@@ -775,6 +775,136 @@ modalAnalyze.addEventListener('click', async () => {
   }
 });
 
+// ===== Portfolio Diversification =====
+
+const btnDiversify = document.getElementById('btn-diversify');
+const divModal = document.getElementById('diversification-modal');
+const divHoldingsList = document.getElementById('div-holdings-list');
+const divAddTicker = document.getElementById('div-add-ticker');
+const divAddShares = document.getElementById('div-add-shares');
+const divAddBtn = document.getElementById('div-add-btn');
+const divCandidates = document.getElementById('div-candidates');
+const divDays = document.getElementById('div-days');
+const divApiSelect = document.getElementById('div-api-select');
+const divCancel = document.getElementById('div-cancel');
+const divAnalyze = document.getElementById('div-analyze');
+
+// Render holdings list in modal
+async function renderDivHoldings() {
+  const result = await window.electronAPI.portfolioGetHoldings();
+  const holdings = result.success ? result.holdings : [];
+
+  if (holdings.length === 0) {
+    divHoldingsList.innerHTML = '<span style="color:#888; font-size:0.9em;">No holdings added yet.</span>';
+    return;
+  }
+
+  divHoldingsList.innerHTML = holdings.map(h => `
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+      <span style="font-weight:bold; width:70px;">${h.ticker}</span>
+      <span style="width:80px;">${h.shares} shares</span>
+      <button class="div-remove-btn" data-ticker="${h.ticker}" style="background:none; border:none; color:#f44336; cursor:pointer; font-size:1.1em;">×</button>
+    </div>
+  `).join('');
+
+  // Attach remove handlers
+  divHoldingsList.querySelectorAll('.div-remove-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await window.electronAPI.portfolioRemoveHolding(btn.dataset.ticker);
+      await renderDivHoldings();
+    });
+  });
+}
+
+// Open diversification modal
+btnDiversify.addEventListener('click', async () => {
+  await window.electronAPI.showModal();
+  divModal.style.display = 'flex';
+  await renderDivHoldings();
+  divCandidates.value = '';
+  divDays.value = '200';
+  divAddTicker.value = '';
+  divAddShares.value = '1';
+  divAddTicker.focus();
+});
+
+// Add holding
+divAddBtn.addEventListener('click', async () => {
+  const ticker = divAddTicker.value.trim().toUpperCase();
+  const shares = parseFloat(divAddShares.value);
+  if (!ticker || isNaN(shares) || shares <= 0) return;
+  await window.electronAPI.portfolioSaveHolding(ticker, shares);
+  divAddTicker.value = '';
+  await renderDivHoldings();
+});
+
+divAddTicker.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') divAddBtn.click();
+});
+
+// Cancel
+divCancel.addEventListener('click', async () => {
+  divModal.style.display = 'none';
+  await window.electronAPI.hideModal();
+});
+
+divModal.addEventListener('click', async (e) => {
+  if (e.target === divModal) {
+    divModal.style.display = 'none';
+    await window.electronAPI.hideModal();
+  }
+});
+
+// Run diversification analysis
+divAnalyze.addEventListener('click', async () => {
+  const holdingsResult = await window.electronAPI.portfolioGetHoldings();
+  const holdings = holdingsResult.success ? holdingsResult.holdings : [];
+
+  if (holdings.length < 2) {
+    showToast('Error', 'Add at least 2 portfolio holdings first.', 'error');
+    return;
+  }
+
+  const candidateStr = divCandidates.value.trim();
+  if (!candidateStr) {
+    showToast('Error', 'Enter at least one candidate ticker.', 'error');
+    divCandidates.focus();
+    return;
+  }
+
+  const candidates = candidateStr.split(/[\s,]+/).map(t => t.toUpperCase()).filter(t => t.length > 0);
+  const days = parseInt(divDays.value, 10) || 200;
+  const dataSource = divApiSelect.value;
+
+  divModal.style.display = 'none';
+  await window.electronAPI.hideModal();
+
+  const totalTickers = holdings.length + candidates.length;
+  const estTime = Math.ceil(totalTickers * 4 + holdings.length * 1.5);
+  showToast('Analyzing...', `Fetching prices & running diversification for ${totalTickers} tickers. ~${estTime}s...`, 'info', estTime * 1000);
+
+  try {
+    const result = await window.electronAPI.analyzeDiversification({
+      holdings: holdings.map(h => ({ ticker: h.ticker, shares: h.shares })),
+      candidates,
+      days,
+      dataSource,
+    });
+
+    if (!result.success) {
+      showToast('Error', result.error, 'error');
+      return;
+    }
+
+    const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(result.html);
+    await createTab(dataUrl);
+    showToast('Analysis Complete', `Scored ${candidates.length} candidates for diversification.`, 'success');
+  } catch (error) {
+    console.error('Diversification error:', error);
+    showToast('Error', error.message, 'error');
+  }
+});
+
 // Initialize
 (async () => {
   // Create one tab with finance.yahoo.com

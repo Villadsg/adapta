@@ -1123,6 +1123,24 @@ class StockAnalysisService {
           : '')
         + (hasTermChart ? '<div class="detail-chart"><canvas id="termStructureChart"></canvas></div>' : '');
 
+      const tsDataAll = c.termStructureAll ? c.termStructureAll.data || [] : [];
+      const hasTermChartAll = tsDataAll.length >= 2;
+      const termDetailAll = '<table class="detail-table">'
+        + '<tr><td>Shape</td><td>' + (c.termStructureAll ? c.termStructureAll.shape : 'N/A') + '</td></tr>'
+        + '<tr><td>Slope (per 30d)</td><td>' + (c.termStructureAll && c.termStructureAll.slope ? (c.termStructureAll.slope * 100).toFixed(2) + 'pp' : 'N/A') + '</td></tr>'
+        + (c.termStructureAll && c.termStructureAll.kink ? '<tr><td>Kink detected</td><td>' + c.termStructureAll.kink.signal + '</td></tr>' : '')
+        + '</table>'
+        + (tsDataAll.length > 0
+          ? '<table class="detail-table"><thead><tr><th>Expiry</th><th>DTE</th><th>Call IV</th><th>Put IV</th></tr></thead><tbody>'
+            + tsDataAll.map(d =>
+              '<tr><td>' + new Date(d.expirationDate).toLocaleDateString('en-US', {month:'short',day:'numeric'}) + '</td>'
+              + '<td>' + d.daysToExpiry + 'd</td>'
+              + '<td>' + ((d.callIV || 0) * 100).toFixed(1) + '%</td>'
+              + '<td>' + ((d.putIV || 0) * 100).toFixed(1) + '%</td></tr>'
+            ).join('') + '</tbody></table>'
+          : '')
+        + (hasTermChartAll ? '<div class="detail-chart"><canvas id="termStructureChartAll"></canvas></div>' : '');
+
       const vcPerExp = c.volumeConviction.perExpiration || [];
       const hasConvictionChart = vcPerExp.length >= 2;
       const volumeDetail = hasConvictionChart
@@ -1191,9 +1209,11 @@ class StockAnalysisService {
         <div class="anticipation-components">
           ${componentHTML('Volatility Risk Premium', c.vrp.score, c.vrp.maxScore,
             c.vrp.ratio > 0 ? `VRP ${c.vrp.ratio.toFixed(2)}x — ${c.vrp.signal}` : c.vrp.signal, vrpDetail, hasRollingHV ? 'has-chart' : '')}
-          ${componentHTML('Term Structure', c.termStructure.score, c.termStructure.maxScore,
+          ${componentHTML('Term Structure (OTM)', c.termStructure.score, c.termStructure.maxScore,
             `${c.termStructure.shape} — ${c.termStructure.signal}`, termDetail, hasTermChart ? 'has-chart' : '')}
-          ${componentHTML('Vol Conviction (5%+ OTM)', c.volumeConviction.score, c.volumeConviction.maxScore,
+          ${componentHTML('Term Structure (ITM+OTM)', c.termStructureAll ? c.termStructureAll.score : 0, c.termStructureAll ? c.termStructureAll.maxScore : 20,
+            `${c.termStructureAll ? c.termStructureAll.shape + ' — ' + c.termStructureAll.signal : 'N/A'}`, termDetailAll, hasTermChartAll ? 'has-chart' : '')}
+          ${componentHTML('Vol Conviction (2.5%+ OTM)', c.volumeConviction.score, c.volumeConviction.maxScore,
             `${c.volumeConviction.signal}${vcPerExp.length > 0 ? ' — Max VOI: ' + Math.max(...vcPerExp.map(e => Math.max(e.callVOI, e.putVOI))).toFixed(2) : ''}`, volumeDetail, hasConvictionChart ? 'has-chart' : '')}
           ${componentHTML('Vol Conviction (ITM+OTM)', c.volumeConvictionAll ? c.volumeConvictionAll.score : 0, c.volumeConvictionAll ? c.volumeConvictionAll.maxScore : 15,
             `${c.volumeConvictionAll ? c.volumeConvictionAll.signal : 'N/A'}`, volumeDetailAll, hasConvictionChartAll ? 'has-chart' : '')}
@@ -1708,6 +1728,7 @@ class StockAnalysisService {
             canvas.dataset.init = '1';
             if (canvas.id === 'vrpMiniChart' && typeof initVrpMiniChart === 'function') initVrpMiniChart();
             if (canvas.id === 'termStructureChart' && typeof initTermStructureChart === 'function') initTermStructureChart();
+            if (canvas.id === 'termStructureChartAll' && typeof initTermStructureChartAll === 'function') initTermStructureChartAll();
             if (canvas.id === 'volConvictionChart' && typeof initVolConvictionChart === 'function') initVolConvictionChart();
             if (canvas.id === 'dollarConvictionChart' && typeof initDollarConvictionChart === 'function') initDollarConvictionChart();
             if (canvas.id === 'dollarConvictionChartAll' && typeof initDollarConvictionChartAll === 'function') initDollarConvictionChartAll();
@@ -2029,39 +2050,153 @@ class StockAnalysisService {
     }
     ` : ''}
 
+    // Term Structure Chart — ITM+OTM (all strikes) — lazy init from card expand
+    ${ea && (ea.components?.termStructureAll?.data?.length || 0) >= 2 ? `
+    function initTermStructureChartAll() {
+      const termData = ${JSON.stringify(ea.components.termStructureAll.data)};
+      const hvLine = ${JSON.stringify(hv * 100)};
+
+      const labels = termData.map(d => {
+        const dt = new Date(d.expirationDate);
+        return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' (' + d.daysToExpiry + 'd)';
+      });
+      const callIVValues = termData.map(d => (d.callIV || 0) * 100);
+      const putIVValues = termData.map(d => (d.putIV || 0) * 100);
+      const datasets = [
+        {
+          label: 'Call IV (%)',
+          data: callIVValues,
+          borderColor: 'rgba(72, 187, 120, 0.9)',
+          backgroundColor: 'rgba(72, 187, 120, 0.08)',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointBackgroundColor: 'rgba(72, 187, 120, 1)',
+          fill: false,
+          tension: 0.2
+        },
+        {
+          label: 'Put IV (%)',
+          data: putIVValues,
+          borderColor: 'rgba(245, 101, 101, 0.9)',
+          backgroundColor: 'rgba(245, 101, 101, 0.08)',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointBackgroundColor: 'rgba(245, 101, 101, 1)',
+          fill: false,
+          tension: 0.2
+        }
+      ];
+
+      if (hvLine > 0) {
+        datasets.push({
+          label: 'Realized Vol (%)',
+          data: labels.map(() => hvLine),
+          borderColor: 'rgba(99, 179, 237, 0.8)',
+          borderWidth: 2,
+          borderDash: [6, 4],
+          pointRadius: 0,
+          fill: false
+        });
+      }
+
+      new Chart(document.getElementById('termStructureChartAll'), {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: '#b0b0b0' } },
+            title: { display: true, text: 'IV Term Structure — ITM+OTM (Call / Put)', color: '#b0b0b0' }
+          },
+          scales: {
+            x: {
+              ticks: { color: '#909090' },
+              grid: { color: '#2a2a4a' }
+            },
+            y: {
+              title: { display: true, text: 'Annualized IV (%)', color: '#909090' },
+              ticks: { color: '#909090' },
+              grid: { color: '#2a2a4a' }
+            }
+          }
+        }
+      });
+    }
+    ` : ''}
+
     // Dollar Conviction Ratio Chart — Call$/Put$ ratio by expiration
     ${(() => {
       const vcPerExp = ea?.components?.volumeConviction?.perExpiration || [];
+      const prev24hOTM = ea?.components?.volumeConviction?.prev24hPerExpiration || [];
       if (vcPerExp.length < 2) return '';
       return `function initDollarConvictionChart() {
       const crData = ${JSON.stringify(vcPerExp)};
+      const prev24hArr = ${JSON.stringify(prev24hOTM)};
+      const prev24hMap = {};
+      prev24hArr.forEach(function(e) { prev24hMap[e.expirationDate] = e; });
       const labels = crData.map(d => {
         const dt = new Date(d.expirationDate);
         return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       });
 
+      // Faded 24h-ago data matched by expiration date (normalize key to YYYY-MM-DD)
+      const faded24hCall = crData.map(function(d) { var key = new Date(d.expirationDate).toISOString().split('T')[0]; var p = prev24hMap[key]; return p ? p.totalCallDollarVolume : null; });
+      const faded24hPut  = crData.map(function(d) { var key = new Date(d.expirationDate).toISOString().split('T')[0]; var p = prev24hMap[key]; return p ? p.totalPutDollarVolume : null; });
+      const has24h = faded24hCall.some(function(v) { return v !== null; }) || faded24hPut.some(function(v) { return v !== null; });
+
+      const datasets = [];
+      if (has24h) {
+        datasets.push(
+          {
+            label: 'Call $ (24h ago)',
+            data: faded24hCall,
+            backgroundColor: 'rgba(72, 187, 120, 0.10)',
+            borderColor: 'rgba(72, 187, 120, 0.22)',
+            borderWidth: 1,
+            stack: 'call',
+            order: 2,
+            barPercentage: 1.0
+          },
+          {
+            label: 'Put $ (24h ago)',
+            data: faded24hPut,
+            backgroundColor: 'rgba(245, 101, 101, 0.10)',
+            borderColor: 'rgba(245, 101, 101, 0.22)',
+            borderWidth: 1,
+            stack: 'put',
+            order: 2,
+            barPercentage: 1.0
+          }
+        );
+      }
+      datasets.push(
+        {
+          label: 'Call $ Volume',
+          data: crData.map(d => d.totalCallDollarVolume || 0),
+          backgroundColor: 'rgba(72, 187, 120, 0.35)',
+          borderColor: 'rgba(72, 187, 120, 0.6)',
+          borderWidth: 1,
+          stack: 'call',
+          order: 1,
+          barPercentage: 0.85
+        },
+        {
+          label: 'Put $ Volume',
+          data: crData.map(d => d.totalPutDollarVolume || 0),
+          backgroundColor: 'rgba(245, 101, 101, 0.35)',
+          borderColor: 'rgba(245, 101, 101, 0.6)',
+          borderWidth: 1,
+          stack: 'put',
+          order: 1,
+          barPercentage: 0.85
+        }
+      );
+
       let drilldownChart = null;
       const convChart = new Chart(document.getElementById('dollarConvictionChart'), {
         type: 'bar',
-        data: {
-          labels,
-          datasets: [
-            {
-              label: 'Call $ Volume',
-              data: crData.map(d => d.totalCallDollarVolume || 0),
-              backgroundColor: 'rgba(72, 187, 120, 0.35)',
-              borderColor: 'rgba(72, 187, 120, 0.6)',
-              borderWidth: 1
-            },
-            {
-              label: 'Put $ Volume',
-              data: crData.map(d => d.totalPutDollarVolume || 0),
-              backgroundColor: 'rgba(245, 101, 101, 0.35)',
-              borderColor: 'rgba(245, 101, 101, 0.6)',
-              borderWidth: 1
-            }
-          ]
-        },
+        data: { labels, datasets },
         options: {
           responsive: true,
           maintainAspectRatio: false,
@@ -2146,10 +2281,11 @@ class StockAnalysisService {
           },
           plugins: {
             legend: { labels: { color: '#b0b0b0' } },
-            title: { display: true, text: 'Dollar Volume by Expiration — 5%+ OTM (click bar to drill down)', color: '#b0b0b0' },
+            title: { display: true, text: 'Dollar Volume by Expiration — 2.5%+ OTM (click bar to drill down)', color: '#b0b0b0' },
             tooltip: {
               callbacks: {
                 label: function(ctx) {
+                  if (ctx.raw === null || ctx.raw === undefined) return null;
                   const v = ctx.parsed.y;
                   return ctx.dataset.label + ': $' + (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v.toFixed(0));
                 }
@@ -2158,10 +2294,12 @@ class StockAnalysisService {
           },
           scales: {
             x: {
+              stacked: true,
               ticks: { color: '#909090' },
               grid: { color: '#2a2a4a' }
             },
             y: {
+              stacked: false,
               title: { display: true, text: '$ Volume', color: '#909090' },
               ticks: {
                 color: '#909090',
@@ -2179,36 +2317,75 @@ class StockAnalysisService {
     // Dollar Conviction Ratio Chart — ITM+OTM (all contracts)
     ${(() => {
       const vcAllPerExp = ea?.components?.volumeConvictionAll?.perExpiration || [];
+      const prev24hAll = ea?.components?.volumeConvictionAll?.prev24hPerExpiration || [];
       if (vcAllPerExp.length < 2) return '';
       return `function initDollarConvictionChartAll() {
       const crData = ${JSON.stringify(vcAllPerExp)};
+      const prev24hArr = ${JSON.stringify(prev24hAll)};
+      const prev24hMap = {};
+      prev24hArr.forEach(function(e) { prev24hMap[e.expirationDate] = e; });
       const labels = crData.map(d => {
         const dt = new Date(d.expirationDate);
         return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       });
 
+      // Faded 24h-ago data matched by expiration date (normalize key to YYYY-MM-DD)
+      const faded24hCall = crData.map(function(d) { var key = new Date(d.expirationDate).toISOString().split('T')[0]; var p = prev24hMap[key]; return p ? p.totalCallDollarVolume : null; });
+      const faded24hPut  = crData.map(function(d) { var key = new Date(d.expirationDate).toISOString().split('T')[0]; var p = prev24hMap[key]; return p ? p.totalPutDollarVolume : null; });
+      const has24h = faded24hCall.some(function(v) { return v !== null; }) || faded24hPut.some(function(v) { return v !== null; });
+
+      const datasets = [];
+      if (has24h) {
+        datasets.push(
+          {
+            label: 'Call $ (24h ago)',
+            data: faded24hCall,
+            backgroundColor: 'rgba(72, 187, 120, 0.10)',
+            borderColor: 'rgba(72, 187, 120, 0.22)',
+            borderWidth: 1,
+            stack: 'call',
+            order: 2,
+            barPercentage: 1.0
+          },
+          {
+            label: 'Put $ (24h ago)',
+            data: faded24hPut,
+            backgroundColor: 'rgba(245, 101, 101, 0.10)',
+            borderColor: 'rgba(245, 101, 101, 0.22)',
+            borderWidth: 1,
+            stack: 'put',
+            order: 2,
+            barPercentage: 1.0
+          }
+        );
+      }
+      datasets.push(
+        {
+          label: 'Call $ Volume',
+          data: crData.map(d => d.totalCallDollarVolume || 0),
+          backgroundColor: 'rgba(72, 187, 120, 0.35)',
+          borderColor: 'rgba(72, 187, 120, 0.6)',
+          borderWidth: 1,
+          stack: 'call',
+          order: 1,
+          barPercentage: 0.85
+        },
+        {
+          label: 'Put $ Volume',
+          data: crData.map(d => d.totalPutDollarVolume || 0),
+          backgroundColor: 'rgba(245, 101, 101, 0.35)',
+          borderColor: 'rgba(245, 101, 101, 0.6)',
+          borderWidth: 1,
+          stack: 'put',
+          order: 1,
+          barPercentage: 0.85
+        }
+      );
+
       let drilldownChartAll = null;
       const convChartAll = new Chart(document.getElementById('dollarConvictionChartAll'), {
         type: 'bar',
-        data: {
-          labels,
-          datasets: [
-            {
-              label: 'Call $ Volume',
-              data: crData.map(d => d.totalCallDollarVolume || 0),
-              backgroundColor: 'rgba(72, 187, 120, 0.35)',
-              borderColor: 'rgba(72, 187, 120, 0.6)',
-              borderWidth: 1
-            },
-            {
-              label: 'Put $ Volume',
-              data: crData.map(d => d.totalPutDollarVolume || 0),
-              backgroundColor: 'rgba(245, 101, 101, 0.35)',
-              borderColor: 'rgba(245, 101, 101, 0.6)',
-              borderWidth: 1
-            }
-          ]
-        },
+        data: { labels, datasets },
         options: {
           responsive: true,
           maintainAspectRatio: false,
@@ -2296,6 +2473,7 @@ class StockAnalysisService {
             tooltip: {
               callbacks: {
                 label: function(ctx) {
+                  if (ctx.raw === null || ctx.raw === undefined) return null;
                   const v = ctx.parsed.y;
                   return ctx.dataset.label + ': $' + (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v.toFixed(0));
                 }
@@ -2304,10 +2482,12 @@ class StockAnalysisService {
           },
           scales: {
             x: {
+              stacked: true,
               ticks: { color: '#909090' },
               grid: { color: '#2a2a4a' }
             },
             y: {
+              stacked: false,
               title: { display: true, text: '$ Volume', color: '#909090' },
               ticks: {
                 color: '#909090',

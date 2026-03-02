@@ -20,6 +20,7 @@ const ArticleDatabase = require('./src/services/database');
 const PriceTrackingService = require('./src/services/priceTracking');
 const StockAnalysisService = require('./src/services/stockAnalysis');
 const OptionsAnalysisService = require('./src/services/optionsAnalysis');
+const PortfolioAnalysisService = require('./src/services/portfolioAnalysis');
 const articleExtractor = require('./src/services/articleExtractor');
 const newsScraper = require('./src/services/newsScraper');
 
@@ -28,6 +29,7 @@ let database;
 let priceTracker;
 let stockAnalyzer;
 let optionsAnalyzer;
+let portfolioAnalyzer;
 
 // Tab management
 const tabs = new Map(); // tabId -> BrowserView
@@ -1157,6 +1159,46 @@ ipcMain.handle('analyze-stock-events', async (event, ticker, options = {}) => {
   }
 });
 
+// Portfolio diversification handlers
+ipcMain.handle('portfolio-get-holdings', async () => {
+  try {
+    const holdings = await portfolioAnalyzer.getHoldings();
+    return { success: true, holdings };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('portfolio-save-holding', async (event, ticker, shares) => {
+  try {
+    const result = await portfolioAnalyzer.saveHolding(ticker, shares);
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('portfolio-remove-holding', async (event, ticker) => {
+  try {
+    const result = await portfolioAnalyzer.removeHolding(ticker);
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('analyze-diversification', async (event, params) => {
+  try {
+    console.log('\nRunning diversification analysis...');
+    const result = await portfolioAnalyzer.analyzeDiversification(params);
+    const html = portfolioAnalyzer.generateDiversificationHTML(result);
+    return { success: true, html, result };
+  } catch (error) {
+    console.error('Diversification analysis error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Window control handlers
 ipcMain.handle('window-minimize', async (event) => {
   mainWindow.minimize();
@@ -1224,6 +1266,7 @@ app.whenReady().then(async () => {
 
   // Initialize options analyzer
   optionsAnalyzer = new OptionsAnalysisService(database);
+  portfolioAnalyzer = new PortfolioAnalysisService(database, stockAnalyzer, optionsAnalyzer);
 
   // Inject browser-based extractor into articleExtractor for JavaScript-rendered pages
   articleExtractor.setBrowserExtractor(extractArticleViaBrowser);

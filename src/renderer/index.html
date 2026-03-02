@@ -36,6 +36,7 @@
     <!-- Action buttons -->
     <div class="action-controls">
       <button id="btn-analyze-events" class="action-btn btn-analyze-events">📊 Analyze Events</button>
+      <button id="btn-diversify" class="action-btn btn-analyze-events">📋 Diversify</button>
       <button id="btn-settings" class="action-btn btn-settings">⚙️ Settings</button>
     </div>
   </div>
@@ -99,6 +100,45 @@
       <div class="modal-buttons">
         <button id="modal-cancel" class="btn-modal btn-cancel">Cancel</button>
         <button id="modal-analyze" class="btn-modal btn-primary">Analyze</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Diversification Modal -->
+  <div id="diversification-modal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 680px;">
+      <h3>Portfolio Diversification</h3>
+      <p>Find the best stock to add for diversification benefit.</p>
+      <div class="modal-form">
+        <div class="form-row">
+          <label>Current Holdings</label>
+          <div id="div-holdings-list" style="margin-bottom: 8px;"></div>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <input type="text" id="div-add-ticker" placeholder="Ticker" style="width: 100px;" />
+            <input type="number" id="div-add-shares" placeholder="Shares" value="1" min="0.01" step="any" style="width: 100px;" />
+            <button id="div-add-btn" class="btn-modal btn-primary" style="padding: 6px 12px;">Add</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <label for="div-candidates">Candidate Tickers (comma-separated)</label>
+          <input type="text" id="div-candidates" placeholder="e.g., GLD, TLT, XOM, MSFT" />
+        </div>
+        <div class="form-row">
+          <label for="div-days">Lookback Days</label>
+          <input type="number" id="div-days" value="200" min="30" max="2000" />
+        </div>
+        <div class="form-row">
+          <label for="div-api-select">Data Source</label>
+          <select id="div-api-select">
+            <option value="auto">Auto (Twelve Data → EODHD fallback)</option>
+            <option value="twelvedata">Twelve Data (US markets)</option>
+            <option value="eodhd">EODHD (International markets)</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-buttons">
+        <button id="div-cancel" class="btn-modal btn-cancel">Cancel</button>
+        <button id="div-analyze" class="btn-modal btn-primary">Analyze</button>
       </div>
     </div>
   </div>
