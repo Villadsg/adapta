@@ -30,6 +30,7 @@ const analysisApiSelect = document.getElementById('analysis-api-select');
 const analysisFetchNewsCheckbox = document.getElementById('analysis-fetch-news');
 const analysisOptionsCheckbox = document.getElementById('analysis-options-activity');
 const analysisMaxExpirationsInput = document.getElementById('analysis-max-expirations');
+const analysisOptimalHoldCheckbox = document.getElementById('analysis-optimal-hold');
 const modalCancel = document.getElementById('modal-cancel');
 const modalAnalyze = document.getElementById('modal-analyze');
 
@@ -696,6 +697,7 @@ btnAnalyzeEvents.addEventListener('click', async () => {
   analysisEventsInput.value = '15';
   analysisFetchNewsCheckbox.checked = true;
   analysisOptionsCheckbox.checked = true;
+  analysisOptimalHoldCheckbox.checked = false;
   analysisTickerInput.focus();
 });
 
@@ -739,6 +741,7 @@ modalAnalyze.addEventListener('click', async () => {
   const fetchNews = analysisFetchNewsCheckbox.checked;
   const analyzeOptions = analysisOptionsCheckbox.checked;
   const maxExpirations = parseInt(analysisMaxExpirationsInput.value, 10) || 4;
+  const computeOptimalHold = analysisOptimalHoldCheckbox.checked;
 
   analysisModal.style.display = 'none';
   await window.electronAPI.hideModal();
@@ -746,7 +749,8 @@ modalAnalyze.addEventListener('click', async () => {
   try {
     const fetchNewsMsg = fetchNews ? ' Fetching news articles...' : '';
     const optionsMsg = analyzeOptions ? ' Analyzing options activity...' : '';
-    showToast('Analyzing...', `Running event analysis for ${upperTicker} vs ${benchmark}.${fetchNewsMsg}${optionsMsg} This may take a minute...`, 'info', (fetchNews || analyzeOptions) ? 60000 : 10000);
+    const holdMsg = computeOptimalHold ? ' Computing optimal hold...' : '';
+    showToast('Analyzing...', `Running event analysis for ${upperTicker} vs ${benchmark}.${fetchNewsMsg}${optionsMsg}${holdMsg} This may take a minute...`, 'info', (fetchNews || analyzeOptions || computeOptimalHold) ? 60000 : 10000);
 
     const result = await window.electronAPI.analyzeStockEvents(upperTicker, {
       benchmark,
@@ -755,7 +759,8 @@ modalAnalyze.addEventListener('click', async () => {
       dataSource,
       fetchNews,
       analyzeOptions,
-      maxExpirations
+      maxExpirations,
+      computeOptimalHold
     });
 
     if (!result.success) {

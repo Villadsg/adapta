@@ -6,11 +6,21 @@
  */
 
 const { spawn } = require('child_process');
+const fs = require('fs');
 const path = require('path');
+
+// Resolve the venv Python path relative to the python/ directory
+function resolveVenvPython() {
+  const venvPython = path.join(__dirname, '../../python/venv/bin/python3');
+  if (fs.existsSync(venvPython)) {
+    return venvPython;
+  }
+  return 'python3'; // Fallback to system Python
+}
 
 class ChronosForecastService {
   constructor(options = {}) {
-    this.pythonPath = options.pythonPath || 'python3';
+    this.pythonPath = options.pythonPath || resolveVenvPython();
     this.scriptPath = options.scriptPath || path.join(__dirname, '../../python/chronos_forecast.py');
     this.modelSize = options.modelSize || 'small'; // tiny, small, base
     this.defaultDays = options.defaultDays || 14;
@@ -124,6 +134,25 @@ class ChronosForecastService {
     };
 
     return this.runForecast('post_event', { prices, event: normalizedEvent }, days);
+  }
+
+  /**
+   * Compute optimal hold days using Chronos-2 with covariates
+   * @param {Array<number>} prices - Historical closing prices
+   * @param {Array<number>} volumes - Historical trading volumes
+   * @param {Array<object>} events - Events with index, residual_return, strength, classification
+   * @param {object} optionsContext - Options analysis context for confidence adjustment
+   * @param {object} options - Additional options
+   * @returns {Promise<object>} Optimal hold result
+   */
+  async computeOptimalHold(prices, volumes, events, optionsContext, options = {}) {
+    const { days = 30 } = options;
+    return this.runForecast('optimal_hold', {
+      prices,
+      volumes,
+      events,
+      options_context: optionsContext,
+    }, days);
   }
 
   /**

@@ -1088,7 +1088,8 @@ ipcMain.handle('analyze-stock-events', async (event, ticker, options = {}) => {
       minEvents = 15,
       dataSource = 'auto',
       analyzeOptions = false,
-      maxExpirations = 4
+      maxExpirations = 4,
+      computeOptimalHold = false
     } = options;
 
     console.log(`\nAnalyzing stock events for ${ticker}...`);
@@ -1137,12 +1138,23 @@ ipcMain.handle('analyze-stock-events', async (event, ticker, options = {}) => {
       }
     }
 
+    // Compute optimal hold days (if enabled)
+    let optimalHoldData = null;
+    if (computeOptimalHold) {
+      try {
+        optimalHoldData = await stockAnalyzer.computeOptimalHold(result, optionsData);
+      } catch (holdErr) {
+        console.error('Optimal hold computation failed (non-fatal):', holdErr.message);
+      }
+    }
+
     // Generate HTML report with events and existing articles (return immediately)
     const html = stockAnalyzer.generateAnalysisHTML(
       result.data,
       result.events,
       ticker,
-      optionsData
+      optionsData,
+      optimalHoldData
     );
 
     console.log(`\nAnalysis complete: ${result.events.length} events found`);

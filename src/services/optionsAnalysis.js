@@ -1002,6 +1002,11 @@ class OptionsAnalysisService {
    */
   _computeTermStructureMetrics(expirationMetrics, ivCallKey, ivPutKey) {
     const now = new Date();
+    // Determine which contract arrays to use based on IV key
+    const useAllContracts = ivCallKey === 'avgCallIVAll';
+    const callContractsKey = useAllContracts ? 'allCallContracts' : 'callContracts';
+    const putContractsKey = useAllContracts ? 'allPutContracts' : 'putContracts';
+
     const termStructure = expirationMetrics
       .filter(e => e.expirationDate)
       .map(e => {
@@ -1010,7 +1015,16 @@ class OptionsAnalysisService {
         const callIV = e[ivCallKey] || e.atmCallIV || 0;
         const putIV = e[ivPutKey] || e.atmPutIV || 0;
         const atmIV = (callIV + putIV) / 2;
-        return { expirationDate: e.expirationDate, daysToExpiry, atmIV, callIV, putIV };
+        // Per-strike IV data for volatility smile drilldown
+        const strikeIV = [
+          ...(e[callContractsKey] || []).filter(c => c.impliedVolatility > 0).map(c => ({
+            strike: c.strike, iv: c.impliedVolatility, type: 'call'
+          })),
+          ...(e[putContractsKey] || []).filter(c => c.impliedVolatility > 0).map(c => ({
+            strike: c.strike, iv: c.impliedVolatility, type: 'put'
+          }))
+        ].sort((a, b) => a.strike - b.strike);
+        return { expirationDate: e.expirationDate, daysToExpiry, atmIV, callIV, putIV, strikeIV };
       })
       .filter(t => t.atmIV > 0)
       .sort((a, b) => a.daysToExpiry - b.daysToExpiry);

@@ -37,6 +37,9 @@ out/
 # Electron specific
 # (allow package-lock.json for reproducible builds)
 
+# Python virtual environment
+python/venv/
+
 # Bun
 bun.lockb
 bun-workers/node_modules/

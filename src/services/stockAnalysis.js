@@ -724,6 +724,69 @@ class StockAnalysisService {
   }
 
   /**
+   * Compute optimal hold days using Chronos-2 with volume and event covariates
+   * @param {object} analysisResult - Result from analyzeStock() with data and events
+   * @param {object} optionsData - Options analysis result (or null)
+   * @param {object} options - Additional options
+   * @returns {Promise<object>} Optimal hold result
+   */
+  async computeOptimalHold(analysisResult, optionsData = null, options = {}) {
+    const { modelSize = 'small', pythonPath = 'python3' } = options;
+    const { data, events } = analysisResult;
+
+    const prices = data.map(bar => bar.close);
+    const volumes = data.map(bar => bar.volume);
+
+    // Build events array with index positions
+    const eventsForForecast = events.map(ev => {
+      const dateStr = ev.dateStr || (ev.date ? ev.date.toISOString().split('T')[0] : null);
+      const idx = data.findIndex(d => d.date.toISOString().split('T')[0] === dateStr);
+      return {
+        index: idx >= 0 ? idx : null,
+        residual_return: ev.residualReturn ?? ev.residual_return ?? 0,
+        strength: ev.strength ?? ev.eventStrength ?? 0,
+        classification: ev.classification ?? ev.earningsClassification ?? 'unknown',
+      };
+    }).filter(ev => ev.index !== null);
+
+    // Build options context from options analysis result
+    let optionsContext = null;
+    if (optionsData) {
+      const summary = optionsData.summary || {};
+      const ea = optionsData.eventAnticipation || {};
+      const expirations = (optionsData.expirations || []).map(exp => ({
+        dte: exp.daysToExpiry || exp.dte || 0,
+        atm_call_iv: exp.atmCallIV || 0,
+        atm_put_iv: exp.atmPutIV || 0,
+        volume_conviction_score: exp.volumeConvictionScore || 0,
+      }));
+
+      optionsContext = {
+        sentiment: summary.sentiment || 'neutral',
+        sentiment_score: summary.sentimentScore || 0,
+        event_anticipation_index: ea.compositeIndex || 0,
+        max_volume_conviction: summary.maxVolumeConviction || 0,
+        term_structure_shape: summary.termStructureShape || '',
+        expirations,
+      };
+    }
+
+    console.log('\n=== COMPUTING OPTIMAL HOLD DAYS ===');
+    console.log(`Using Chronos-2 with ${prices.length} price bars, ${eventsForForecast.length} events`);
+    if (optionsContext) {
+      console.log(`Options context: sentiment=${optionsContext.sentiment}, EAI=${optionsContext.event_anticipation_index}`);
+    }
+
+    const forecaster = new ChronosForecastService({
+      modelSize,
+      pythonPath,
+      defaultDays: 30,
+    });
+
+    return forecaster.computeOptimalHold(prices, volumes, eventsForForecast, optionsContext);
+  }
+
+  /**
    * Find articles related to an event date from the accumulated corpus
    * @param {Date} eventDate - Event date
    * @param {string} ticker - Stock ticker
@@ -992,7 +1055,7 @@ class StockAnalysisService {
    * @param {string} ticker - Stock ticker
    * @returns {string} HTML content
    */
-  generateAnalysisHTML(data, events, ticker, optionsData = null) {
+  generateAnalysisHTML(data, events, ticker, optionsData = null, optimalHoldData = null) {
     const classificationColors = {
       negative_anticipated: 'orange',
       surprising_negative: 'red',
@@ -1121,7 +1184,8 @@ class StockAnalysisService {
               + '<td>' + ((d.putIV || 0) * 100).toFixed(1) + '%</td></tr>'
             ).join('') + '</tbody></table>'
           : '')
-        + (hasTermChart ? '<div class="detail-chart"><canvas id="termStructureChart"></canvas></div>' : '');
+        + (hasTermChart ? '<div class="detail-chart"><canvas id="termStructureChart"></canvas></div>' : '')
+        + '<div id="tsSmileWrapOTM" style="display:none;margin-top:12px;"><div class="detail-chart"><canvas id="tsSmileChartOTM"></canvas></div></div>';
 
       const tsDataAll = c.termStructureAll ? c.termStructureAll.data || [] : [];
       const hasTermChartAll = tsDataAll.length >= 2;
@@ -1139,7 +1203,8 @@ class StockAnalysisService {
               + '<td>' + ((d.putIV || 0) * 100).toFixed(1) + '%</td></tr>'
             ).join('') + '</tbody></table>'
           : '')
-        + (hasTermChartAll ? '<div class="detail-chart"><canvas id="termStructureChartAll"></canvas></div>' : '');
+        + (hasTermChartAll ? '<div class="detail-chart"><canvas id="termStructureChartAll"></canvas></div>' : '')
+        + '<div id="tsSmileWrapAll" style="display:none;margin-top:12px;"><div class="detail-chart"><canvas id="tsSmileChartAll"></canvas></div></div>';
 
       const vcPerExp = c.volumeConviction.perExpiration || [];
       const hasConvictionChart = vcPerExp.length >= 2;
@@ -1185,8 +1250,8 @@ class StockAnalysisService {
       const hasRatioChart = vcAllPerExp.length >= 1;
       const ratioCardHTML = hasRatioChart ? `
         <div class="ratio-chart-card">
-          <h3>Call/Put Dollar Volume Ratio by Expiration</h3>
-          <p class="ratio-subtitle">ITM + OTM &mdash; Click a bar to view historical ratio trend</p>
+          <h3>ln(Call/Put Dollar Volume Ratio) by Expiration</h3>
+          <p class="ratio-subtitle">ITM + OTM &mdash; ln scale (0 = neutral) &mdash; Click a bar to view historical trend</p>
           <div class="ratio-main-chart"><canvas id="cpRatioChart"></canvas></div>
           <div id="cpRatioNoHistory" style="display:none; margin-top:12px; color:#718096; font-size:12px; text-align:center;">
             No historical data available for this expiration
@@ -1222,6 +1287,52 @@ class StockAnalysisService {
         </div>
         ${calloutsHTML}
         ${ratioCardHTML}
+      </div>`;
+    })() : '';
+
+    // Generate Optimal Hold panel
+    const holdPanelHTML = optimalHoldData ? (() => {
+      const h = optimalHoldData;
+      const days = h.optimal_hold_days;
+      const ret = h.expected_return_pct;
+      const conf = Math.round(h.confidence * 100);
+      const isDoNotHold = days === 0;
+
+      let badgeClass;
+      if (isDoNotHold) badgeClass = 'bearish';
+      else if (conf >= 70) badgeClass = 'strong-bull';
+      else if (conf >= 50) badgeClass = 'moderate-bull';
+      else badgeClass = 'weak-bull';
+
+      const warningsHTML = h.warnings && h.warnings.length > 0
+        ? '<div class="hold-warnings">' + h.warnings.map(w => '<p>' + w + '</p>').join('') + '</div>'
+        : '';
+
+      return `
+      <div class="hold-recommendation-panel ${badgeClass}">
+        <h2>Optimal Hold Recommendation</h2>
+        <div class="hold-headline">
+          <div class="hold-badge ${badgeClass}">${isDoNotHold ? '0' : days}</div>
+          <div class="hold-summary">
+            <span class="hold-label">${isDoNotHold ? 'Do Not Hold' : days + ' Day' + (days !== 1 ? 's' : '')}</span>
+            <span class="hold-sub">${isDoNotHold
+              ? 'All forecast trajectories are negative — no profitable hold window detected'
+              : 'Expected return: ' + (ret >= 0 ? '+' : '') + ret.toFixed(1) + '% | Confidence: ' + conf + '%'
+            }</span>
+          </div>
+        </div>
+        <div class="hold-details">
+          <table class="detail-table">
+            <tr><td>Forecast Horizon</td><td>${h.prediction_length} days</td></tr>
+            <tr><td>Peak Return (Median)</td><td>${(h.peak_return_pct >= 0 ? '+' : '') + h.peak_return_pct.toFixed(2)}%</td></tr>
+            <tr><td>Last Price</td><td>$${h.last_price.toFixed(2)}</td></tr>
+            <tr><td>Options Context</td><td>${h.options_context_applied ? 'Applied' : 'Not available'}</td></tr>
+          </table>
+        </div>
+        ${warningsHTML}
+        <div class="hold-chart-container">
+          <canvas id="holdReturnChart"></canvas>
+        </div>
       </div>`;
     })() : '';
 
@@ -1599,7 +1710,7 @@ class StockAnalysisService {
     .detail-chart { margin-top: 10px; height: 260px; }
     .detail-chart canvas { height: 260px !important; }
     .component-row.has-chart.expanded { grid-column: 1 / -1; }
-    .component-row.has-chart.expanded .component-detail { max-height: 1800px; }
+    .component-row.has-chart.expanded .component-detail { max-height: 2400px; }
     .trend-dir { font-weight: 600; }
     .trend-dir.rising { color: #fc8181; }
     .trend-dir.falling { color: #48bb78; }
@@ -1656,6 +1767,73 @@ class StockAnalysisService {
     .ratio-main-chart canvas {
       height: 280px !important;
     }
+    /* Optimal Hold Recommendation Panel */
+    .hold-recommendation-panel {
+      max-width: 1400px;
+      margin: 20px auto;
+      background: #16213e;
+      border-radius: 10px;
+      padding: 24px;
+      border-left: 5px solid #4a5568;
+    }
+    .hold-recommendation-panel.strong-bull { border-left-color: #48bb78; }
+    .hold-recommendation-panel.moderate-bull { border-left-color: #d69e2e; }
+    .hold-recommendation-panel.weak-bull { border-left-color: #a0aec0; }
+    .hold-recommendation-panel.bearish { border-left-color: #e53e3e; }
+    .hold-recommendation-panel h2 {
+      color: #a8b5a2;
+      margin: 0 0 16px 0;
+      border-bottom: 2px solid #333;
+      padding-bottom: 10px;
+    }
+    .hold-headline {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    .hold-badge {
+      font-size: 32px;
+      font-weight: bold;
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .hold-badge.strong-bull { background: #48bb78; color: #fff; }
+    .hold-badge.moderate-bull { background: #d69e2e; color: #000; }
+    .hold-badge.weak-bull { background: #4a5568; color: #a0aec0; }
+    .hold-badge.bearish { background: #e53e3e; color: #fff; }
+    .hold-summary { display: flex; flex-direction: column; }
+    .hold-label { font-size: 20px; font-weight: 600; color: #eaeaea; }
+    .hold-sub { font-size: 13px; color: #a0aec0; margin-top: 2px; }
+    .hold-details { margin-bottom: 16px; }
+    .hold-warnings {
+      margin: 12px 0;
+      padding: 10px 14px;
+      background: rgba(221, 107, 32, 0.1);
+      border-radius: 6px;
+      border-left: 3px solid #dd6b20;
+    }
+    .hold-warnings p {
+      margin: 4px 0;
+      font-size: 12px;
+      color: #dd6b20;
+    }
+    .hold-warnings p::before {
+      content: '\\26A0 ';
+    }
+    .hold-chart-container {
+      height: 300px;
+      margin-top: 16px;
+    }
+    .hold-chart-container canvas {
+      height: 300px !important;
+    }
   </style>
 </head>
 <body>
@@ -1663,6 +1841,8 @@ class StockAnalysisService {
   <p class="subtitle">Events detected using volume \u00d7 price gap analysis with market movement filtering</p>
 
   ${anticipationPanelHTML}
+
+  ${holdPanelHTML}
 
   <div class="legend">
     <div class="legend-item"><div class="legend-color" style="background: darkgreen"></div> Surprising Positive</div>
@@ -2024,15 +2204,25 @@ class StockAnalysisService {
         });
       }
 
-      new Chart(document.getElementById('termStructureChart'), {
+      var tsChartOTM = new Chart(document.getElementById('termStructureChart'), {
         type: 'line',
         data: { labels, datasets },
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          onClick: function(evt, elements) {
+            if (!elements || elements.length === 0) return;
+            var idx = elements[0].index;
+            if (typeof handleIVSmileClick === 'function') handleIVSmileClick(idx, 'otm');
+          },
           plugins: {
             legend: { labels: { color: '#b0b0b0' } },
-            title: { display: true, text: 'IV Term Structure (Call / Put)', color: '#b0b0b0' }
+            title: { display: true, text: 'IV Term Structure (Call / Put) — click a point for smile', color: '#b0b0b0' },
+            tooltip: {
+              callbacks: {
+                footer: function() { return 'Click to view volatility smile'; }
+              }
+            }
           },
           scales: {
             x: {
@@ -2099,15 +2289,25 @@ class StockAnalysisService {
         });
       }
 
-      new Chart(document.getElementById('termStructureChartAll'), {
+      var tsChartAll = new Chart(document.getElementById('termStructureChartAll'), {
         type: 'line',
         data: { labels, datasets },
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          onClick: function(evt, elements) {
+            if (!elements || elements.length === 0) return;
+            var idx = elements[0].index;
+            if (typeof handleIVSmileClick === 'function') handleIVSmileClick(idx, 'all');
+          },
           plugins: {
             legend: { labels: { color: '#b0b0b0' } },
-            title: { display: true, text: 'IV Term Structure — ITM+OTM (Call / Put)', color: '#b0b0b0' }
+            title: { display: true, text: 'IV Term Structure — ITM+OTM (Call / Put) — click a point for smile', color: '#b0b0b0' },
+            tooltip: {
+              callbacks: {
+                footer: function() { return 'Click to view volatility smile'; }
+              }
+            }
           },
           scales: {
             x: {
@@ -2124,6 +2324,91 @@ class StockAnalysisService {
       });
     }
     ` : ''}
+
+    // Volatility Smile drilldown — click IV in term structure table to see IV vs strike
+    ${(() => {
+      const otmSmileData = ea?.components?.termStructure?.data || [];
+      const allSmileData = ea?.components?.termStructureAll?.data || [];
+      if (otmSmileData.length === 0 && allSmileData.length === 0) return '';
+      return `
+    var tsSmileDataOTM = ${JSON.stringify(otmSmileData.map(d => ({ expirationDate: d.expirationDate, daysToExpiry: d.daysToExpiry, strikeIV: d.strikeIV || [] })))};
+    var tsSmileDataAll = ${JSON.stringify(allSmileData.map(d => ({ expirationDate: d.expirationDate, daysToExpiry: d.daysToExpiry, strikeIV: d.strikeIV || [] })))};
+    var smileChartOTM = null;
+    var smileChartAll = null;
+
+    function renderSmileChart(canvasId, wrapId, data, expiryLabel) {
+      var wrap = document.getElementById(wrapId);
+      if (!wrap) return null;
+      wrap.style.display = 'block';
+      var canvas = document.getElementById(canvasId);
+      var calls = data.filter(function(d) { return d.type === 'call'; });
+      var puts = data.filter(function(d) { return d.type === 'put'; });
+      var datasets = [];
+      if (calls.length > 0) {
+        datasets.push({
+          label: 'Call IV',
+          data: calls.map(function(d) { return { x: d.strike, y: d.iv * 100 }; }),
+          borderColor: 'rgba(72, 187, 120, 0.9)',
+          backgroundColor: 'rgba(72, 187, 120, 0.15)',
+          borderWidth: 2, pointRadius: 3,
+          pointBackgroundColor: 'rgba(72, 187, 120, 1)',
+          fill: false, tension: 0.2, showLine: true
+        });
+      }
+      if (puts.length > 0) {
+        datasets.push({
+          label: 'Put IV',
+          data: puts.map(function(d) { return { x: d.strike, y: d.iv * 100 }; }),
+          borderColor: 'rgba(245, 101, 101, 0.9)',
+          backgroundColor: 'rgba(245, 101, 101, 0.15)',
+          borderWidth: 2, pointRadius: 3,
+          pointBackgroundColor: 'rgba(245, 101, 101, 1)',
+          fill: false, tension: 0.2, showLine: true
+        });
+      }
+      return new Chart(canvas, {
+        type: 'scatter',
+        data: { datasets: datasets },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: '#b0b0b0' } },
+            title: { display: true, text: 'Volatility Smile — ' + expiryLabel, color: '#b0b0b0' }
+          },
+          scales: {
+            x: {
+              type: 'linear',
+              title: { display: true, text: 'Strike Price', color: '#909090' },
+              ticks: { color: '#909090' }, grid: { color: '#2a2a4a' }
+            },
+            y: {
+              title: { display: true, text: 'Implied Volatility (%)', color: '#909090' },
+              ticks: { color: '#909090' }, grid: { color: '#2a2a4a' }
+            }
+          }
+        }
+      });
+    }
+
+    function handleIVSmileClick(idx, tsType) {
+      var isOTM = tsType === 'otm';
+      var dataArr = isOTM ? tsSmileDataOTM : tsSmileDataAll;
+      if (idx < 0 || idx >= dataArr.length) return;
+      var entry = dataArr[idx];
+      if (!entry.strikeIV || entry.strikeIV.length === 0) return;
+      var label = new Date(entry.expirationDate).toLocaleDateString('en-US', {month:'short',day:'numeric'}) + ' (' + entry.daysToExpiry + 'd)';
+      var canvasId = isOTM ? 'tsSmileChartOTM' : 'tsSmileChartAll';
+      var wrapId = isOTM ? 'tsSmileWrapOTM' : 'tsSmileWrapAll';
+      if (isOTM) {
+        if (smileChartOTM) smileChartOTM.destroy();
+        smileChartOTM = renderSmileChart(canvasId, wrapId, entry.strikeIV, label);
+      } else {
+        if (smileChartAll) smileChartAll.destroy();
+        smileChartAll = renderSmileChart(canvasId, wrapId, entry.strikeIV, label);
+      }
+    }
+    `;
+    })()}
 
     // Dollar Conviction Ratio Chart — Call$/Put$ ratio by expiration
     ${(() => {
@@ -2618,9 +2903,10 @@ class StockAnalysisService {
         var dt = new Date(d.expirationDate);
         return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       });
-      const ratios = crData.map(function(d) { return d.convictionRatio; });
-      const barColors = ratios.map(function(r) { return r >= 1 ? 'rgba(72, 187, 120, 0.7)' : 'rgba(245, 101, 101, 0.7)'; });
-      const borderColors = ratios.map(function(r) { return r >= 1 ? 'rgba(72, 187, 120, 1)' : 'rgba(245, 101, 101, 1)'; });
+      const rawRatios = crData.map(function(d) { return d.convictionRatio; });
+      const ratios = rawRatios.map(function(r) { return r > 0 ? Math.log(r) : 0; });
+      const barColors = ratios.map(function(r) { return r >= 0 ? 'rgba(72, 187, 120, 0.7)' : 'rgba(245, 101, 101, 0.7)'; });
+      const borderColors = ratios.map(function(r) { return r >= 0 ? 'rgba(72, 187, 120, 1)' : 'rgba(245, 101, 101, 1)'; });
 
       var histChart = null;
 
@@ -2630,7 +2916,7 @@ class StockAnalysisService {
           labels: labels,
           datasets: [
             {
-              label: 'Call/Put $ Ratio',
+              label: 'ln(Call/Put $ Ratio)',
               data: ratios,
               backgroundColor: barColors,
               borderColor: borderColors,
@@ -2638,8 +2924,8 @@ class StockAnalysisService {
               order: 1
             },
             {
-              label: 'Neutral (1.0)',
-              data: labels.map(function() { return 1.0; }),
+              label: 'Neutral (0)',
+              data: labels.map(function() { return 0; }),
               type: 'line',
               borderColor: 'rgba(160, 174, 192, 0.5)',
               borderWidth: 1,
@@ -2677,7 +2963,8 @@ class StockAnalysisService {
               var dt = new Date(d.date);
               return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
             });
-            var histRatios = hist.map(function(d) { return d.ratio; });
+            var histRatios = hist.map(function(d) { return d.ratio > 0 ? Math.log(d.ratio) : 0; });
+            var histRawRatios = hist.map(function(d) { return d.ratio; });
 
             if (histChart) histChart.destroy();
             histChart = new Chart(document.getElementById('cpRatioHistoryChart'), {
@@ -2686,19 +2973,19 @@ class StockAnalysisService {
                 labels: histLabels,
                 datasets: [
                   {
-                    label: 'Call/Put $ Ratio',
+                    label: 'ln(Call/Put $ Ratio)',
                     data: histRatios,
                     borderColor: 'rgba(99, 179, 237, 0.9)',
                     backgroundColor: 'rgba(99, 179, 237, 0.08)',
                     borderWidth: 2,
                     pointRadius: 3,
-                    pointBackgroundColor: histRatios.map(function(r) { return r >= 1 ? 'rgba(72, 187, 120, 1)' : 'rgba(245, 101, 101, 1)'; }),
+                    pointBackgroundColor: histRatios.map(function(r) { return r >= 0 ? 'rgba(72, 187, 120, 1)' : 'rgba(245, 101, 101, 1)'; }),
                     fill: true,
                     tension: 0.2
                   },
                   {
-                    label: 'Neutral (1.0)',
-                    data: histLabels.map(function() { return 1.0; }),
+                    label: 'Neutral (0)',
+                    data: histLabels.map(function() { return 0; }),
                     borderColor: 'rgba(160, 174, 192, 0.4)',
                     borderWidth: 1,
                     borderDash: [4, 4],
@@ -2712,12 +2999,13 @@ class StockAnalysisService {
                 maintainAspectRatio: false,
                 plugins: {
                   legend: { labels: { color: '#b0b0b0' } },
-                  title: { display: true, text: 'Historical Call/Put $ Ratio — Exp ' + labels[idx], color: '#b0b0b0' },
+                  title: { display: true, text: 'Historical ln(Call/Put $ Ratio) — Exp ' + labels[idx], color: '#b0b0b0' },
                   tooltip: {
                     callbacks: {
                       label: function(ctx) {
-                        if (ctx.datasetIndex === 1) return 'Neutral: 1.0x';
-                        return 'Ratio: ' + ctx.raw.toFixed(2) + 'x';
+                        if (ctx.datasetIndex === 1) return 'Neutral: 0';
+                        var raw = histRawRatios[ctx.dataIndex];
+                        return 'ln(ratio): ' + ctx.raw.toFixed(2) + ' (raw: ' + (raw ? raw.toFixed(2) : '0') + 'x)';
                       }
                     }
                   }
@@ -2728,10 +3016,10 @@ class StockAnalysisService {
                     grid: { color: '#2a2a4a' }
                   },
                   y: {
-                    title: { display: true, text: 'Call/Put $ Ratio', color: '#909090' },
+                    title: { display: true, text: 'ln(Call/Put $ Ratio)', color: '#909090' },
                     ticks: {
                       color: '#909090',
-                      callback: function(v) { return v.toFixed(1) + 'x'; }
+                      callback: function(v) { return v.toFixed(1); }
                     },
                     grid: { color: '#2a2a4a' }
                   }
@@ -2741,12 +3029,13 @@ class StockAnalysisService {
           },
           plugins: {
             legend: { labels: { color: '#b0b0b0' } },
-            title: { display: true, text: 'Call/Put Dollar Volume Ratio by Expiration (click bar for history)', color: '#b0b0b0' },
+            title: { display: true, text: 'ln(Call/Put Dollar Volume Ratio) by Expiration (click bar for history)', color: '#b0b0b0' },
             tooltip: {
               callbacks: {
                 label: function(ctx) {
-                  if (ctx.datasetIndex === 1) return 'Neutral: 1.0x';
-                  return 'Ratio: ' + ctx.raw.toFixed(2) + 'x';
+                  if (ctx.datasetIndex === 1) return 'Neutral: 0';
+                  var raw = rawRatios[ctx.dataIndex];
+                  return 'ln(ratio): ' + ctx.raw.toFixed(2) + ' (raw: ' + (raw ? raw.toFixed(2) : '0') + 'x)';
                 }
               }
             }
@@ -2757,10 +3046,10 @@ class StockAnalysisService {
               grid: { color: '#2a2a4a' }
             },
             y: {
-              title: { display: true, text: 'Call/Put $ Ratio', color: '#909090' },
+              title: { display: true, text: 'ln(Call/Put $ Ratio)', color: '#909090' },
               ticks: {
                 color: '#909090',
-                callback: function(v) { return v.toFixed(1) + 'x'; }
+                callback: function(v) { return v.toFixed(1); }
               },
               grid: { color: '#2a2a4a' }
             }
@@ -2769,6 +3058,130 @@ class StockAnalysisService {
       });
     })();`;
     })()}
+
+    ${optimalHoldData ? `
+    // === Optimal Hold Cumulative Return Chart ===
+    (() => {
+      const holdCanvas = document.getElementById('holdReturnChart');
+      if (!holdCanvas) return;
+
+      const holdData = ${JSON.stringify(optimalHoldData)};
+      const days = Array.from({length: holdData.prediction_length}, (_, i) => 'Day ' + (i + 1));
+      const optDay = holdData.optimal_hold_days;
+
+      // Point styles: highlight optimal day
+      const pointRadii = days.map((_, i) => i === optDay - 1 ? 8 : 0);
+      const pointColors = days.map((_, i) => i === optDay - 1 ? '#d69e2e' : 'transparent');
+
+      new Chart(holdCanvas, {
+        type: 'line',
+        data: {
+          labels: days,
+          datasets: [
+            {
+              label: '90th Percentile',
+              data: holdData.high_90_returns,
+              borderColor: 'transparent',
+              backgroundColor: 'rgba(72, 187, 120, 0.08)',
+              fill: '+1',
+              pointRadius: 0,
+            },
+            {
+              label: '75th Percentile',
+              data: holdData.high_75_returns,
+              borderColor: 'rgba(72, 187, 120, 0.3)',
+              backgroundColor: 'rgba(72, 187, 120, 0.12)',
+              borderWidth: 1,
+              fill: '+1',
+              pointRadius: 0,
+            },
+            {
+              label: 'Median Forecast',
+              data: holdData.daily_returns_median,
+              borderColor: '#48bb78',
+              backgroundColor: 'rgba(72, 187, 120, 0.15)',
+              borderWidth: 2.5,
+              fill: '+1',
+              pointRadius: pointRadii,
+              pointBackgroundColor: pointColors,
+              pointBorderColor: pointColors,
+              pointHoverRadius: 6,
+            },
+            {
+              label: '25th Percentile',
+              data: holdData.low_25_returns,
+              borderColor: 'rgba(72, 187, 120, 0.3)',
+              backgroundColor: 'rgba(72, 187, 120, 0.08)',
+              borderWidth: 1,
+              fill: '+1',
+              pointRadius: 0,
+            },
+            {
+              label: '10th Percentile',
+              data: holdData.low_10_returns,
+              borderColor: 'transparent',
+              pointRadius: 0,
+              fill: false,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: '#b0b0b0', filter: (item) => item.text === 'Median Forecast' } },
+            title: {
+              display: true,
+              text: 'Cumulative Return Forecast (30-Day Horizon)' + (optDay > 0 ? ' — Optimal: Day ' + optDay : ' — No Profitable Hold'),
+              color: '#b0b0b0',
+            },
+            tooltip: {
+              callbacks: {
+                label: function(ctx) {
+                  return ctx.dataset.label + ': ' + ctx.raw.toFixed(2) + '%';
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              ticks: { color: '#909090', maxTicksLimit: 15 },
+              grid: { color: '#2a2a4a' },
+            },
+            y: {
+              title: { display: true, text: 'Cumulative Return (%)', color: '#909090' },
+              ticks: {
+                color: '#909090',
+                callback: function(v) { return v.toFixed(1) + '%'; }
+              },
+              grid: { color: '#2a2a4a' },
+            },
+          },
+          // Zero-line annotation
+          elements: { line: { tension: 0.3 } },
+        },
+        plugins: [{
+          id: 'zeroLine',
+          afterDraw(chart) {
+            const yScale = chart.scales.y;
+            const ctx = chart.ctx;
+            const y = yScale.getPixelForValue(0);
+            if (y >= yScale.top && y <= yScale.bottom) {
+              ctx.save();
+              ctx.beginPath();
+              ctx.setLineDash([5, 5]);
+              ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+              ctx.lineWidth = 1;
+              ctx.moveTo(chart.chartArea.left, y);
+              ctx.lineTo(chart.chartArea.right, y);
+              ctx.stroke();
+              ctx.restore();
+            }
+          }
+        }]
+      });
+    })();
+    ` : ''}
   </script>
 </body>
 </html>`;

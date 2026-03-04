@@ -95,6 +95,13 @@
             <input type="number" id="analysis-max-expirations" value="4" min="1" max="12" />
           </div>
         </div>
+        <div class="form-row-checkbox">
+          <label class="checkbox-label">
+            <input type="checkbox" id="analysis-optimal-hold" />
+            <span>Compute optimal hold days</span>
+            <span class="checkbox-hint">(uses Chronos-2 AI model to forecast 30-day price trajectory with volume & event covariates)</span>
+          </label>
+        </div>
       </div>
 
       <div class="modal-buttons">

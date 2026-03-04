@@ -1,4 +1,5 @@
 # Amazon Chronos-2 forecasting
-chronos-forecasting>=1.2.0
+chronos-forecasting>=1.5.0
 torch>=2.0.0
 numpy>=1.24.0
+pandas>=2.0.0

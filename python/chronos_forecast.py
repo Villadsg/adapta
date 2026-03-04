@@ -11,11 +11,13 @@ import json
 import argparse
 import numpy as np
 import torch
-from chronos import ChronosPipeline
+import pandas as pd
+from chronos import ChronosPipeline, BaseChronosPipeline
 
 # Model cache for performance
 _pipeline = None
 _model_name = None
+_chronos2_pipeline = None
 
 
 def get_pipeline(model_size="small"):
@@ -209,9 +211,170 @@ def forecast_post_event(prices, event, prediction_length=14, model_size="small")
     }
 
 
+def get_chronos2_pipeline():
+    """Load Chronos-2 pipeline (cached) for multivariate forecasting with covariates."""
+    global _chronos2_pipeline
+    if _chronos2_pipeline is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        print(f"Loading amazon/chronos-2 on {device}...", file=sys.stderr)
+        _chronos2_pipeline = BaseChronosPipeline.from_pretrained(
+            "amazon/chronos-2",
+            device_map=device,
+        )
+    return _chronos2_pipeline
+
+
+def compute_optimal_hold(prices, volumes=None, events=None, options_context=None,
+                          prediction_length=30, model_size="small"):
+    """
+    Compute optimal hold days using Chronos-2 with volume and event covariates.
+
+    Uses probabilistic forecasting to find the day with maximum median cumulative return,
+    then adjusts confidence using options context.
+    """
+    pipeline = get_chronos2_pipeline()
+    last_price = float(prices[-1])
+    n = len(prices)
+
+    # Build DataFrame with covariates
+    # Normalize volume to 0-1 range
+    vol_array = np.array(volumes if volumes and len(volumes) == n else [0] * n, dtype=np.float64)
+    vol_min, vol_max = vol_array.min(), vol_array.max()
+    if vol_max > vol_min:
+        vol_norm = (vol_array - vol_min) / (vol_max - vol_min)
+    else:
+        vol_norm = np.zeros(n)
+
+    # Build event signal (sparse: 0 on normal days, residual_return * strength / 100 on event days)
+    event_signal = np.zeros(n, dtype=np.float64)
+    if events:
+        for ev in events:
+            idx = ev.get("index")
+            if idx is not None and 0 <= idx < n:
+                rr = ev.get("residual_return", 0) or 0
+                st = ev.get("strength", 0) or 0
+                event_signal[idx] = rr * st / 100.0
+
+    df = pd.DataFrame({
+        "timestamp": pd.date_range(end=pd.Timestamp.now().normalize(), periods=n, freq="B"),
+        "id": ["stock"] * n,
+        "target": prices,
+        "volume": vol_norm.tolist(),
+        "event_signal": event_signal.tolist(),
+    })
+
+    # Chronos-2 predict_df with covariates
+    quantile_levels = [0.1, 0.25, 0.5, 0.75, 0.9]
+    forecast_df = pipeline.predict_df(
+        df,
+        prediction_length=prediction_length,
+        quantile_levels=quantile_levels,
+    )
+
+    # Extract quantile columns from forecast
+    q10 = forecast_df["0.1"].values
+    q25 = forecast_df["0.25"].values
+    q50 = forecast_df["0.5"].values
+    q75 = forecast_df["0.75"].values
+    q90 = forecast_df["0.9"].values
+
+    # Compute cumulative returns at each day
+    cum_ret_median = (q50 - last_price) / last_price
+    cum_ret_low10 = (q10 - last_price) / last_price
+    cum_ret_high90 = (q90 - last_price) / last_price
+    cum_ret_low25 = (q25 - last_price) / last_price
+    cum_ret_high75 = (q75 - last_price) / last_price
+
+    # Find optimal hold day
+    best_day_idx = int(np.argmax(cum_ret_median))
+    peak_return = float(cum_ret_median[best_day_idx])
+
+    if peak_return <= 0:
+        optimal_hold_days = 0
+        expected_return = 0.0
+    else:
+        optimal_hold_days = best_day_idx + 1  # 1-indexed
+        expected_return = peak_return
+
+    # Confidence: based on spread at optimal day
+    if optimal_hold_days > 0:
+        idx = best_day_idx
+        spread = float(q90[idx] - q10[idx])
+        median_val = float(q50[idx])
+        # Fraction of range above last_price as proxy for positive trajectory probability
+        if spread > 0:
+            positive_fraction = max(0, min(1, (median_val - q10[idx]) / spread))
+        else:
+            positive_fraction = 0.5
+        # Also check if q10 is above last_price (strong signal)
+        if q10[idx] > last_price:
+            positive_fraction = min(1.0, positive_fraction + 0.2)
+        confidence = round(positive_fraction, 3)
+    else:
+        confidence = 0.0
+
+    warnings = []
+    options_context_applied = False
+
+    # Options context adjustment
+    if options_context:
+        options_context_applied = True
+        sentiment = options_context.get("sentiment", "neutral")
+        sentiment_score = options_context.get("sentiment_score", 0)
+        eai = options_context.get("event_anticipation_index", 0)
+        max_vol_conviction = options_context.get("max_volume_conviction", 0)
+        term_shape = options_context.get("term_structure_shape", "")
+
+        # Adjust confidence based on options signals
+        if sentiment == "bearish" or sentiment_score <= -2:
+            confidence = max(0, confidence - 0.15)
+            warnings.append(f"Bearish options sentiment (score: {sentiment_score}) — downside hedging active")
+
+        if eai > 50:
+            confidence = max(0, confidence - 0.10)
+            warnings.append(f"High event anticipation ({eai}/100) — IV elevated, potential volatility ahead")
+
+        if eai > 70:
+            confidence = max(0, confidence - 0.05)
+
+        if sentiment == "bullish" and max_vol_conviction >= 6:
+            confidence = min(1.0, confidence + 0.10)
+
+        if term_shape == "backwardation":
+            warnings.append("Term structure in backwardation — near-term IV elevated vs. longer-term")
+
+        # Check expirations for put/call IV skew warnings
+        exps = options_context.get("expirations", [])
+        for exp in exps:
+            put_iv = exp.get("atm_put_iv", 0)
+            call_iv = exp.get("atm_call_iv", 0)
+            if put_iv > 0 and call_iv > 0 and put_iv > call_iv * 1.3:
+                dte = exp.get("dte", "?")
+                warnings.append(f"Put IV significantly above Call IV at {dte} DTE — downside protection demand elevated")
+                break
+
+        confidence = round(confidence, 3)
+
+    return {
+        "optimal_hold_days": optimal_hold_days,
+        "expected_return_pct": round(expected_return * 100, 2),
+        "peak_return_pct": round(peak_return * 100, 2),
+        "confidence": confidence,
+        "daily_returns_median": (cum_ret_median * 100).tolist(),
+        "low_10_returns": (cum_ret_low10 * 100).tolist(),
+        "high_90_returns": (cum_ret_high90 * 100).tolist(),
+        "low_25_returns": (cum_ret_low25 * 100).tolist(),
+        "high_75_returns": (cum_ret_high75 * 100).tolist(),
+        "last_price": last_price,
+        "prediction_length": prediction_length,
+        "options_context_applied": options_context_applied,
+        "warnings": warnings,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description="Chronos-2 Stock Forecasting")
-    parser.add_argument("--mode", choices=["forecast", "with_events", "post_event"],
+    parser.add_argument("--mode", choices=["forecast", "with_events", "post_event", "optimal_hold"],
                        default="forecast", help="Forecasting mode")
     parser.add_argument("--model", choices=["tiny", "small", "base", "mini", "large"],
                        default="small", help="Model size")
@@ -242,6 +405,11 @@ def main():
         result = forecast_with_events(prices, events, args.days, args.model)
     elif args.mode == "post_event":
         result = forecast_post_event(prices, event, args.days, args.model)
+    elif args.mode == "optimal_hold":
+        result = compute_optimal_hold(
+            prices, data.get("volumes"), data.get("events"),
+            data.get("options_context"), args.days, args.model
+        )
 
     print(json.dumps(result))
 
