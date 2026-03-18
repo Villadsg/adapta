@@ -353,19 +353,19 @@ class OptionsAnalysisService {
     const totalPutOI = expirationMetrics.reduce((s, e) => s + e.totalPutOI, 0);
     const avgPutCallOIRatio = totalCallOI > 0 ? totalPutOI / totalCallOI : 0;
 
-    // Average ATM IV across expirations (separate call/put and blended)
+    // Average OTM IV across expirations (separate call/put and blended)
     const callIVValues = expirationMetrics
-      .map(e => e.avgCallIV || e.atmCallIV || 0)
+      .map(e => e.avgCallIV || 0)
       .filter(v => v > 0);
     const putIVValues = expirationMetrics
-      .map(e => e.avgPutIV || e.atmPutIV || 0)
+      .map(e => e.avgPutIV || 0)
       .filter(v => v > 0);
     const avgCallIV = callIVValues.length > 0
       ? callIVValues.reduce((s, v) => s + v, 0) / callIVValues.length : 0;
     const avgPutIV = putIVValues.length > 0
       ? putIVValues.reduce((s, v) => s + v, 0) / putIVValues.length : 0;
     const ivValues = expirationMetrics
-      .map(e => (e.avgCallIV + e.avgPutIV) / 2 || (e.atmCallIV + e.atmPutIV) / 2)
+      .map(e => (e.avgCallIV + e.avgPutIV) / 2)
       .filter(v => v > 0);
     const avgAtmIV = ivValues.length > 0
       ? ivValues.reduce((s, v) => s + v, 0) / ivValues.length
@@ -657,23 +657,37 @@ class OptionsAnalysisService {
     const convictionScore = Math.min(15, (maxConviction / 9) * 15);
 
     // === 5. Historical Volume Conviction (dollar volume trend from snapshots) ===
-    // Aggregate call/put dollar volume per snapshot date (sum across the 2 nearest expirations)
+    // Aggregate call/put dollar volume + IV per snapshot date (sum across the 2 nearest expirations)
     const dollarVolHistory = [];
     if (snapshotHistory && snapshotHistory.length > 0) {
       const byDate = new Map();
       for (const snap of snapshotHistory) {
         const dateKey = new Date(snap.snapshot_date).toISOString().split('T')[0];
-        if (!byDate.has(dateKey)) byDate.set(dateKey, { callDollar: 0, putDollar: 0, count: 0 });
+        if (!byDate.has(dateKey)) byDate.set(dateKey, { callDollar: 0, putDollar: 0, callIVSum: 0, putIVSum: 0, ivCount: 0, count: 0 });
         const entry = byDate.get(dateKey);
         // Each row is one expiration — sum the 2 nearest per date
         if (entry.count < 2) {
           entry.callDollar += Number(snap.total_call_dollar_volume) || 0;
           entry.putDollar += Number(snap.total_put_dollar_volume) || 0;
+          const civ = Number(snap.avg_call_iv) || 0;
+          const piv = Number(snap.avg_put_iv) || 0;
+          if (civ > 0 || piv > 0) {
+            entry.callIVSum += civ;
+            entry.putIVSum += piv;
+            entry.ivCount++;
+          }
           entry.count++;
         }
       }
       for (const [date, vals] of Array.from(byDate.entries()).sort()) {
-        dollarVolHistory.push({ date, totalCallDollar: vals.callDollar, totalPutDollar: vals.putDollar });
+        const avgCallIV = vals.ivCount > 0 ? vals.callIVSum / vals.ivCount : 0;
+        const avgPutIV = vals.ivCount > 0 ? vals.putIVSum / vals.ivCount : 0;
+        dollarVolHistory.push({
+          date,
+          totalCallDollar: vals.callDollar,
+          totalPutDollar: vals.putDollar,
+          ivGap: (avgCallIV > 0 || avgPutIV > 0) ? (avgCallIV - avgPutIV) * 100 : null
+        });
       }
     }
 
@@ -728,11 +742,22 @@ class OptionsAnalysisService {
     }
 
     // Current snapshot totals (from live expirations, 2 nearest)
-    const currentCallDollar = (expirations || []).slice(0, 2)
-      .reduce((s, e) => s + (e.totalCallDollarVolume || 0), 0);
-    const currentPutDollar = (expirations || []).slice(0, 2)
-      .reduce((s, e) => s + (e.totalPutDollarVolume || 0), 0);
+    const nearest2 = (expirations || []).slice(0, 2);
+    const currentCallDollar = nearest2.reduce((s, e) => s + (e.totalCallDollarVolume || 0), 0);
+    const currentPutDollar = nearest2.reduce((s, e) => s + (e.totalPutDollarVolume || 0), 0);
     const dollarConvictionRatio = currentPutDollar > 0 ? currentCallDollar / currentPutDollar : 0;
+
+    // Current IV gap from 2 nearest expirations (OTM IV)
+    let currentIVGap = null;
+    {
+      let civSum = 0, pivSum = 0, ivCnt = 0;
+      for (const e of nearest2) {
+        const civ = e.avgCallIV || 0;
+        const piv = e.avgPutIV || 0;
+        if (civ > 0 || piv > 0) { civSum += civ; pivSum += piv; ivCnt++; }
+      }
+      if (ivCnt > 0) currentIVGap = ((civSum / ivCnt) - (pivSum / ivCnt)) * 100;
+    }
 
     // Score based on total dollar volume magnitude and skew
     const totalDollar = currentCallDollar + currentPutDollar;
@@ -816,6 +841,8 @@ class OptionsAnalysisService {
             totalOI: (e.totalCallOI || 0) + (e.totalPutOI || 0),
             atmCallIV: e.atmCallIV || 0,
             atmPutIV: e.atmPutIV || 0,
+            avgCallIV: e.avgCallIV || 0,
+            avgPutIV: e.avgPutIV || 0,
             convictionRatio: e.convictionRatio || 0,
             totalCallDollarVolume: e.totalCallDollarVolume || 0,
             totalPutDollarVolume: e.totalPutDollarVolume || 0,
@@ -839,6 +866,8 @@ class OptionsAnalysisService {
             convictionRatio: e.convictionRatioAll || 0,
             totalCallDollarVolume: e.totalCallDollarVolumeAll || 0,
             totalPutDollarVolume: e.totalPutDollarVolumeAll || 0,
+            avgCallIVAll: e.avgCallIVAll || 0,
+            avgPutIVAll: e.avgPutIVAll || 0,
             contracts: [...(e.allCallContracts || []), ...(e.allPutContracts || [])].map(c => ({
               strike: c.strike, dollarVolume: c.dollarVolume, type: c.type,
               lastTradeDate: c.lastTradeDate || null
@@ -857,6 +886,7 @@ class OptionsAnalysisService {
           totalCallDollar: currentCallDollar,
           totalPutDollar: currentPutDollar,
           ratio: dollarConvictionRatio,
+          ivGap: currentIVGap,
           signal: volConvictionSignal,
           score: Math.round(trendPoints),
           maxScore: 15
@@ -1012,8 +1042,8 @@ class OptionsAnalysisService {
       .map(e => {
         const expDate = new Date(e.expirationDate);
         const daysToExpiry = Math.max(1, Math.round((expDate - now) / (1000 * 60 * 60 * 24)));
-        const callIV = e[ivCallKey] || e.atmCallIV || 0;
-        const putIV = e[ivPutKey] || e.atmPutIV || 0;
+        const callIV = e[ivCallKey] || 0;
+        const putIV = e[ivPutKey] || 0;
         const atmIV = (callIV + putIV) / 2;
         // Per-strike IV data for volatility smile drilldown
         const strikeIV = [

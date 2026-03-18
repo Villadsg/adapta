@@ -23,6 +23,8 @@ const OptionsAnalysisService = require('./src/services/optionsAnalysis');
 const PortfolioAnalysisService = require('./src/services/portfolioAnalysis');
 const articleExtractor = require('./src/services/articleExtractor');
 const newsScraper = require('./src/services/newsScraper');
+const TickerDiscoveryService = require('./src/services/tickerDiscovery');
+const ChronosHoldPeriodService = require('./src/services/chronosHoldPeriod');
 
 let mainWindow;
 let database;
@@ -30,6 +32,8 @@ let priceTracker;
 let stockAnalyzer;
 let optionsAnalyzer;
 let portfolioAnalyzer;
+let tickerDiscovery;
+let chronosHoldService;
 
 // Tab management
 const tabs = new Map(); // tabId -> BrowserView
@@ -58,6 +62,73 @@ function getExtractionBrowserView() {
     console.log('Created hidden BrowserView for article extraction');
   }
   return extractionBrowserView;
+}
+
+/**
+ * Fetch news headlines from Finviz for a given ticker.
+ * Uses the hidden extraction BrowserView to load the quote page and scrape the news table.
+ * @param {string} ticker
+ * @returns {Promise<Array<{date: string, time: string, headline: string, url: string}>>}
+ */
+async function fetchFinvizNews(ticker) {
+  const bv = getExtractionBrowserView();
+  const url = `https://finviz.com/quote.ashx?t=${encodeURIComponent(ticker)}&p=d`;
+
+  // Load page and wait for finish
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      bv.webContents.removeAllListeners('did-finish-load');
+      reject(new Error(`Timed out loading Finviz news for ${ticker}`));
+    }, 15000);
+
+    bv.webContents.once('did-finish-load', () => {
+      clearTimeout(timer);
+      resolve();
+    });
+
+    bv.webContents.loadURL(url).catch(err => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+
+  // Wait for JS-rendered content
+  await new Promise(r => setTimeout(r, 2000));
+
+  // Extract news rows from the news table
+  const headlines = await bv.webContents.executeJavaScript(`
+    (function() {
+      const rows = document.querySelectorAll('.body-table-news-wrapper tr, .news-table_wrapper tr, table.fullview-news-outer tr');
+      const results = [];
+      let currentDate = '';
+      for (const row of rows) {
+        const cells = row.querySelectorAll('td');
+        if (cells.length < 2) continue;
+        const dateCell = cells[0].innerText.trim();
+        const link = cells[1].querySelector('a');
+        if (!link) continue;
+        // Date cell shows date for first article of the day, blank for subsequent
+        if (dateCell.includes('-')) {
+          // Format like "Mar-13-26" or "Mar-13" — extract date and time
+          const parts = dateCell.split(/\\s+/);
+          currentDate = parts[0] || '';
+          var time = parts[1] || '';
+        } else {
+          var time = dateCell;
+        }
+        results.push({
+          date: currentDate,
+          time: time || '',
+          headline: link.innerText.trim(),
+          url: link.href || ''
+        });
+      }
+      return results;
+    })()
+  `);
+
+  console.log(`Finviz news: fetched ${headlines.length} headlines for ${ticker}`);
+  return headlines;
 }
 
 /**
@@ -155,6 +226,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
+    fullscreen: true,
     frame: false, // Remove default title bar
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -210,7 +282,7 @@ function updateBrowserViewBounds(browserView) {
 }
 
 // Create a new tab
-function createTab(url = 'https://finance.yahoo.com') {
+function createTab(url = 'https://finviz.com') {
   const tabId = nextTabId++;
 
   const browserView = new BrowserView({
@@ -1089,11 +1161,12 @@ ipcMain.handle('analyze-stock-events', async (event, ticker, options = {}) => {
       dataSource = 'auto',
       analyzeOptions = false,
       maxExpirations = 4,
-      computeOptimalHold = false
+      holdDays = 60,
+      fetchFundamentals = true,
     } = options;
 
     console.log(`\nAnalyzing stock events for ${ticker}...`);
-    console.log(`Options: benchmark=${benchmark}, days=${days}, minEvents=${minEvents}, dataSource=${dataSource}`);
+    console.log(`Options: benchmark=${benchmark}, days=${days}, minEvents=${minEvents}, dataSource=${dataSource}, fundamentals=${fetchFundamentals}`);
 
     // Run analysis pipeline
     const result = await stockAnalyzer.analyzeStock(ticker, {
@@ -1102,6 +1175,22 @@ ipcMain.handle('analyze-stock-events', async (event, ticker, options = {}) => {
       minEvents,
       dataSource,
     });
+
+    // Save prices to database for empirical hold computation
+    console.log(`\nSaving ${result.data.length} price bars to database...`);
+    for (const bar of result.data) {
+      await database.saveStockPrice(
+        ticker,
+        bar.date.toISOString().split('T')[0],
+        { open: bar.open, high: bar.high, low: bar.low, close: bar.close, volume: bar.volume },
+        'analysis'
+      );
+    }
+
+    // Save events to database (delete stale events within analysis window first)
+    const startDate = result.data[0].date.toISOString().split('T')[0];
+    const endDate = result.data[result.data.length - 1].date.toISOString().split('T')[0];
+    const saveResult = await database.saveStockEvents(ticker, result.events, benchmark, startDate, endDate);
 
     // Find related articles from existing DB for each event (fast, immediate)
     console.log(`\nFinding related articles for ${result.events.length} events...`);
@@ -1138,14 +1227,152 @@ ipcMain.handle('analyze-stock-events', async (event, ticker, options = {}) => {
       }
     }
 
-    // Compute optimal hold days (if enabled)
-    let optimalHoldData = null;
-    if (computeOptimalHold) {
+    // Compute empirical hold duration from accumulated events
+    let empiricalHoldData = null;
+    try {
+      empiricalHoldData = await stockAnalyzer.computeEmpiricalHold(database, holdDays);
+    } catch (holdErr) {
+      console.error('Empirical hold computation failed (non-fatal):', holdErr.message);
+    }
+
+    // Compute options-adjusted hold if options data available
+    if (empiricalHoldData && optionsData) {
       try {
-        optimalHoldData = await stockAnalyzer.computeOptimalHold(result, optionsData);
-      } catch (holdErr) {
-        console.error('Optimal hold computation failed (non-fatal):', holdErr.message);
+        const adjusted = await stockAnalyzer.computeOptionsAdjustedHold(database, holdDays, optionsData, ticker);
+        if (adjusted) {
+          empiricalHoldData.optionsAdjusted = adjusted;
+        }
+      } catch (adjErr) {
+        console.error('Options-adjusted hold failed (non-fatal):', adjErr.message);
       }
+    }
+
+    // Compute snapshot-based optimal hold if options data available
+    if (optionsData) {
+      try {
+        const snapshotHold = await stockAnalyzer.computeSnapshotOptimalHold(database, holdDays, optionsData);
+        if (snapshotHold) {
+          if (!empiricalHoldData) empiricalHoldData = {};
+          empiricalHoldData.snapshotOptimalHold = snapshotHold;
+        }
+      } catch (snapErr) {
+        console.error('Snapshot optimal hold failed (non-fatal):', snapErr.message);
+      }
+    }
+
+    // Compute Chronos-2 forecasted hold period
+    try {
+      const chronosHold = await chronosHoldService.computeChronosHold(ticker, {
+        maxForwardDays: holdDays,
+        optionsData,
+        priceData: result.data,
+      });
+      if (chronosHold) {
+        if (!empiricalHoldData) empiricalHoldData = {};
+        empiricalHoldData.chronosHold = chronosHold;
+      }
+    } catch (chronosErr) {
+      console.error('Chronos hold computation failed (non-fatal):', chronosErr.message);
+    }
+
+    // Fetch current day quote and compute event signal (non-fatal)
+    let currentQuote = null;
+    try {
+      currentQuote = await priceTracker.getQuoteSummary(ticker);
+
+      // Compute today's event signal if we have the necessary fields
+      if (currentQuote && currentQuote.open && currentQuote.previousClose && currentQuote.volume) {
+        const gap = Math.abs(((currentQuote.open - currentQuote.previousClose) / currentQuote.previousClose) * 100);
+        const todayProduct = currentQuote.volume * gap;
+
+        // Get threshold and percentile from analysis data
+        const allProducts = result.data
+          .map(b => b.volumeGapProduct ?? 0)
+          .filter(p => !isNaN(p) && p > 0)
+          .sort((a, b) => a - b);
+        const eventThreshold = result.events.length > 0
+          ? Math.min(...result.events.map(e => e.volumeGapProduct ?? 0))
+          : 0;
+        const belowCount = allProducts.filter(p => p <= todayProduct).length;
+        const percentile = allProducts.length > 0 ? (belowCount / allProducts.length) * 100 : 0;
+
+        // Compute residual gap using regression + benchmark quote
+        let residualGap = null;
+        try {
+          const reg = result.stats.regression;
+          if (reg) {
+            const benchQuote = await priceTracker.getQuoteSummary(benchmark);
+            if (benchQuote && benchQuote.previousClose) {
+              const stockReturn = (currentQuote.price - currentQuote.previousClose) / currentQuote.previousClose;
+              const marketReturn = (benchQuote.price - benchQuote.previousClose) / benchQuote.previousClose;
+              residualGap = Math.abs((stockReturn - (reg.slope * marketReturn + reg.intercept)) * 100);
+            }
+          }
+        } catch (benchErr) {
+          console.error('Benchmark quote fetch for residual failed (non-fatal):', benchErr.message);
+        }
+
+        // Classify what today would look like as an event
+        let classification = null;
+        if (currentQuote.previousClose && currentQuote.open) {
+          const gapNegative = currentQuote.previousClose > currentQuote.open;
+          const intradayPositive = currentQuote.price > currentQuote.open;
+          const closedBelowPrevClose = currentQuote.price < currentQuote.previousClose;
+
+          if (gapNegative) {
+            classification = !closedBelowPrevClose ? 'surprising_positive'
+              : intradayPositive ? 'negative_anticipated' : 'surprising_negative';
+          } else {
+            classification = closedBelowPrevClose ? 'surprising_negative'
+              : intradayPositive ? 'surprising_positive' : 'positive_anticipated';
+          }
+        }
+
+        // Compute average event volume for comparison
+        const avgEventVolume = result.events.length > 0
+          ? result.events.reduce((sum, e) => sum + e.volume, 0) / result.events.length
+          : 0;
+
+        currentQuote.eventSignal = {
+          gap,
+          todayProduct,
+          threshold: eventThreshold,
+          percentile,
+          residualGap,
+          isAboveThreshold: todayProduct >= eventThreshold && eventThreshold > 0,
+          classification,
+          avgEventVolume,
+        };
+
+        console.log(`Today's event signal: gap=${gap.toFixed(2)}%, product=${todayProduct.toFixed(0)}, threshold=${eventThreshold.toFixed(0)}, percentile=${percentile.toFixed(1)}%`);
+      }
+    } catch (quoteErr) {
+      console.error('Current quote fetch failed (non-fatal):', quoteErr.message);
+    }
+
+    // Fetch quarterly fundamentals (non-fatal)
+    let fundamentalsData = null;
+    if (fetchFundamentals) {
+      try {
+        fundamentalsData = await stockAnalyzer.fetchFundamentals(ticker);
+      } catch (fundErr) {
+        console.error('Fundamentals fetch failed (non-fatal):', fundErr.message);
+      }
+    }
+
+    // Fetch Finviz news if any event occurred in the last 3 days
+    let finvizNews = null;
+    try {
+      const now = new Date();
+      const threeDaysAgo = new Date(now);
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+      const hasRecentEvent = result.events.some(e => new Date(e.date) >= threeDaysAgo);
+      if (hasRecentEvent) {
+        console.log('Recent event detected — fetching Finviz news headlines...');
+        finvizNews = await fetchFinvizNews(ticker);
+      }
+    } catch (newsErr) {
+      console.error('Finviz news fetch failed (non-fatal):', newsErr.message);
     }
 
     // Generate HTML report with events and existing articles (return immediately)
@@ -1154,7 +1381,10 @@ ipcMain.handle('analyze-stock-events', async (event, ticker, options = {}) => {
       result.events,
       ticker,
       optionsData,
-      optimalHoldData
+      empiricalHoldData,
+      currentQuote,
+      fundamentalsData,
+      finvizNews
     );
 
     console.log(`\nAnalysis complete: ${result.events.length} events found`);
@@ -1167,6 +1397,15 @@ ipcMain.handle('analyze-stock-events', async (event, ticker, options = {}) => {
     };
   } catch (error) {
     console.error('Error analyzing stock events:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-analyzed-tickers', async () => {
+  try {
+    const tickers = await database.getAnalyzedTickers();
+    return { success: true, tickers };
+  } catch (error) {
     return { success: false, error: error.message };
   }
 });
@@ -1207,6 +1446,19 @@ ipcMain.handle('analyze-diversification', async (event, params) => {
     return { success: true, html, result };
   } catch (error) {
     console.error('Diversification analysis error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('discover-candidates', async (event, holdingTickers) => {
+  try {
+    console.log('\nDiscovering candidate tickers from Finviz...');
+    const browserView = getExtractionBrowserView();
+    const result = await tickerDiscovery.discoverCandidates(browserView, holdingTickers);
+    console.log(`Discovered ${result.stats.total} candidates (${result.stats.screenerTickers} from screener, ${result.stats.holdingRelatedTickers} from holdings)`);
+    return { success: true, ...result };
+  } catch (error) {
+    console.error('Ticker discovery error:', error);
     return { success: false, error: error.message };
   }
 });
@@ -1279,6 +1531,11 @@ app.whenReady().then(async () => {
   // Initialize options analyzer
   optionsAnalyzer = new OptionsAnalysisService(database);
   portfolioAnalyzer = new PortfolioAnalysisService(database, stockAnalyzer, optionsAnalyzer);
+  tickerDiscovery = new TickerDiscoveryService();
+  chronosHoldService = new ChronosHoldPeriodService(database);
+
+  // Inject options analyzer into price tracker for daily snapshot collection
+  priceTracker.setOptionsAnalyzer(optionsAnalyzer);
 
   // Inject browser-based extractor into articleExtractor for JavaScript-rendered pages
   articleExtractor.setBrowserExtractor(extractArticleViaBrowser);

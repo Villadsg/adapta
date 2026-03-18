@@ -158,6 +158,40 @@ class ArticleDatabase {
       )
     `;
 
+    const createStockEventsSequence = `
+      CREATE SEQUENCE IF NOT EXISTS stock_events_id_seq START 1
+    `;
+
+    const createStockEventsTable = `
+      CREATE TABLE IF NOT EXISTS stock_events (
+        id INTEGER PRIMARY KEY DEFAULT nextval('stock_events_id_seq'),
+        ticker TEXT NOT NULL,
+        event_date DATE NOT NULL,
+        classification TEXT,
+        strength DECIMAL(8,4),
+        residual_return DECIMAL(8,4),
+        volume_gap_product DECIMAL(18,4),
+        open DECIMAL(10,2),
+        close DECIMAL(10,2),
+        high DECIMAL(10,2),
+        low DECIMAL(10,2),
+        volume BIGINT,
+        benchmark TEXT,
+        analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(ticker, event_date)
+      )
+    `;
+
+    const createEventOptionsFeaturesTable = `
+      CREATE TABLE IF NOT EXISTS event_options_features (
+        event_id INTEGER UNIQUE,
+        snapshot_date TIMESTAMP,
+        snapshot_lag_days INTEGER,
+        feature_vector FLOAT[25],
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+
     const createOptionsSnapshotsSequence = `
       CREATE SEQUENCE IF NOT EXISTS options_snapshots_id_seq START 1
     `;
@@ -294,6 +328,27 @@ class ArticleDatabase {
                                       return;
                                     }
 
+                                    // Create stock_events sequence
+                                    this.connection.run(createStockEventsSequence, (err) => {
+                                      if (err) {
+                                        reject(err);
+                                        return;
+                                      }
+
+                                      // Create stock_events table
+                                      this.connection.run(createStockEventsTable, (err) => {
+                                        if (err) {
+                                          reject(err);
+                                          return;
+                                        }
+
+                                        // Create event_options_features table
+                                        this.connection.run(createEventOptionsFeaturesTable, (err) => {
+                                          if (err) {
+                                            reject(err);
+                                            return;
+                                          }
+
                             // Initialize default settings
                             this.initializeSettings()
                               .then(() => {
@@ -308,6 +363,9 @@ class ArticleDatabase {
                                   .catch(reject);
                               })
                               .catch(reject);
+                                        });
+                                      });
+                                    });
                                   });
                                 });
                               });
@@ -345,7 +403,11 @@ class ArticleDatabase {
       'CREATE INDEX IF NOT EXISTS idx_watched_tickers_ticker ON watched_tickers(ticker)',
       'CREATE INDEX IF NOT EXISTS idx_options_snapshots_ticker ON options_snapshots(ticker)',
       'CREATE INDEX IF NOT EXISTS idx_options_snapshots_date ON options_snapshots(snapshot_date)',
-      'CREATE INDEX IF NOT EXISTS idx_options_snapshots_ticker_date ON options_snapshots(ticker, snapshot_date)'
+      'CREATE INDEX IF NOT EXISTS idx_options_snapshots_ticker_date ON options_snapshots(ticker, snapshot_date)',
+      'CREATE INDEX IF NOT EXISTS idx_stock_events_ticker ON stock_events(ticker)',
+      'CREATE INDEX IF NOT EXISTS idx_stock_events_date ON stock_events(event_date)',
+      'CREATE INDEX IF NOT EXISTS idx_stock_events_classification ON stock_events(classification)',
+      'CREATE INDEX IF NOT EXISTS idx_event_options_features_event_id ON event_options_features(event_id)'
     ];
 
     for (const indexSQL of indexes) {
@@ -390,6 +452,105 @@ class ArticleDatabase {
 
       // Migration 7: Recreate portfolio_holdings with correct schema if shares column missing
       await this.recreatePortfolioHoldingsIfNeeded();
+
+      // Migration 8: Create stock_events table if not exists (idempotent)
+      await new Promise((resolve, reject) => {
+        this.connection.run(`
+          CREATE SEQUENCE IF NOT EXISTS stock_events_id_seq START 1
+        `, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      await new Promise((resolve, reject) => {
+        this.connection.run(`
+          CREATE TABLE IF NOT EXISTS stock_events (
+            id INTEGER PRIMARY KEY DEFAULT nextval('stock_events_id_seq'),
+            ticker TEXT NOT NULL,
+            event_date DATE NOT NULL,
+            classification TEXT,
+            strength DECIMAL(8,4),
+            residual_return DECIMAL(8,4),
+            volume_gap_product DECIMAL(18,4),
+            open DECIMAL(10,2),
+            close DECIMAL(10,2),
+            high DECIMAL(10,2),
+            low DECIMAL(10,2),
+            volume BIGINT,
+            benchmark TEXT,
+            analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(ticker, event_date)
+          )
+        `, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+
+      // Migration 9: Create event_options_features table if not exists
+      await new Promise((resolve, reject) => {
+        this.connection.run(`
+          CREATE TABLE IF NOT EXISTS event_options_features (
+            event_id INTEGER UNIQUE,
+            snapshot_date TIMESTAMP,
+            snapshot_lag_days INTEGER,
+            feature_vector FLOAT[25],
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )
+        `, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+
+      // Migration 10: Clear stale 23-element cached vectors and fix column type
+      await new Promise((resolve, reject) => {
+        this.connection.run(`DELETE FROM event_options_features`, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      await new Promise((resolve, reject) => {
+        this.connection.run(`ALTER TABLE event_options_features ALTER COLUMN feature_vector TYPE FLOAT[25]`, (err) => {
+          // Ignore error if column already correct type
+          resolve();
+        });
+      });
+
+      // Migration 11: Create snapshot_options_features cache table
+      await new Promise((resolve, reject) => {
+        this.connection.run(`
+          CREATE TABLE IF NOT EXISTS snapshot_options_features (
+            ticker TEXT NOT NULL,
+            snapshot_date TIMESTAMP NOT NULL,
+            feature_vector FLOAT[25],
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(ticker, snapshot_date)
+          )
+        `, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+
+      // Migration 12: Clear stale 19-element cached vectors (now 25-element with dollar volumes)
+      await new Promise((resolve, reject) => {
+        this.connection.run(`DELETE FROM event_options_features`, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      await new Promise((resolve, reject) => {
+        this.connection.run(`DELETE FROM snapshot_options_features`, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      await new Promise((resolve, reject) => {
+        this.connection.run(`ALTER TABLE event_options_features ALTER COLUMN feature_vector TYPE FLOAT[25]`, (err) => {
+          resolve(); // Ignore error if already correct type
+        });
+      });
 
       console.log('✓ Database migrations completed');
     } catch (error) {
@@ -1452,7 +1613,7 @@ class ArticleDatabase {
         low = $5,
         close = $6,
         volume = $7,
-        fetched_at = CURRENT_TIMESTAMP
+        fetched_at = now()
       RETURNING id
     `;
 
@@ -1480,6 +1641,496 @@ class ArticleDatabase {
           });
         }
       );
+    });
+  }
+
+  // ===== Stock Events Methods =====
+
+  /**
+   * Save stock events to database. Deletes existing events for this ticker
+   * within the given date range first, then inserts the fresh set.
+   * @param {string} ticker - Stock ticker symbol
+   * @param {Array} events - Events from analyzeStock()
+   * @param {string} benchmark - Benchmark ticker used in analysis
+   * @param {string} startDate - Start of analysis window (YYYY-MM-DD)
+   * @param {string} endDate - End of analysis window (YYYY-MM-DD)
+   * @returns {Promise<number>} Number of events saved
+   */
+  async saveStockEvents(ticker, events, benchmark = 'SPY', startDate = null, endDate = null) {
+    // Delete existing events within the analysis date range so stale events don't persist
+    if (startDate && endDate) {
+      await new Promise((resolve, reject) => {
+        this.connection.run(
+          'DELETE FROM stock_events WHERE ticker = $1 AND event_date >= $2 AND event_date <= $3',
+          ticker.toUpperCase(), startDate, endDate,
+          (err) => { if (err) reject(err); else resolve(); }
+        );
+      });
+    }
+    const sql = `
+      INSERT INTO stock_events (ticker, event_date, classification, strength, residual_return,
+        volume_gap_product, open, close, high, low, volume, benchmark)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      ON CONFLICT (ticker, event_date) DO UPDATE SET
+        classification = $3,
+        strength = $4,
+        residual_return = $5,
+        volume_gap_product = $6,
+        open = $7,
+        close = $8,
+        high = $9,
+        low = $10,
+        volume = $11,
+        benchmark = $12,
+        analyzed_at = now()
+      RETURNING id
+    `;
+
+    let saved = 0;
+    const savedEventIds = [];
+    for (const event of events) {
+      const dateStr = event.dateStr || (event.date ? event.date.toISOString().split('T')[0] : null);
+      if (!dateStr) continue;
+
+      const result = await new Promise((resolve, reject) => {
+        this.connection.all(
+          sql,
+          ticker.toUpperCase(),
+          dateStr,
+          event.classification || event.earningsClassification || 'unknown',
+          event.strength || event.eventStrength || 0,
+          event.residualReturn || 0,
+          event.volumeGapProduct || 0,
+          event.open || 0,
+          event.close || 0,
+          event.high || 0,
+          event.low || 0,
+          event.volume || 0,
+          benchmark.toUpperCase(),
+          (err, rows) => {
+            if (err) reject(err);
+            else { saved++; resolve(rows); }
+          }
+        );
+      });
+      if (result && result[0]?.id) {
+        savedEventIds.push({ eventId: result[0].id, dateStr });
+      }
+    }
+
+    console.log(`Saved ${saved} events for ${ticker} to stock_events`);
+    return { saved, eventIds: savedEventIds };
+  }
+
+  /**
+   * Get distinct tickers with their last analysis timestamp
+   * @returns {Promise<Array>} Rows of {ticker, last_analyzed}
+   */
+  async getAnalyzedTickers() {
+    return new Promise((resolve, reject) => {
+      this.connection.all(
+        `SELECT ticker, MAX(analyzed_at) AS last_analyzed
+         FROM stock_events
+         GROUP BY ticker
+         ORDER BY MAX(analyzed_at) DESC`,
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows || []);
+        }
+      );
+    });
+  }
+
+  /**
+   * Get total count of events in stock_events table
+   * @returns {Promise<number>} Total event count
+   */
+  async getTotalEventCount() {
+    return new Promise((resolve, reject) => {
+      this.connection.all(
+        'SELECT COUNT(*)::INTEGER AS cnt FROM stock_events',
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows[0]?.cnt || 0);
+        }
+      );
+    });
+  }
+
+  /**
+   * Get aggregate post-event forward returns across all stored events
+   * @param {number} maxForwardDays - Maximum forward days to compute (default 30)
+   * @param {number} minEvents - Minimum events per group to include (default 3)
+   * @returns {Promise<Array>} Rows of {classification, day, n_events, median_return, p25_return, p75_return}
+   */
+  async getAggregatePostEventReturns(maxForwardDays = 30, minEvents = 3) {
+    const sql = `
+      WITH event_base AS (
+        SELECT e.id AS event_id, e.ticker, e.event_date, e.classification,
+               e.residual_return, e.strength, sp.close AS event_close
+        FROM stock_events e
+        JOIN (
+          SELECT ticker, date, close,
+            ROW_NUMBER() OVER (PARTITION BY ticker, date ORDER BY fetched_at DESC) AS rn
+          FROM stock_prices
+        ) sp ON sp.ticker = e.ticker AND sp.date = e.event_date AND sp.rn = 1
+      ),
+      forward AS (
+        SELECT eb.event_id, eb.classification,
+          ROW_NUMBER() OVER (PARTITION BY eb.event_id ORDER BY sp.date) AS day_offset,
+          (sp.close - eb.event_close) / eb.event_close AS cum_return
+        FROM event_base eb
+        JOIN (
+          SELECT ticker, date, close,
+            ROW_NUMBER() OVER (PARTITION BY ticker, date ORDER BY fetched_at DESC) AS rn
+          FROM stock_prices
+        ) sp ON sp.ticker = eb.ticker AND sp.date > eb.event_date AND sp.rn = 1
+      ),
+      -- Only keep events that have at least maxForwardDays of forward data
+      -- so every day offset uses the same stable set of events
+      complete_events AS (
+        SELECT event_id
+        FROM forward
+        GROUP BY event_id
+        HAVING MAX(day_offset) >= $1
+      )
+      SELECT f.classification, f.day_offset AS day,
+        COUNT(*)::INTEGER AS n_events,
+        MEDIAN(f.cum_return) AS median_return,
+        QUANTILE_CONT(f.cum_return, 0.25) AS p25_return,
+        QUANTILE_CONT(f.cum_return, 0.75) AS p75_return
+      FROM forward f
+      INNER JOIN complete_events ce ON ce.event_id = f.event_id
+      WHERE f.day_offset <= $1
+      GROUP BY f.classification, f.day_offset
+      HAVING COUNT(*) >= $2
+      ORDER BY f.classification, f.day_offset
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, maxForwardDays, minEvents, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  /**
+   * Get count of distinct tickers in stock_events
+   * @returns {Promise<number>} Number of distinct tickers
+   */
+  async getDistinctEventTickers() {
+    return new Promise((resolve, reject) => {
+      this.connection.all(
+        'SELECT COUNT(DISTINCT ticker)::INTEGER AS cnt FROM stock_events',
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows[0]?.cnt || 0);
+        }
+      );
+    });
+  }
+
+  // ===== Event Options Features Methods =====
+
+  /**
+   * Save options feature vector associated with an event
+   * @param {number} eventId - stock_events.id
+   * @param {string} snapshotDate - ISO timestamp of the options snapshot
+   * @param {number} lagDays - Days between event and snapshot
+   * @param {Array<number>} featureVector - 22-element feature vector
+   */
+  async saveEventOptionsFeatures(eventId, snapshotDate, lagDays, featureVector) {
+    // Convert Float64Array to DuckDB array format (same pattern as saveArticle)
+    const fvValue = featureVector ? `[${Array.from(featureVector).join(',')}]` : null;
+
+    const sql = `
+      INSERT INTO event_options_features (event_id, snapshot_date, snapshot_lag_days, feature_vector)
+      VALUES ($1, $2, $3, $4::FLOAT[25])
+      ON CONFLICT (event_id) DO UPDATE SET
+        snapshot_date = $2,
+        snapshot_lag_days = $3,
+        feature_vector = $4::FLOAT[25],
+        created_at = now()
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.run(
+        sql,
+        eventId,
+        snapshotDate,
+        lagDays,
+        fvValue,
+        (err) => {
+          if (err) reject(err);
+          else resolve();
+        }
+      );
+    });
+  }
+
+  /**
+   * Get all event options features with classification (for KNN matching)
+   * @returns {Promise<Array>} Rows with event_id, classification, feature_vector, snapshot_lag_days
+   */
+  async getEventOptionsFeatures() {
+    const sql = `
+      SELECT eof.event_id, e.classification, eof.feature_vector, eof.snapshot_lag_days
+      FROM event_options_features eof
+      JOIN stock_events e ON e.id = eof.event_id
+      WHERE eof.feature_vector IS NOT NULL
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  /**
+   * Get per-event, per-day forward returns (not aggregated)
+   * @param {Array<number>} eventIds - List of event IDs
+   * @param {number} maxForwardDays - Maximum forward days
+   * @returns {Promise<Array>} Rows of { event_id, classification, day, cum_return }
+   */
+  async getPerEventForwardReturns(eventIds, maxForwardDays = 60) {
+    if (!eventIds || eventIds.length === 0) return [];
+
+    const idList = eventIds.join(',');
+    const sql = `
+      WITH event_base AS (
+        SELECT e.id AS event_id, e.ticker, e.event_date, e.classification,
+               sp.close AS event_close
+        FROM stock_events e
+        JOIN (
+          SELECT ticker, date, close,
+            ROW_NUMBER() OVER (PARTITION BY ticker, date ORDER BY fetched_at DESC) AS rn
+          FROM stock_prices
+        ) sp ON sp.ticker = e.ticker AND sp.date = e.event_date AND sp.rn = 1
+        WHERE e.id IN (${idList})
+      ),
+      forward AS (
+        SELECT eb.event_id, eb.classification,
+          ROW_NUMBER() OVER (PARTITION BY eb.event_id ORDER BY sp.date) AS day_offset,
+          (sp.close - eb.event_close) / eb.event_close AS cum_return
+        FROM event_base eb
+        JOIN (
+          SELECT ticker, date, close,
+            ROW_NUMBER() OVER (PARTITION BY ticker, date ORDER BY fetched_at DESC) AS rn
+          FROM stock_prices
+        ) sp ON sp.ticker = eb.ticker AND sp.date > eb.event_date AND sp.rn = 1
+      )
+      SELECT event_id, classification, day_offset AS day, cum_return
+      FROM forward
+      WHERE day_offset <= ${maxForwardDays}
+      ORDER BY event_id, day_offset
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, (err, rows) => {
+        if (err) reject(err);
+        else resolve((rows || []).map(r => ({
+          event_id: Number(r.event_id),
+          classification: r.classification,
+          day: Number(r.day),
+          cum_return: Number(r.cum_return),
+        })));
+      });
+    });
+  }
+
+  /**
+   * Find nearest options snapshot date for a ticker relative to an event date
+   * @param {string} ticker - Stock ticker
+   * @param {string} eventDate - Event date (YYYY-MM-DD)
+   * @returns {Promise<Object|null>} { snapshotDate, lagDays } or null
+   */
+  async findNearestOptionsSnapshot(ticker, eventDate) {
+    const sql = `
+      SELECT snapshot_date,
+        DATEDIFF('day', snapshot_date::DATE, $2::DATE) AS lag_days
+      FROM options_snapshots
+      WHERE ticker = $1
+        AND snapshot_date <= $2::DATE
+      ORDER BY lag_days ASC
+      LIMIT 1
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ticker.toUpperCase(), eventDate, (err, rows) => {
+        if (err) reject(err);
+        else if (rows && rows.length > 0) {
+          resolve({
+            snapshotDate: rows[0].snapshot_date,
+            lagDays: Number(rows[0].lag_days),
+          });
+        } else {
+          resolve(null);
+        }
+      });
+    });
+  }
+
+  /**
+   * Get all options snapshot rows for a specific (ticker, snapshot_date)
+   * @param {string} ticker - Stock ticker
+   * @param {string} snapshotDate - ISO date/timestamp of the snapshot
+   * @returns {Promise<Array>} Per-expiration rows sorted by expiration_date ASC
+   */
+  async getOptionsSnapshotsByDate(ticker, snapshotDate) {
+    const sql = `
+      SELECT expiration_date,
+             total_call_dollar_volume, total_put_dollar_volume,
+             total_call_dollar_volume_all, total_put_dollar_volume_all,
+             avg_call_iv, avg_put_iv, avg_call_iv_all, avg_put_iv_all,
+             atm_call_iv, atm_put_iv
+      FROM options_snapshots
+      WHERE ticker = $1 AND snapshot_date::DATE = $2::DATE
+      ORDER BY expiration_date ASC
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ticker.toUpperCase(), snapshotDate, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  /**
+   * Get all stock events with optional cached feature vectors (LEFT JOIN)
+   * @returns {Promise<Array>} Rows with event_id, classification, ticker, event_date, feature_vector, snapshot_lag_days
+   */
+  async getAllEventsWithOptionalFeatures() {
+    const sql = `
+      SELECT e.id AS event_id, e.classification, e.ticker, e.event_date,
+             eof.feature_vector, eof.snapshot_lag_days
+      FROM stock_events e
+      LEFT JOIN event_options_features eof ON eof.event_id = e.id
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  // ===== Snapshot Options Features Methods =====
+
+  /**
+   * Get all unique (ticker, snapshot_date) LEFT JOINed with cached feature vectors
+   * @returns {Promise<Array>} Rows with ticker, snapshot_date, feature_vector
+   */
+  async getAllSnapshotDatesWithOptionalFeatures() {
+    const sql = `
+      SELECT DISTINCT os.ticker, os.snapshot_date::DATE AS snapshot_date, sof.feature_vector
+      FROM options_snapshots os
+      LEFT JOIN snapshot_options_features sof
+        ON sof.ticker = os.ticker AND sof.snapshot_date::DATE = os.snapshot_date::DATE
+      ORDER BY os.ticker, os.snapshot_date
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  /**
+   * Upsert cached feature vector for a snapshot
+   * @param {string} ticker - Stock ticker
+   * @param {string} snapshotDate - ISO date/timestamp
+   * @param {Float64Array|Array} featureVector - 19-element feature vector
+   */
+  async saveSnapshotOptionsFeatures(ticker, snapshotDate, featureVector) {
+    const fvValue = featureVector ? `[${Array.from(featureVector).join(',')}]` : null;
+
+    const sql = `
+      INSERT INTO snapshot_options_features (ticker, snapshot_date, feature_vector)
+      VALUES ($1, $2::DATE, $3::FLOAT[25])
+      ON CONFLICT (ticker, snapshot_date) DO UPDATE SET
+        feature_vector = $3::FLOAT[25],
+        created_at = now()
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.run(
+        sql,
+        ticker.toUpperCase(),
+        snapshotDate,
+        fvValue,
+        (err) => {
+          if (err) reject(err);
+          else resolve();
+        }
+      );
+    });
+  }
+
+  /**
+   * Get forward cumulative returns from arbitrary (ticker, date) pairs
+   * @param {Array<Object>} dateEntries - [{id, ticker, snapshotDate}]
+   * @param {number} maxForwardDays - Maximum forward days
+   * @returns {Promise<Array>} Rows of { id, day, cum_return }
+   */
+  async getForwardReturnsFromDates(dateEntries, maxForwardDays = 60) {
+    if (!dateEntries || dateEntries.length === 0) return [];
+
+    // Build VALUES list for CTE (ensure dates are YYYY-MM-DD)
+    const toISO = (d) => {
+      const dt = new Date(d);
+      return dt.toISOString().split('T')[0];
+    };
+    const valuesList = dateEntries.map(e =>
+      `(${e.id}, '${e.ticker.replace(/'/g, "''")}', '${toISO(e.snapshotDate)}'::DATE)`
+    ).join(', ');
+
+    const sql = `
+      WITH entries(entry_id, ticker, snap_date) AS (
+        VALUES ${valuesList}
+      ),
+      entry_base AS (
+        SELECT e.entry_id, e.ticker, e.snap_date, sp.close AS base_close
+        FROM entries e
+        JOIN (
+          SELECT ticker, date, close,
+            ROW_NUMBER() OVER (PARTITION BY ticker, date ORDER BY fetched_at DESC) AS rn
+          FROM stock_prices
+        ) sp ON sp.ticker = e.ticker AND sp.date <= e.snap_date AND sp.rn = 1
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY e.entry_id ORDER BY sp.date DESC) = 1
+      ),
+      forward AS (
+        SELECT eb.entry_id,
+          ROW_NUMBER() OVER (PARTITION BY eb.entry_id ORDER BY sp.date) AS day_offset,
+          (sp.close - eb.base_close) / eb.base_close AS cum_return
+        FROM entry_base eb
+        JOIN (
+          SELECT ticker, date, close,
+            ROW_NUMBER() OVER (PARTITION BY ticker, date ORDER BY fetched_at DESC) AS rn
+          FROM stock_prices
+        ) sp ON sp.ticker = eb.ticker AND sp.date > eb.snap_date AND sp.rn = 1
+      )
+      SELECT entry_id AS id, day_offset AS day, cum_return
+      FROM forward
+      WHERE day_offset <= ${maxForwardDays}
+      ORDER BY entry_id, day_offset
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, (err, rows) => {
+        if (err) reject(err);
+        else resolve((rows || []).map(r => ({
+          id: Number(r.id),
+          day: Number(r.day),
+          cum_return: Number(r.cum_return),
+        })));
+      });
     });
   }
 

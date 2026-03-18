@@ -15,6 +15,15 @@ class PriceTrackingService {
     this.useBun = options.useBun !== false; // Default to true, set false to disable
     this.bunChecked = false;
     this.bunAvailable = false;
+    this.optionsAnalyzer = null;
+  }
+
+  /**
+   * Set options analyzer for daily snapshot collection
+   * @param {Object} analyzer - OptionsAnalysisService instance
+   */
+  setOptionsAnalyzer(analyzer) {
+    this.optionsAnalyzer = analyzer;
   }
 
   /**
@@ -247,8 +256,66 @@ class PriceTrackingService {
       }
 
       console.log('✓ Price polling complete\n');
+
+      // Collect daily options snapshots after price polling
+      await this.pollOptionsSnapshots();
     } catch (error) {
       console.error('Error in pollPrices:', error);
+    }
+  }
+
+  /**
+   * Poll options snapshots for watched tickers (daily, after 4:15 PM ET)
+   * Collects options snapshots so events can be matched to nearby snapshots
+   */
+  async pollOptionsSnapshots() {
+    if (!this.optionsAnalyzer) return;
+
+    // Check time: only run after 4:15 PM ET on weekdays
+    const now = new Date();
+    const etTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const hours = etTime.getHours();
+    const minutes = etTime.getMinutes();
+    const dayOfWeek = etTime.getDay();
+
+    if (dayOfWeek === 0 || dayOfWeek === 6) return; // Weekend
+    if (hours < 16 || (hours === 16 && minutes < 15)) return; // Before 4:15 PM ET
+
+    try {
+      const watchedTickers = await this.database.getWatchedTickers(true);
+      if (watchedTickers.length === 0) return;
+
+      console.log(`\n📊 Polling options snapshots for ${watchedTickers.length} tickers...`);
+
+      for (const { ticker } of watchedTickers) {
+        try {
+          // Check if we already have today's snapshot
+          const latest = await this.database.getLatestOptionsSnapshot(ticker);
+          if (latest && latest.length > 0) {
+            const latestDate = new Date(latest[0].snapshot_date).toISOString().split('T')[0];
+            const todayDate = etTime.toISOString().split('T')[0];
+            if (latestDate === todayDate) {
+              console.log(`  ✓ ${ticker}: Already have today's snapshot`);
+              continue;
+            }
+          }
+
+          const optionsData = await this.optionsAnalyzer.analyzeCurrentOptions(ticker, { maxExpirations: 4 });
+          if (optionsData) {
+            await this.optionsAnalyzer.saveSnapshot(optionsData);
+            console.log(`  ✓ ${ticker}: Options snapshot saved`);
+          }
+        } catch (err) {
+          console.log(`  ⚠️  ${ticker}: Options snapshot failed: ${err.message}`);
+        }
+
+        // Rate limiting: wait 3 seconds between tickers
+        await this.sleep(3000);
+      }
+
+      console.log('✓ Options snapshot polling complete\n');
+    } catch (error) {
+      console.error('Error in pollOptionsSnapshots:', error);
     }
   }
 
@@ -258,26 +325,55 @@ class PriceTrackingService {
    * @returns {Promise<Object>} Quote data
    */
   async getQuoteSummary(ticker) {
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${ticker}`;
+    // Use the chart endpoint (same one used for historical data) because
+    // /v7/finance/quote requires a crumb+cookie and rejects bare requests.
+    const period2 = Math.floor(Date.now() / 1000);
+    const period1 = period2 - 5 * 24 * 60 * 60; // last 5 days
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?period1=${period1}&period2=${period2}&interval=1d`;
 
     try {
       const data = await this.fetchJSON(url);
 
-      if (!data || !data.quoteResponse || !data.quoteResponse.result || data.quoteResponse.result.length === 0) {
+      if (!data || !data.chart || !data.chart.result || data.chart.result.length === 0) {
         throw new Error(`No quote data found for ${ticker}`);
       }
 
-      const quote = data.quoteResponse.result[0];
+      const chartResult = data.chart.result[0];
+      const meta = chartResult.meta;
+      const timestamps = chartResult.timestamp || [];
+      const quotes = chartResult.indicators?.quote?.[0] || {};
+
+      // Latest bar gives us today's OHLCV (partial if market is open)
+      const lastIdx = timestamps.length - 1;
+      const todayOpen = lastIdx >= 0 ? quotes.open?.[lastIdx] : null;
+      const todayHigh = lastIdx >= 0 ? quotes.high?.[lastIdx] : null;
+      const todayLow = lastIdx >= 0 ? quotes.low?.[lastIdx] : null;
+      const todayClose = lastIdx >= 0 ? quotes.close?.[lastIdx] : null;
+      const todayVolume = lastIdx >= 0 ? quotes.volume?.[lastIdx] : null;
+
+      // previousClose: use the close of the second-to-last bar, or meta field
+      const previousClose = lastIdx >= 1
+        ? quotes.close?.[lastIdx - 1]
+        : (meta.chartPreviousClose ?? meta.previousClose ?? null);
+
+      const price = meta.regularMarketPrice ?? todayClose;
+      const prevCl = meta.previousClose ?? previousClose;
+      const change = price && prevCl ? price - prevCl : 0;
+      const changePercent = prevCl ? (change / prevCl) * 100 : 0;
 
       return {
-        ticker: quote.symbol,
-        price: quote.regularMarketPrice,
-        change: quote.regularMarketChange,
-        changePercent: quote.regularMarketChangePercent,
-        volume: quote.regularMarketVolume,
-        marketCap: quote.marketCap,
-        shortName: quote.shortName,
-        longName: quote.longName
+        ticker: meta.symbol || ticker,
+        price,
+        change,
+        changePercent,
+        volume: todayVolume ?? meta.regularMarketVolume ?? 0,
+        marketCap: null, // not available from chart endpoint
+        shortName: null,
+        longName: null,
+        open: todayOpen ?? null,
+        dayHigh: todayHigh ?? null,
+        dayLow: todayLow ?? null,
+        previousClose: previousClose ?? prevCl ?? null
       };
     } catch (error) {
       console.error(`Error fetching quote for ${ticker}:`, error);
@@ -313,7 +409,12 @@ class PriceTrackingService {
    */
   fetchJSONNode(url) {
     return new Promise((resolve, reject) => {
-      https.get(url, (res) => {
+      const opts = {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+        }
+      };
+      https.get(url, opts, (res) => {
         let data = '';
 
         res.on('data', (chunk) => {

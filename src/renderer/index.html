@@ -45,62 +45,72 @@
 
   <!-- Stock Analysis Modal -->
   <div id="analysis-modal" class="modal" style="display: none;">
-    <div class="modal-content">
+    <div class="modal-content modal-content-wide">
       <h3>Analyze Stock Events</h3>
       <p>Configure analysis parameters for price events.</p>
-      <div class="modal-form">
-        <div class="form-row">
-          <label for="analysis-ticker-input">Stock Ticker</label>
-          <input type="text" id="analysis-ticker-input" placeholder="e.g., NVDA, AAPL, TSLA" autofocus />
-        </div>
-        <div class="form-row">
-          <label for="analysis-benchmark-input">Market Benchmark</label>
-          <input type="text" id="analysis-benchmark-input" placeholder="e.g., SPY, QQQ" value="SPY" />
-        </div>
-        <div class="form-row-inline">
-          <div class="form-field">
-            <label for="analysis-days-input">Days</label>
-            <input type="number" id="analysis-days-input" placeholder="200" value="200" min="30" max="5000" />
+      <div class="modal-body-columns">
+        <div class="modal-form">
+          <div class="form-row">
+            <label for="analysis-ticker-input">Stock Ticker</label>
+            <input type="text" id="analysis-ticker-input" placeholder="e.g., NVDA, AAPL, TSLA" autofocus />
           </div>
-          <div class="form-field">
-            <label for="analysis-events-input">Min Events</label>
-            <input type="number" id="analysis-events-input" placeholder="15" value="15" min="1" max="100" />
+          <div class="form-row">
+            <label for="analysis-benchmark-input">Market Benchmark</label>
+            <input type="text" id="analysis-benchmark-input" placeholder="e.g., SPY, QQQ" value="SPY" />
+          </div>
+          <div class="form-row-inline">
+            <div class="form-field">
+              <label for="analysis-days-input">Days</label>
+              <input type="number" id="analysis-days-input" placeholder="200" value="200" min="30" max="5000" />
+            </div>
+            <div class="form-field">
+              <label for="analysis-events-input">Min Events</label>
+              <input type="number" id="analysis-events-input" placeholder="15" value="15" min="1" max="100" />
+            </div>
+          </div>
+          <div class="form-row">
+            <label for="analysis-api-select">Data Source</label>
+            <select id="analysis-api-select">
+              <option value="auto">Auto (Twelve Data → EODHD fallback)</option>
+              <option value="twelvedata">Twelve Data (US markets)</option>
+              <option value="eodhd">EODHD (International markets)</option>
+            </select>
+          </div>
+          <div class="form-row-checkbox">
+            <label class="checkbox-label">
+              <input type="checkbox" id="analysis-fetch-news" />
+              <span>Fetch Yahoo Finance news</span>
+              <span class="checkbox-hint">(slower, but finds related articles with similarity scores)</span>
+            </label>
+          </div>
+          <div class="form-row-checkbox">
+            <label class="checkbox-label">
+              <input type="checkbox" id="analysis-options-activity" checked />
+              <span>Analyze options activity</span>
+              <span class="checkbox-hint">(fetches put/call ratios, IV, unusual volume from Yahoo Finance)</span>
+            </label>
+          </div>
+          <div class="form-row-checkbox">
+            <label class="checkbox-label">
+              <input type="checkbox" id="analysis-fundamentals" checked />
+              <span>Fetch quarterly fundamentals</span>
+              <span class="checkbox-hint">(revenue, EPS, margins — from EODHD or Twelve Data)</span>
+            </label>
+          </div>
+          <div class="form-row-inline">
+            <div class="form-field">
+              <label for="analysis-max-expirations">Max Expirations</label>
+              <input type="number" id="analysis-max-expirations" value="7" min="1" max="12" />
+            </div>
+            <div class="form-field">
+              <label for="analysis-hold-days">Hold Days</label>
+              <input type="number" id="analysis-hold-days" value="60" min="1" max="120" />
+            </div>
           </div>
         </div>
-        <div class="form-row">
-          <label for="analysis-api-select">Data Source</label>
-          <select id="analysis-api-select">
-            <option value="auto">Auto (Twelve Data → EODHD fallback)</option>
-            <option value="twelvedata">Twelve Data (US markets)</option>
-            <option value="eodhd">EODHD (International markets)</option>
-          </select>
-        </div>
-        <div class="form-row-checkbox">
-          <label class="checkbox-label">
-            <input type="checkbox" id="analysis-fetch-news" checked />
-            <span>Fetch Yahoo Finance news</span>
-            <span class="checkbox-hint">(slower, but finds related articles with similarity scores)</span>
-          </label>
-        </div>
-        <div class="form-row-checkbox">
-          <label class="checkbox-label">
-            <input type="checkbox" id="analysis-options-activity" checked />
-            <span>Analyze options activity</span>
-            <span class="checkbox-hint">(fetches put/call ratios, IV, unusual volume from Yahoo Finance)</span>
-          </label>
-        </div>
-        <div class="form-row-inline">
-          <div class="form-field">
-            <label for="analysis-max-expirations">Max Expirations</label>
-            <input type="number" id="analysis-max-expirations" value="4" min="1" max="12" />
-          </div>
-        </div>
-        <div class="form-row-checkbox">
-          <label class="checkbox-label">
-            <input type="checkbox" id="analysis-optimal-hold" />
-            <span>Compute optimal hold days</span>
-            <span class="checkbox-hint">(uses Chronos-2 AI model to forecast 30-day price trajectory with volume & event covariates)</span>
-          </label>
+        <div id="analyzed-tickers-section" class="analyzed-tickers-panel">
+          <label>Previously Analyzed</label>
+          <div id="analyzed-tickers-list"></div>
         </div>
       </div>
 
@@ -128,7 +138,11 @@
         </div>
         <div class="form-row">
           <label for="div-candidates">Candidate Tickers (comma-separated)</label>
-          <input type="text" id="div-candidates" placeholder="e.g., GLD, TLT, XOM, MSFT" />
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <input type="text" id="div-candidates" placeholder="e.g., GLD, TLT, XOM, MSFT" style="flex: 1;" />
+            <button id="div-discover-btn" class="btn-modal btn-primary" style="padding: 6px 12px; white-space: nowrap;">Discover</button>
+          </div>
+          <div id="div-discover-status" style="font-size: 0.85em; color: #888; margin-top: 4px;"></div>
         </div>
         <div class="form-row">
           <label for="div-days">Lookback Days</label>

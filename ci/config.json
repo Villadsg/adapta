@@ -1,0 +1,8 @@
+{
+  "tickers": ["AAPL", "TSLA", "NVDA", "META", "GOOG", "AMZN", "MSFT"],
+  "benchmark": "SPY",
+  "days": 200,
+  "minEvents": 15,
+  "eventPercentileThreshold": 95,
+  "delayBetweenTickersMs": 3000
+}

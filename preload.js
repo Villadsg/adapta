@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Stock event analysis
   analyzeStockEvents: (ticker, options) => ipcRenderer.invoke('analyze-stock-events', ticker, options),
+  getAnalyzedTickers: () => ipcRenderer.invoke('get-analyzed-tickers'),
 
   // Modal support (hide/show BrowserView)
   showModal: () => ipcRenderer.invoke('show-modal'),
@@ -57,6 +58,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   portfolioSaveHolding: (ticker, shares) => ipcRenderer.invoke('portfolio-save-holding', ticker, shares),
   portfolioRemoveHolding: (ticker) => ipcRenderer.invoke('portfolio-remove-holding', ticker),
   analyzeDiversification: (params) => ipcRenderer.invoke('analyze-diversification', params),
+  discoverCandidates: (holdingTickers) => ipcRenderer.invoke('discover-candidates', holdingTickers),
 
   // Get current state
   getCurrentUrl: () => ipcRenderer.invoke('get-current-url'),

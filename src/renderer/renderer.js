@@ -29,8 +29,9 @@ const analysisEventsInput = document.getElementById('analysis-events-input');
 const analysisApiSelect = document.getElementById('analysis-api-select');
 const analysisFetchNewsCheckbox = document.getElementById('analysis-fetch-news');
 const analysisOptionsCheckbox = document.getElementById('analysis-options-activity');
+const analysisFundamentalsCheckbox = document.getElementById('analysis-fundamentals');
 const analysisMaxExpirationsInput = document.getElementById('analysis-max-expirations');
-const analysisOptimalHoldCheckbox = document.getElementById('analysis-optimal-hold');
+const analysisHoldDaysInput = document.getElementById('analysis-hold-days');
 const modalCancel = document.getElementById('modal-cancel');
 const modalAnalyze = document.getElementById('modal-analyze');
 
@@ -695,11 +696,49 @@ btnAnalyzeEvents.addEventListener('click', async () => {
   analysisBenchmarkInput.value = 'SPY';
   analysisDaysInput.value = '200';
   analysisEventsInput.value = '15';
-  analysisFetchNewsCheckbox.checked = true;
   analysisOptionsCheckbox.checked = true;
-  analysisOptimalHoldCheckbox.checked = false;
+  analysisHoldDaysInput.value = '60';
   analysisTickerInput.focus();
+
+  // Populate previously analyzed tickers
+  const panel = document.getElementById('analyzed-tickers-section');
+  const list = document.getElementById('analyzed-tickers-list');
+  try {
+    const result = await window.electronAPI.getAnalyzedTickers();
+    if (result.success && result.tickers.length > 0) {
+      list.innerHTML = result.tickers.map(t => {
+        const date = new Date(t.last_analyzed);
+        const ago = formatTimeAgo(date);
+        return `<button class="analyzed-ticker-btn" data-ticker="${t.ticker}" title="Last analyzed: ${date.toLocaleString()}"><span>${t.ticker}</span><span style="color:#888;font-size:10px;">${ago}</span></button>`;
+      }).join('');
+      panel.style.display = 'block';
+
+      list.querySelectorAll('.analyzed-ticker-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          analysisTickerInput.value = btn.dataset.ticker;
+          analysisTickerInput.focus();
+        });
+      });
+    } else {
+      panel.style.display = 'none';
+    }
+  } catch {
+    panel.style.display = 'none';
+  }
 });
+
+function formatTimeAgo(date) {
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  return `${months}mo ago`;
+}
 
 // Cancel modal
 modalCancel.addEventListener('click', async () => {
@@ -740,17 +779,17 @@ modalAnalyze.addEventListener('click', async () => {
   const dataSource = analysisApiSelect.value;
   const fetchNews = analysisFetchNewsCheckbox.checked;
   const analyzeOptions = analysisOptionsCheckbox.checked;
+  const fetchFundamentals = analysisFundamentalsCheckbox.checked;
   const maxExpirations = parseInt(analysisMaxExpirationsInput.value, 10) || 4;
-  const computeOptimalHold = analysisOptimalHoldCheckbox.checked;
-
+  const holdDays = parseInt(analysisHoldDaysInput.value, 10) || 60;
   analysisModal.style.display = 'none';
   await window.electronAPI.hideModal();
 
   try {
     const fetchNewsMsg = fetchNews ? ' Fetching news articles...' : '';
     const optionsMsg = analyzeOptions ? ' Analyzing options activity...' : '';
-    const holdMsg = computeOptimalHold ? ' Computing optimal hold...' : '';
-    showToast('Analyzing...', `Running event analysis for ${upperTicker} vs ${benchmark}.${fetchNewsMsg}${optionsMsg}${holdMsg} This may take a minute...`, 'info', (fetchNews || analyzeOptions || computeOptimalHold) ? 60000 : 10000);
+    const fundMsg = fetchFundamentals ? ' Fetching fundamentals...' : '';
+    showToast('Analyzing...', `Running event analysis for ${upperTicker} vs ${benchmark}.${fetchNewsMsg}${optionsMsg}${fundMsg} This may take a minute...`, 'info', (fetchNews || analyzeOptions) ? 60000 : 10000);
 
     const result = await window.electronAPI.analyzeStockEvents(upperTicker, {
       benchmark,
@@ -759,8 +798,9 @@ modalAnalyze.addEventListener('click', async () => {
       dataSource,
       fetchNews,
       analyzeOptions,
+      fetchFundamentals,
       maxExpirations,
-      computeOptimalHold
+      holdDays,
     });
 
     if (!result.success) {
@@ -793,6 +833,8 @@ const divDays = document.getElementById('div-days');
 const divApiSelect = document.getElementById('div-api-select');
 const divCancel = document.getElementById('div-cancel');
 const divAnalyze = document.getElementById('div-analyze');
+const divDiscoverBtn = document.getElementById('div-discover-btn');
+const divDiscoverStatus = document.getElementById('div-discover-status');
 
 // Render holdings list in modal
 async function renderDivHoldings() {
@@ -830,6 +872,8 @@ btnDiversify.addEventListener('click', async () => {
   divDays.value = '200';
   divAddTicker.value = '';
   divAddShares.value = '1';
+  divDiscoverStatus.textContent = '';
+  divDiscoverStatus.style.color = '#888';
   divAddTicker.focus();
 });
 
@@ -845,6 +889,64 @@ divAddBtn.addEventListener('click', async () => {
 
 divAddTicker.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') divAddBtn.click();
+});
+
+// Discover candidates from Finviz
+divDiscoverBtn.addEventListener('click', async () => {
+  const holdingsResult = await window.electronAPI.portfolioGetHoldings();
+  const holdings = holdingsResult.success ? holdingsResult.holdings : [];
+
+  if (holdings.length === 0) {
+    showToast('Error', 'Add at least 1 holding first so discovery can find related tickers.', 'error');
+    return;
+  }
+
+  const holdingTickers = holdings.map(h => h.ticker);
+  const estSeconds = 10 + holdingTickers.length * 4;
+
+  divDiscoverBtn.disabled = true;
+  divDiscoverBtn.textContent = 'Discovering...';
+  divDiscoverStatus.textContent = `Scraping Finviz screener + ${holdingTickers.length} holding pages (~${estSeconds}s)...`;
+
+  try {
+    const result = await window.electronAPI.discoverCandidates(holdingTickers);
+
+    if (!result.success) {
+      divDiscoverStatus.textContent = `Error: ${result.error}`;
+      divDiscoverStatus.style.color = '#f44336';
+      return;
+    }
+
+    if (result.candidates.length === 0) {
+      divDiscoverStatus.textContent = 'No candidates found.';
+      divDiscoverStatus.style.color = '#ff9800';
+      return;
+    }
+
+    // Append discovered tickers to existing ones
+    const discovered = result.candidates.map(c => c.ticker);
+    const existing = divCandidates.value.trim();
+    const existingSet = new Set(
+      existing ? existing.split(/[\s,]+/).map(t => t.toUpperCase()).filter(t => t) : []
+    );
+    const newTickers = discovered.filter(t => !existingSet.has(t));
+
+    if (newTickers.length > 0) {
+      divCandidates.value = existing
+        ? existing + ', ' + newTickers.join(', ')
+        : newTickers.join(', ');
+    }
+
+    divDiscoverStatus.textContent = `Found ${result.stats.total} candidates (${result.stats.screenerTickers} from screener, ${result.stats.holdingRelatedTickers} related to holdings). Added ${newTickers.length} new.`;
+    divDiscoverStatus.style.color = '#4caf50';
+  } catch (error) {
+    console.error('Discovery error:', error);
+    divDiscoverStatus.textContent = `Error: ${error.message}`;
+    divDiscoverStatus.style.color = '#f44336';
+  } finally {
+    divDiscoverBtn.disabled = false;
+    divDiscoverBtn.textContent = 'Discover';
+  }
 });
 
 // Cancel

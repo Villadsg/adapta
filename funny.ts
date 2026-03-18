@@ -873,7 +873,7 @@ async function main() {
 
     // Step 2: Filter out market movements
     console.log("\n2. Filtering out market movements...");
-    const stockFiltered = analyzer.filterMarketMovements(stockData, marketData);
+    const { data: stockFiltered } = analyzer.filterMarketMovements(stockData, marketData);
 
     // Step 3: Identify potential earnings dates
     console.log("\n3. Identifying potential earnings dates...");
