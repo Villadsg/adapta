@@ -26,9 +26,10 @@ global.fetch = function (url, opts = {}) {
 // Stub out embeddings — only used for article correlation, not needed here
 const Module = require('module');
 const originalResolveFilename = Module._resolveFilename;
+const stubPath = require('path').resolve(__dirname, 'stubs', 'embeddings.js');
 Module._resolveFilename = function (request, parent, ...rest) {
   if (request === './embeddings' || request.endsWith('/embeddings')) {
-    return require.resolve('./stubs/embeddings');
+    return stubPath;
   }
   return originalResolveFilename.call(this, request, parent, ...rest);
 };
