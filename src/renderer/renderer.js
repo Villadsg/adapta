@@ -1012,6 +1012,277 @@ divAnalyze.addEventListener('click', async () => {
   }
 });
 
+// ===== Ticker Screening =====
+
+const btnScreen = document.getElementById('btn-screen');
+const screenModal = document.getElementById('screening-modal');
+const screenPeriod = document.getElementById('screen-period');
+const screenLookbackDays = document.getElementById('screen-lookback-days');
+const screenPercentile = document.getElementById('screen-percentile');
+const screenCancel = document.getElementById('screen-cancel');
+const screenRun = document.getElementById('screen-run');
+
+btnScreen.addEventListener('click', async () => {
+  await window.electronAPI.showModal();
+  screenModal.style.display = 'flex';
+  screenPeriod.value = '200';
+  screenLookbackDays.value = '5';
+  screenPercentile.value = '95';
+  screenPeriod.focus();
+});
+
+screenCancel.addEventListener('click', async () => {
+  screenModal.style.display = 'none';
+  await window.electronAPI.hideModal();
+});
+
+screenModal.addEventListener('click', async (e) => {
+  if (e.target === screenModal) {
+    screenModal.style.display = 'none';
+    await window.electronAPI.hideModal();
+  }
+});
+
+// Revise the 50 button
+const screenRevise = document.getElementById('screen-revise');
+
+// Listen for progress updates
+window.electronAPI.onReviseProgress((data) => {
+  const pct = Math.round((data.current / data.total) * 100);
+  const existing = document.querySelector('.toast-revise-progress');
+  if (existing) {
+    const msg = existing.querySelector('.toast-message');
+    if (msg) msg.textContent = `${data.current}/${data.total} (${pct}%) — ${data.ticker}`;
+  }
+});
+
+screenRevise.addEventListener('click', async () => {
+  screenModal.style.display = 'none';
+  await window.electronAPI.hideModal();
+
+  // Show persistent progress toast
+  const toast = document.createElement('div');
+  toast.className = 'toast toast-info toast-revise-progress';
+  toast.innerHTML = `
+    <span class="toast-icon">ℹ</span>
+    <div class="toast-content">
+      <div class="toast-title">Revising the 50</div>
+      <div class="toast-message">Analyzing ~200 tickers, ~3-4 minutes...</div>
+    </div>
+  `;
+  toastContainer.appendChild(toast);
+
+  try {
+    const result = await window.electronAPI.reviseTickers();
+
+    // Remove progress toast
+    toast.remove();
+
+    if (!result.success) {
+      showToast('Error', result.error, 'error');
+      return;
+    }
+
+    // Generate results HTML and open in tab
+    const html = generateReviseHTML(result);
+    const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
+    await createTab(dataUrl);
+
+    showToast('Revision Complete', `Selected ${result.tickers.length} tickers from ${result.totalScored} scored`, 'success');
+  } catch (error) {
+    toast.remove();
+    console.error('Revise error:', error);
+    showToast('Error', error.message, 'error');
+  }
+});
+
+function generateReviseHTML(result) {
+  const ex = result.excluded || { illiquid: [], noGrowth: [], highLeverage: [] };
+  const nIlliquid = ex.illiquid.length;
+  const nNoGrowth = ex.noGrowth.length;
+  const nHighLev = ex.highLeverage.length;
+  const nErrors = (result.errors || []).length;
+  const nTotal = result.totalScored + nIlliquid + nErrors;
+
+  function fmtCap(v) {
+    if (!v) return '—';
+    if (v >= 1e9) return (v / 1e9).toFixed(1) + 'B';
+    if (v >= 1e6) return (v / 1e6).toFixed(0) + 'M';
+    return v.toLocaleString();
+  }
+
+  const rows = result.details.map((d, i) => `<tr>
+    <td data-v="${i + 1}">${i + 1}</td>
+    <td data-v="${d.ticker}" style="font-weight:bold;">${d.ticker}</td>
+    <td data-v="${d.revenueGrowth}">${(d.revenueGrowth * 100).toFixed(1)}%</td>
+    <td data-v="${d.debtToEquity}">${d.debtToEquity.toFixed(0)}</td>
+    <td data-v="${d.leverageFactor}">${d.leverageFactor.toFixed(3)}</td>
+    <td data-v="${d.score}">${(d.score * 100).toFixed(2)}</td>
+    <td data-v="${d.avgVolume}" style="text-align:right;">${(d.avgVolume / 1e6).toFixed(1)}M</td>
+    <td data-v="${d.marketCap || 0}" style="text-align:right;">${fmtCap(d.marketCap)}</td>
+  </tr>`).join('');
+
+  const illiquidRows = ex.illiquid.map(d =>
+    `<tr><td>${d.ticker}</td><td>${(d.avgVolume / 1e6).toFixed(2)}M</td><td>${(d.revenueGrowth * 100).toFixed(1)}%</td><td>${d.debtToEquity.toFixed(0)}</td><td style="text-align:right;">${fmtCap(d.marketCap)}</td></tr>`
+  ).join('');
+
+  const noGrowthRows = ex.noGrowth.map(d =>
+    `<tr><td>${d.ticker}</td><td>${(d.revenueGrowth * 100).toFixed(1)}%</td><td>${d.debtToEquity.toFixed(0)}</td><td>${(d.score * 100).toFixed(2)}</td><td style="text-align:right;">${fmtCap(d.marketCap)}</td></tr>`
+  ).join('');
+
+  const highLevRows = ex.highLeverage.map(d =>
+    `<tr><td>${d.ticker}</td><td>${(d.revenueGrowth * 100).toFixed(1)}%</td><td>${d.debtToEquity.toFixed(0)}</td><td>${(d.score * 100).toFixed(2)}</td><td style="text-align:right;">${fmtCap(d.marketCap)}</td></tr>`
+  ).join('');
+
+  const errorRows = (result.errors || []).map(e =>
+    `<tr><td>${e.ticker}</td><td colspan="4" style="color:#f44336;">${e.error}</td></tr>`
+  ).join('');
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<title>Revise the 50 — Results</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 20px; background: #fafafa; color: #333; }
+  h1 { font-size: 1.4em; margin-bottom: 4px; }
+  .summary { color: #666; margin-bottom: 16px; font-size: 0.95em; }
+  .exclusion-summary { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+  .excl-card { background: #fff; border-radius: 8px; padding: 14px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); min-width: 160px; }
+  .excl-card .count { font-size: 1.8em; font-weight: bold; }
+  .excl-card .label { font-size: 0.85em; color: #666; margin-top: 2px; }
+  .excl-card.illiquid .count { color: #2196f3; }
+  .excl-card.no-growth .count { color: #ff9800; }
+  .excl-card.high-lev .count { color: #f44336; }
+  .excl-card.errors .count { color: #999; }
+  .excl-card.selected .count { color: #4caf50; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+  th { background: #f5f5f5; padding: 10px 12px; text-align: left; font-size: 0.85em; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+  #top50 th { cursor: pointer; user-select: none; }
+  #top50 th:hover { color: #333; background: #eee; }
+  #top50 th .sort-arrow { font-size: 0.7em; margin-left: 3px; color: #bbb; }
+  #top50 th.sorted-asc .sort-arrow, #top50 th.sorted-desc .sort-arrow { color: #333; }
+  td { padding: 8px 12px; border-top: 1px solid #eee; font-size: 0.95em; }
+  tr:hover { background: #f9f9f9; }
+  h2 { font-size: 1.1em; margin-top: 24px; color: #666; }
+  details { margin-top: 12px; }
+  details summary { cursor: pointer; color: #666; font-size: 0.95em; }
+  details summary:hover { color: #333; }
+</style></head><body>
+<h1>Revise the 50 — Results</h1>
+<p class="summary">Analyzed ${nTotal} tickers from universe. Config updated with top ${result.tickers.length}.</p>
+
+<div class="exclusion-summary">
+  <div class="excl-card selected"><div class="count">${result.tickers.length}</div><div class="label">Selected</div></div>
+  <div class="excl-card illiquid"><div class="count">${nIlliquid}</div><div class="label">Illiquid (&lt;500K avg vol)</div></div>
+  <div class="excl-card no-growth"><div class="count">${nNoGrowth}</div><div class="label">Low / No Growth</div></div>
+  <div class="excl-card high-lev"><div class="count">${nHighLev}</div><div class="label">High Leverage (D/E&gt;100)</div></div>
+  <div class="excl-card errors"><div class="count">${nErrors}</div><div class="label">Errors</div></div>
+</div>
+
+<h2>Top 50</h2>
+<table id="top50">
+<thead><tr>
+  <th>#<span class="sort-arrow"></span></th>
+  <th>Ticker<span class="sort-arrow"></span></th>
+  <th>Rev Growth<span class="sort-arrow"></span></th>
+  <th>D/E<span class="sort-arrow"></span></th>
+  <th>Lev Factor<span class="sort-arrow"></span></th>
+  <th>Score<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Avg Vol<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Mkt Cap<span class="sort-arrow"></span></th>
+</tr></thead>
+<tbody>${rows}</tbody>
+</table>
+
+<script>
+(function() {
+  const table = document.getElementById('top50');
+  const headers = table.querySelectorAll('th');
+  let currentCol = -1, ascending = true;
+
+  headers.forEach((th, colIdx) => {
+    th.addEventListener('click', () => {
+      if (currentCol === colIdx) {
+        ascending = !ascending;
+      } else {
+        currentCol = colIdx;
+        ascending = (colIdx === 1); // Ticker defaults ascending, numbers default descending
+      }
+
+      // Update header classes
+      headers.forEach(h => h.classList.remove('sorted-asc', 'sorted-desc'));
+      th.classList.add(ascending ? 'sorted-asc' : 'sorted-desc');
+
+      // Update arrows
+      headers.forEach(h => h.querySelector('.sort-arrow').textContent = '');
+      th.querySelector('.sort-arrow').textContent = ascending ? ' \\u25B2' : ' \\u25BC';
+
+      // Sort rows
+      const tbody = table.querySelector('tbody');
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+
+      rows.sort((a, b) => {
+        const aVal = a.children[colIdx].getAttribute('data-v');
+        const bVal = b.children[colIdx].getAttribute('data-v');
+        const aNum = parseFloat(aVal);
+        const bNum = parseFloat(bVal);
+
+        let cmp;
+        if (!isNaN(aNum) && !isNaN(bNum)) {
+          cmp = aNum - bNum;
+        } else {
+          cmp = aVal.localeCompare(bVal);
+        }
+        return ascending ? cmp : -cmp;
+      });
+
+      rows.forEach(r => tbody.appendChild(r));
+    });
+  });
+})();
+</script>
+
+${nIlliquid > 0 ? `<details><summary>Excluded — Illiquid (${nIlliquid})</summary>
+<table><thead><tr><th>Ticker</th><th>Avg Volume</th><th>Rev Growth</th><th>D/E</th><th style="text-align:right;">Mkt Cap</th></tr></thead><tbody>${illiquidRows}</tbody></table></details>` : ''}
+
+${nNoGrowth > 0 ? `<details><summary>Excluded — Low/No Growth (${nNoGrowth})</summary>
+<table><thead><tr><th>Ticker</th><th>Rev Growth</th><th>D/E</th><th>Score</th><th style="text-align:right;">Mkt Cap</th></tr></thead><tbody>${noGrowthRows}</tbody></table></details>` : ''}
+
+${nHighLev > 0 ? `<details><summary>Excluded — High Leverage (${nHighLev})</summary>
+<table><thead><tr><th>Ticker</th><th>Rev Growth</th><th>D/E</th><th>Score</th><th style="text-align:right;">Mkt Cap</th></tr></thead><tbody>${highLevRows}</tbody></table></details>` : ''}
+
+${nErrors > 0 ? `<details><summary>Errors (${nErrors})</summary>
+<table><thead><tr><th>Ticker</th><th>Error</th></tr></thead><tbody>${errorRows}</tbody></table></details>` : ''}
+
+</body></html>`;
+}
+
+screenRun.addEventListener('click', async () => {
+  const period = parseInt(screenPeriod.value, 10) || 200;
+  const lookbackDays = parseInt(screenLookbackDays.value, 10) || 5;
+  const percentileThreshold = parseInt(screenPercentile.value, 10) || 95;
+
+  screenModal.style.display = 'none';
+  await window.electronAPI.hideModal();
+
+  showToast('Screening...', 'Screening tickers for recent events. This may take a couple minutes...', 'info', 120000);
+
+  try {
+    const result = await window.electronAPI.screenTickers({ period, lookbackDays, percentileThreshold });
+
+    if (!result.success) {
+      showToast('Error', result.error, 'error');
+      return;
+    }
+
+    const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(result.html);
+    await createTab(dataUrl);
+    showToast('Screening Complete', `Found ${result.hitCount} hit${result.hitCount !== 1 ? 's' : ''}`, 'success');
+  } catch (error) {
+    console.error('Screening error:', error);
+    showToast('Error', error.message, 'error');
+  }
+});
+
 // Initialize
 (async () => {
   // Create one tab with finance.yahoo.com

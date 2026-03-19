@@ -25,6 +25,8 @@ const articleExtractor = require('./src/services/articleExtractor');
 const newsScraper = require('./src/services/newsScraper');
 const TickerDiscoveryService = require('./src/services/tickerDiscovery');
 const ChronosHoldPeriodService = require('./src/services/chronosHoldPeriod');
+const { screenTickers, reviseTickers } = require('./ci/ticker-screen');
+const YahooFinance = require('yahoo-finance2').default;
 
 let mainWindow;
 let database;
@@ -1320,8 +1322,7 @@ ipcMain.handle('analyze-stock-events', async (event, ticker, options = {}) => {
           const closedBelowPrevClose = currentQuote.price < currentQuote.previousClose;
 
           if (gapNegative) {
-            classification = !closedBelowPrevClose ? 'surprising_positive'
-              : intradayPositive ? 'negative_anticipated' : 'surprising_negative';
+            classification = intradayPositive ? 'negative_anticipated' : 'surprising_negative';
           } else {
             classification = closedBelowPrevClose ? 'surprising_negative'
               : intradayPositive ? 'surprising_positive' : 'positive_anticipated';
@@ -1462,6 +1463,126 @@ ipcMain.handle('discover-candidates', async (event, holdingTickers) => {
     return { success: false, error: error.message };
   }
 });
+
+// Ticker screening handler
+ipcMain.handle('screen-tickers', async (event, options = {}) => {
+  try {
+    const fs = require('fs');
+    const configPath = path.join(__dirname, 'ci', 'config.json');
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+
+    // Merge user options into config
+    if (options.period) config.screenDays = Math.ceil(options.period * 1.4);
+    if (options.lookbackDays) config.screenLookbackDays = options.lookbackDays;
+    if (options.percentileThreshold) config.screenPercentileThreshold = options.percentileThreshold;
+
+    const tickers = config.screenTickers || [];
+    console.log(`\nRunning ticker screening on ${tickers.length} tickers...`);
+
+    const hits = await screenTickers(priceTracker, config);
+
+    // Sort by percentile descending
+    hits.sort((a, b) => b.percentile - a.percentile);
+
+    // Generate HTML results page
+    const html = generateScreeningHTML(hits, tickers.length, config);
+
+    return { success: true, html, hitCount: hits.length };
+  } catch (error) {
+    console.error('Screening error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Revise the 50 — auto-select screening tickers by fundamentals
+ipcMain.handle('revise-tickers', async (event) => {
+  try {
+    const fs = require('fs');
+    const configPath = path.join(__dirname, 'ci', 'config.json');
+
+    console.log('\n[Revise] Starting ticker revision from ~200 universe...');
+
+    const createYF = () => new YahooFinance({ suppressNotices: ['yahooSurvey'] });
+
+    const onProgress = (current, total, ticker) => {
+      mainWindow.webContents.send('revise-progress', { current, total, ticker });
+    };
+
+    const result = await reviseTickers(createYF, onProgress);
+
+    // Update config.json with new tickers
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    config.screenTickers = result.tickers;
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+
+    console.log(`[Revise] Saved ${result.tickers.length} tickers to config.json`);
+
+    return {
+      success: true,
+      tickers: result.tickers,
+      details: result.details,
+      excluded: result.excluded,
+      errors: result.errors,
+      totalScored: result.totalScored,
+    };
+  } catch (error) {
+    console.error('Revise tickers error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+function generateScreeningHTML(hits, totalTickers, config) {
+  const classColors = {
+    surprising_positive: '#4caf50',
+    positive_anticipated: '#8bc34a',
+    negative_anticipated: '#ff9800',
+    surprising_negative: '#f44336',
+  };
+
+  const classLabels = {
+    surprising_positive: 'Surprising +',
+    positive_anticipated: 'Anticipated +',
+    negative_anticipated: 'Anticipated -',
+    surprising_negative: 'Surprising -',
+  };
+
+  const rows = hits.map(h => {
+    const dateStr = h.date instanceof Date
+      ? h.date.toISOString().split('T')[0]
+      : new Date(h.date).toISOString().split('T')[0];
+    const color = classColors[h.classification] || '#999';
+    const label = classLabels[h.classification] || h.classification;
+    return `<tr>
+      <td style="font-weight:bold;">${h.ticker}</td>
+      <td>${dateStr}</td>
+      <td>${h.gap.toFixed(2)}%</td>
+      <td>${h.percentile.toFixed(1)}%</td>
+      <td style="color:${color}; font-weight:bold;">${label}</td>
+      <td style="text-align:right;">${(h.volume / 1e6).toFixed(1)}M</td>
+    </tr>`;
+  }).join('');
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<title>Ticker Screening Results</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 20px; background: #fafafa; color: #333; }
+  h1 { font-size: 1.4em; margin-bottom: 4px; }
+  .summary { color: #666; margin-bottom: 16px; font-size: 0.95em; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  th { background: #f5f5f5; padding: 10px 12px; text-align: left; font-size: 0.85em; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+  td { padding: 8px 12px; border-top: 1px solid #eee; font-size: 0.95em; }
+  tr:hover { background: #f9f9f9; }
+  .no-hits { text-align: center; padding: 40px; color: #888; font-size: 1.1em; }
+</style></head><body>
+<h1>Ticker Screening Results</h1>
+<p class="summary">${hits.length} hit${hits.length !== 1 ? 's' : ''} out of ${totalTickers} tickers screened &mdash; ${config.screenLookbackDays}d lookback, p${config.screenPercentileThreshold} threshold</p>
+${hits.length > 0 ? `<table>
+<thead><tr><th>Ticker</th><th>Date</th><th>Gap %</th><th>Percentile</th><th>Classification</th><th style="text-align:right;">Volume</th></tr></thead>
+<tbody>${rows}</tbody>
+</table>` : '<div class="no-hits">No screening hits found in the lookback period.</div>'}
+</body></html>`;
+}
 
 // Window control handlers
 ipcMain.handle('window-minimize', async (event) => {

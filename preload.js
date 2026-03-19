@@ -60,6 +60,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   analyzeDiversification: (params) => ipcRenderer.invoke('analyze-diversification', params),
   discoverCandidates: (holdingTickers) => ipcRenderer.invoke('discover-candidates', holdingTickers),
 
+  // Ticker screening
+  screenTickers: (options) => ipcRenderer.invoke('screen-tickers', options),
+  reviseTickers: () => ipcRenderer.invoke('revise-tickers'),
+  onReviseProgress: (callback) => ipcRenderer.on('revise-progress', (event, data) => callback(data)),
+
   // Get current state
   getCurrentUrl: () => ipcRenderer.invoke('get-current-url'),
 

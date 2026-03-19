@@ -2,7 +2,7 @@ name: Daily Event Scan
 
 on:
   schedule:
-    - cron: '30 20 * * 1-5'  # 4:30 PM ET (20:30 UTC), weekdays
+    - cron: '0 21 * * 1-5'  # 5:00 PM ET (21:00 UTC), weekdays
   workflow_dispatch:           # Manual trigger
 
 jobs:

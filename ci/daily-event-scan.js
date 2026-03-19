@@ -36,7 +36,8 @@ Module._resolveFilename = function (request, parent, ...rest) {
 
 const path = require('path');
 const config = require('./config.json');
-const { sendMessage, formatEventMessage } = require('./telegram');
+const { sendMessage, formatEventMessage, formatScreeningMessage } = require('./telegram');
+const { screenTickers } = require('./ticker-screen');
 
 const ArticleDatabase = require('../src/services/database');
 const StockAnalysisService = require('../src/services/stockAnalysis');
@@ -162,11 +163,9 @@ async function main() {
         const closedBelowPrevClose = currentQuote.price < currentQuote.previousClose;
 
         if (gapNegative) {
-          classification = !closedBelowPrevClose
-            ? 'surprising_positive'
-            : intradayPositive
-              ? 'negative_anticipated'
-              : 'surprising_negative';
+          classification = intradayPositive
+            ? 'negative_anticipated'
+            : 'surprising_negative';
         } else {
           classification = closedBelowPrevClose
             ? 'surprising_negative'
@@ -235,6 +234,40 @@ async function main() {
     } catch (err) {
       console.error(`  Error processing ${ticker}:`, err.message);
     }
+  }
+
+  // --- Phase 2: Broad Ticker Screening ---
+  console.log(`\n=== Phase 2: Ticker Screening ===`);
+
+  try {
+    // Filter out tickers already in the curated watchlist
+    const curatedSet = new Set(tickers.map((t) => t.toUpperCase()));
+    const screenConfig = {
+      ...config,
+      screenTickers: (config.screenTickers || []).filter(
+        (t) => !curatedSet.has(t.toUpperCase())
+      ),
+    };
+
+    const screenHits = await screenTickers(priceTracker, screenConfig);
+
+    if (screenHits.length > 0) {
+      console.log(`\nScreening hits: ${screenHits.length}`);
+      for (const hit of screenHits) {
+        console.log(
+          `  ${hit.ticker} — ${hit.date} | gap=${hit.gap.toFixed(1)}% p=${hit.percentile.toFixed(1)}% | ${hit.classification}`
+        );
+      }
+
+      const screenMsg = formatScreeningMessage(screenHits);
+      if (screenMsg) {
+        await sendMessage(screenMsg);
+      }
+    } else {
+      console.log('No screening hits.');
+    }
+  } catch (screenErr) {
+    console.error('Screening phase failed (non-fatal):', screenErr.message);
   }
 
   // Summary

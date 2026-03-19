@@ -36,6 +36,7 @@
     <!-- Action buttons -->
     <div class="action-controls">
       <button id="btn-analyze-events" class="action-btn btn-analyze-events">📊 Analyze Events</button>
+      <button id="btn-screen" class="action-btn btn-analyze-events">🔍 Screen</button>
       <button id="btn-diversify" class="action-btn btn-analyze-events">📋 Diversify</button>
       <button id="btn-settings" class="action-btn btn-settings">⚙️ Settings</button>
     </div>
@@ -160,6 +161,38 @@
       <div class="modal-buttons">
         <button id="div-cancel" class="btn-modal btn-cancel">Cancel</button>
         <button id="div-analyze" class="btn-modal btn-primary">Analyze</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Screening Modal -->
+  <div id="screening-modal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 560px;">
+      <h3>Ticker Screening</h3>
+      <p>Screen tickers for significant recent price events.</p>
+      <div class="modal-form">
+        <div class="form-row-inline">
+          <div class="form-field">
+            <label for="screen-period">Period (trading days)</label>
+            <input type="number" id="screen-period" value="200" min="30" max="1000" />
+          </div>
+          <div class="form-field">
+            <label for="screen-lookback-days">Lookback Days</label>
+            <input type="number" id="screen-lookback-days" value="5" min="1" max="30" />
+          </div>
+          <div class="form-field">
+            <label for="screen-percentile">Percentile Threshold</label>
+            <input type="number" id="screen-percentile" value="95" min="50" max="99" />
+          </div>
+        </div>
+      </div>
+      <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee;">
+        <button id="screen-revise" class="btn-modal btn-primary" style="width: 100%; background: #ff9800;">Revise the 50</button>
+        <div style="font-size: 0.8em; color: #888; margin-top: 4px;">Auto-select best 50 tickers from ~200 universe by revenue growth, leverage, and liquidity.</div>
+      </div>
+      <div class="modal-buttons">
+        <button id="screen-cancel" class="btn-modal btn-cancel">Cancel</button>
+        <button id="screen-run" class="btn-modal btn-primary">Run Screening</button>
       </div>
     </div>
   </div>

@@ -73,4 +73,44 @@ function formatEventMessage(ticker, quote, eventSignal, optionsData) {
   return lines.join('\n');
 }
 
-module.exports = { sendMessage, formatEventMessage };
+function formatScreeningMessage(hits) {
+  if (!hits || hits.length === 0) return null;
+
+  // Sort by percentile descending
+  const sorted = [...hits].sort((a, b) => b.percentile - a.percentile);
+
+  const lines = [];
+  lines.push(`<b>SCREENING: ${sorted.length} event${sorted.length === 1 ? '' : 's'} found</b>`);
+  lines.push('');
+
+  const MAX_CHARS = 4096;
+  let truncated = 0;
+
+  for (const hit of sorted) {
+    const entry = [
+      `<b>${hit.ticker}</b> — ${hit.date}`,
+      `Gap: ${hit.gap.toFixed(1)}% | Percentile: ${hit.percentile.toFixed(1)}%`,
+      `Classification: ${hit.classification}`,
+      `Volume: ${(hit.volume / 1e6).toFixed(1)}M`,
+      '',
+    ];
+
+    const entryText = entry.join('\n');
+    const currentText = lines.join('\n');
+
+    if (currentText.length + entryText.length > MAX_CHARS - 50) {
+      truncated = sorted.length - (sorted.indexOf(hit));
+      break;
+    }
+
+    lines.push(entryText);
+  }
+
+  if (truncated > 0) {
+    lines.push(`...and ${truncated} more`);
+  }
+
+  return lines.join('\n');
+}
+
+module.exports = { sendMessage, formatEventMessage, formatScreeningMessage };

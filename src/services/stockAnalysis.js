@@ -512,14 +512,10 @@ class StockAnalysisService {
       let classification;
 
       if (gapNegative) {
-        if (!closedBelowPrevClose) {
-          // Gapped down but closed above prev close — surprisingly positive
-          classification = 'surprising_positive';
-        } else {
-          classification = intradayPositive
-            ? 'negative_anticipated'
-            : 'surprising_negative';
-        }
+        // Gapped down: if intraday recovered (close > open), the negative was anticipated/priced-in
+        classification = intradayPositive
+          ? 'negative_anticipated'
+          : 'surprising_negative';
       } else {
         // Gapped up, but if it fell so much that close < prev close, it's surprising negative
         if (closedBelowPrevClose) {
