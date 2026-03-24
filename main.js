@@ -1481,11 +1481,11 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       config.screenTickers = options.overrideTickers;
     }
 
-    // Filter to favorites only if requested
+    // Filter to favorites only if requested — include all favorites even if not in the 50 list
     if (options.favoritesOnly) {
       const favs = loadFavorites();
       if (favs.length > 0) {
-        config.screenTickers = (config.screenTickers || []).filter(t => favs.includes(t));
+        config.screenTickers = favs;
       }
     }
 
@@ -1784,7 +1784,10 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
   tr.data-row:hover { background: #f0f4ff; }
   tr:hover { background: #f9f9f9; }
   .chart-row td { border-top: none; }
+  #fav-toast { position:fixed; bottom:20px; right:20px; padding:8px 16px; border-radius:6px; font-size:0.9em; color:#fff; opacity:0; transition:opacity 0.3s; pointer-events:none; z-index:9999; }
+  #fav-toast.show { opacity:1; }
 </style></head><body>
+<div id="fav-toast"></div>
 <h1>Ticker Screening Results</h1>
 <p class="summary">${hitCount} hit${hitCount !== 1 ? 's' : ''} out of ${totalTickers} tickers screened &mdash; ${config.screenLookbackDays}d lookback, p${config.screenPercentileThreshold} threshold</p>
 ${ivTickers.length > 0 ? `<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.95em;">
@@ -1817,16 +1820,34 @@ ${ivTickers.length > 0 ? `<div style="margin-bottom:14px; padding:10px 14px; bac
   const newsMap = ${JSON.stringify(newsMap)};
   const ivHistoryMap = ${JSON.stringify(ivHistoryData)};
   // Favorite star click handler
+  let favToastTimer = null;
+  function showFavToast(msg, success) {
+    const el = document.getElementById('fav-toast');
+    el.textContent = msg;
+    el.style.background = success ? '#4caf50' : '#f44336';
+    el.classList.add('show');
+    clearTimeout(favToastTimer);
+    favToastTimer = setTimeout(() => el.classList.remove('show'), 1500);
+  }
+
   document.querySelectorAll('.fav-star').forEach(star => {
     star.addEventListener('click', async (e) => {
       e.stopPropagation();
       const ticker = star.getAttribute('data-ticker');
       if (!ticker || !window.electronAPI || !window.electronAPI.toggleFavorite) return;
-      const result = await window.electronAPI.toggleFavorite(ticker);
-      const isFav = result.favorites.includes(ticker);
-      star.textContent = isFav ? '\\u2605' : '\\u2606';
-      star.style.color = isFav ? '#f5c518' : '#ccc';
-      star.closest('td').setAttribute('data-v', isFav ? '1' : '0');
+      if (star.dataset.busy) return;
+      star.dataset.busy = '1';
+      try {
+        const result = await window.electronAPI.toggleFavorite(ticker);
+        const isFav = result.favorites.includes(ticker);
+        star.textContent = isFav ? '\\u2605' : '\\u2606';
+        star.style.color = isFav ? '#f5c518' : '#ccc';
+        star.closest('td').setAttribute('data-v', isFav ? '1' : '0');
+        showFavToast(isFav ? ticker + ' added to favorites' : ticker + ' removed from favorites', true);
+      } catch (err) {
+        showFavToast('Failed to update ' + ticker, false);
+      }
+      delete star.dataset.busy;
     });
   });
 

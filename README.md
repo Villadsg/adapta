@@ -1,170 +1,150 @@
-# Adapta - Semantic Search Browser
+# Adapta
 
-An Electron-based web browser with built-in semantic search capabilities. Save articles, automatically generate embeddings, and search your saved content by meaning rather than just keywords.
-
-## Current Status
-
-✅ **Phase 1 Complete: Foundation**
-- Electron browser with embedded Chromium
-- Navigation controls (back, forward, reload, URL bar)
-- DuckDB database for article storage
-- Text extraction from webpages
-
-✅ **Phase 2 Complete: Storage & Chunking**
-- Save articles with "Good" / "Not Good" categories
-- Configurable text chunking (paragraph or sentence strategies)
-- Settings UI for adjusting chunk size, overlap, and strategy
-- Bulk re-chunking support with embedding regeneration
-- Statistics display (article counts by category)
-
-✅ **Phase 3 Complete: Embeddings**
-- Automatic embedding generation using **google/embeddinggemma-300m**
-- 768-dimensional semantic vectors for each chunk
-- On-device processing (no API calls)
-- Task-specific prefixes for optimal retrieval
-- Embeddings stored in DuckDB FLOAT[] columns
-
-✅ **Phase 4 Complete: Similarity Search**
-- Semantic search by meaning, not keywords
-- Cosine similarity scoring (0-100%)
-- Category filtering (Good/Not Good)
-- Configurable similarity thresholds
-- IPC handlers for programmatic search
+An Electron-based financial analysis browser combining semantic search, ticker screening, and options analysis. Built to identify contrarian opportunities by spotting disagreement between implied volatility and dollar volume positioning.
 
 ## Quick Start
 
 ```bash
-# Install dependencies
 npm install
-
-# Start the browser
 npm start
 ```
 
-## Usage
+## Core Features
 
-1. **Navigate** - Enter URL and press Enter
-2. **Save Articles** - Click "Good" or "Not Good" to save current page with automatic embedding generation
-3. **View Stats** - See saved article counts and embedding coverage in toolbar
-4. **Adjust Settings** - Click ⚙️ to configure chunk size, overlap, and strategy
-5. **Search** - Use IPC handlers to perform semantic similarity searches (UI coming soon)
+### Ticker Screening
+
+Screens a universe of ~200 mid-cap tickers ($6B-$50B) to detect significant recent price events. The top 50 tickers are auto-selected via fundamental ranking ("Revise the 50"), then screened for volume/gap anomalies.
+
+Results display in an interactive table with expandable rows showing price charts, options strike charts, company summaries, and news headlines.
+
+### Options Analysis
+
+Per-ticker options surface visualization for the nearest two expirations, showing dollar volume, dollar open interest, and IV smile on a per-strike basis. Designed to reveal where money is flowing relative to how the market is pricing risk.
+
+### Semantic Search
+
+Save and search articles by meaning using **google/embeddinggemma-300m** (768-dimensional vectors). Cosine similarity scoring with category filtering.
+
+---
+
+## Financial Measures
+
+### Event Detection (Screening)
+
+| Measure | Formula | Purpose |
+|---------|---------|---------|
+| **Gap %** | `abs((open - prevClose) / prevClose) * 100` | Price movement magnitude at open |
+| **Volume-Gap Product** | `volume * gapPct` | Combined signal — large gap on high volume = significant event |
+| **Percentile Rank** | Rank of volume-gap product in historical distribution | Filters noise; default threshold at p95 |
+| **Residual Gap** | `abs(stockReturn - (beta * marketReturn + alpha)) * 100` | Market-adjusted gap — strips out SPY-correlated moves |
+| **R-squared (SPY)** | `1 - (SS_residual / SS_total)` from OLS regression | How much of the stock's movement is explained by the market |
+
+### Event Classification
+
+Events are classified by gap direction and intraday reversal:
+
+| Classification | Logic |
+|----------------|-------|
+| **Surprising Positive** | Gapped down but closed above previous close |
+| **Positive Anticipated** | Gapped up and held gains |
+| **Negative Anticipated** | Gapped down and stayed down |
+| **Surprising Negative** | Gapped up but closed below previous close |
+
+### Fundamental Ranking ("Revise the 50")
+
+Used to select the best 50 tickers from the ~200 universe:
+
+| Measure | Source | Purpose |
+|---------|--------|---------|
+| **Revenue Growth (YoY)** | Yahoo Finance `financialData.revenueGrowth` | Growth rate — higher is better |
+| **Debt-to-Equity** | Yahoo Finance `financialData.debtToEquity` | Leverage — lower is better |
+| **Leverage Factor** | `1 / (1 + D/E / 100)` | Penalizes high leverage (0 to 1 scale) |
+| **Revision Score** | `revenueGrowth * leverageFactor` | Final ranking metric |
+| **Average Volume** | Yahoo Finance `summaryDetail.averageVolume` | Liquidity gate — minimum 500K daily |
+| **Market Cap** | Yahoo Finance `summaryDetail.marketCap` | Displayed in screening table |
+
+### Options Metrics (Per-Ticker)
+
+#### Strike-Level Data (Nearest 2 Expirations)
+
+| Measure | Formula | Purpose |
+|---------|---------|---------|
+| **Dollar Volume** | `contractVolume * lastPrice * 100` | Capital flow at each strike — where money is trading today |
+| **Dollar Open Interest** | `openInterest * lastPrice * 100` | Accumulated positioning — where money has been sitting |
+| **Implied Volatility** | Yahoo Finance `impliedVolatility` (annualized) | Market's expected move priced into each strike |
+| **Dollar-Volume-Weighted IV** | `sum(IV * dollarVol) / sum(dollarVol)` | What IV level money is actually trading at (not simple average) |
+
+The key insight: when dollar volume spikes at strikes where IV is low (or vice versa), it signals disagreement — potentially a contrarian opportunity.
+
+#### Aggregate Options Ratios
+
+| Measure | Formula | Purpose |
+|---------|---------|---------|
+| **Put-Call Ratio (Volume)** | `totalPutVol / totalCallVol` | Sentiment — <0.7 bullish, >1.0 bearish |
+| **Put-Call Ratio (OI)** | `totalPutOI / totalCallOI` | Longer-term positioning sentiment |
+| **Conviction Ratio** | `totalCallDollarVol / totalPutDollarVol` | Capital-weighted sentiment — >2.0 call-heavy |
+
+#### Volatility Surface
+
+| Measure | Formula | Purpose |
+|---------|---------|---------|
+| **ATM IV** | IV at strike nearest current price | Baseline implied volatility |
+| **IV Smile/Skew** | Per-strike IV curve across strikes | Reveals tail risk pricing asymmetry |
+| **Term Structure** | ATM IV across expirations | Contango = no near-term catalyst; backwardation = event expected |
+| **Term Structure Slope** | `(farIV - nearIV) / dteDiff * 30` | Rate of IV change per 30 days |
+
+#### Event Anticipation Index (0-100)
+
+Composite score from five components:
+
+| Component | Weight | What It Measures |
+|-----------|--------|-----------------|
+| **Volatility Risk Premium** | 0-25 | IV / HV ratio — how much extra the market charges |
+| **Implied Move (Straddle)** | 0-25 | Straddle price vs HV-implied move — event premium |
+| **Term Structure** | 0-20 | Shape and kinks — catalyst timing signal |
+| **Volume Conviction** | 0-15 | Unusual volume, dollar concentration, VOI ratio |
+| **Historical Vol Conviction** | 0-15 | 24h trend in dollar volumes — building or fading |
+
+### Historical Volatility
+
+| Measure | Formula | Purpose |
+|---------|---------|---------|
+| **Annualized HV** | `stdev(dailyReturns) * sqrt(252)` | Realized volatility baseline |
+| **Normal Move %** | `HV * sqrt(DTE / 252) * 100` | Expected move based on historical vol |
+| **Straddle Move %** | `(atmCallPrice + atmPutPrice) / price * 100` | Market-priced expected move |
+| **Event Premium %** | `straddleMove% - normalMove%` | Excess premium over what HV implies |
+
+---
 
 ## Project Structure
 
 ```
 adapta/
-├── main.js                    # Electron main process (backend)
-├── preload.js                 # IPC security bridge
-├── package.json               # Dependencies
-└── src/
-    ├── renderer/              # Browser UI
-    │   ├── index.html         # Main interface
-    │   ├── styles.css         # Styling
-    │   └── renderer.js        # UI logic
-    └── services/              # Backend services
-        ├── database.js        # DuckDB operations
-        └── chunking.js        # Text chunking logic
+├── main.js                          # Electron main process, IPC handlers, HTML generation
+├── preload.js                       # IPC security bridge
+├── ci/
+│   ├── ticker-screen.js             # Screening logic, UNIVERSE list, revision ranking
+│   ├── daily-event-scan.js          # GitHub Actions daily scan with Telegram alerts
+│   ├── config.json                  # Screening config (tickers, thresholds)
+│   ├── screening-results.html       # Latest screening output (generated)
+│   ├── screening-favorites.json     # Starred tickers (generated)
+│   └── weighted-iv-history.json     # Historical weighted IV per ticker (generated)
+├── src/
+│   ├── renderer/
+│   │   ├── index.html               # Main UI with screening modal
+│   │   ├── styles.css               # Styling
+│   │   └── renderer.js              # UI logic, tab management
+│   └── services/
+│       ├── optionsAnalysis.js        # Options metrics, IV analysis, event anticipation
+│       ├── stockAnalysis.js          # Price data, regression, fundamentals, HV
+│       ├── database.js              # DuckDB operations
+│       └── chunking.js              # Text chunking for semantic search
 ```
 
-## Features
+## Data Sources
 
-### 🔍 Semantic Search
-
-Search by meaning, not just keywords! The browser uses **google/embeddinggemma-300m** to generate 768-dimensional semantic vectors for each chunk.
-
-**Example**: Searching for "neural networks" finds articles about "deep learning", "AI", and "machine learning" even without exact phrase matches.
-
-```javascript
-// Semantic search API
-const results = await database.searchBySimilarity(
-  'How does machine learning work?',
-  {
-    categoryFilter: 'good',  // Optional
-    limit: 10,               // Default: 10
-    minSimilarity: 0.5       // 0-1 threshold
-  }
-);
-```
-
-### ⚙️ Configurable Chunking
-
-- **Chunk Size**: 50-2048 tokens (default: 256)
-- **Overlap**: 0-500 tokens (default: 25)
-- **Strategy**: Paragraph or Sentence (default: Paragraph)
-
-Settings can be adjusted via the ⚙️ Settings button, with optional re-chunking of all existing articles.
-
-**Chunking Strategies**:
-- **Paragraph** (default): Splits at `\n\n`, preserves document structure, best for articles/blogs
-- **Sentence**: Splits at sentence boundaries (. ! ?), handles abbreviations, best for dense/technical text
-
-## Database Schema
-
-### `articles` table
-- Full article text and metadata
-- Categories: 'good' or 'not_good'
-- URL, title, domain, word count, saved timestamp
-
-### `article_chunks` table
-- Text chunks (default: ~256 tokens each)
-- Linked to parent article (ON DELETE CASCADE)
-- Chunk index for ordering
-- Category (inherited from article)
-- **embedding column**: FLOAT[] (768 dimensions) - semantic vector from EmbeddingGemma
-
-### `settings` table
-- Persistent configuration (chunk_size, chunk_overlap, chunk_strategy)
-
-## Testing
-
-### Run Tests
-
-```bash
-# Test embedding model
-node test_embeddings.js
-
-# Test full pipeline (save → chunk → embed → search)
-node test_integration.js
-```
-
-### Expected Results
-
-- ✓ Model loads in ~1s (first run downloads ~100MB)
-- ✓ Embeddings generate at ~100ms per chunk
-- ✓ Search correctly ranks results by semantic similarity
-- ✓ Category filtering works
-- ✓ 100% embedding coverage
-
-## Architecture Decisions
-
-- **Electron + Node.js** - Better packaging than PyQt6
-- **DuckDB** - Native FLOAT[] support for embeddings, fast vector operations
-- **Text-based chunking** - Sentence boundaries preserve semantic meaning
-- **ONNX Runtime** (future) - Portable model format, good Node.js support
-- **Chunks as derived data** - Can always re-generate from original text
-
-## Documentation
-
-- **EMBEDDING_INTEGRATION.md**: Technical details on embedding system, model info, performance benchmarks
-- **TESTING_GUIDE.md**: Step-by-step guide for testing the app and troubleshooting
-
-## Next Steps / Future Enhancements
-
-- Add search UI to renderer (currently accessible via IPC only)
-- Vector indexing (HNSW) for faster large-scale search
-- Hybrid search (keyword + semantic)
-- Auto-clustering of similar articles
-- Export/import database
-- Upgrade to google/embeddinggemma-300m when Transformers.js support improves
-
-## Performance
-
-- **Embedding generation**: ~80ms per chunk (EmbeddingGemma-300m)
-- **Search (<1K chunks)**: <100ms
-- **Search (1K-10K chunks)**: 100-500ms
-- **Model size**: ~600MB (cached locally, downloaded once)
-- **Model load time**: 0.7s (after cache)
-- **Storage**: ~6KB per chunk (text + 768-dim embedding)
+- **Yahoo Finance** (`yahoo-finance2`): Price history, options chains, fundamentals, company profiles
+- **Finviz** (Chromium scraping, optional): News headlines per ticker
 
 ## License
 
