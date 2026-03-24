@@ -16,7 +16,6 @@
   "screenTickers": [
     "JOBY",
     "ARWR",
-    "RCAT",
     "AVAV",
     "CELH",
     "RDDT",
@@ -24,7 +23,6 @@
     "MP",
     "RBRK",
     "PAYO",
-    "EVGO",
     "SEDG",
     "SOFI",
     "DUOL",
@@ -39,7 +37,6 @@
     "MQ",
     "RARE",
     "GMED",
-    "VITL",
     "NBIX",
     "PCTY",
     "SLAB",
@@ -63,7 +60,10 @@
     "AMBA",
     "PODD",
     "AXSM",
-    "ISRG"
+    "ISRG",
+    "DOCN",
+    "HUBS",
+    "ALNY"
   ],
   "screenDays": 100,
   "screenLookbackDays": 5,

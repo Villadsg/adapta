@@ -63,6 +63,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Ticker screening
   screenTickers: (options) => ipcRenderer.invoke('screen-tickers', options),
   reviseTickers: () => ipcRenderer.invoke('revise-tickers'),
+  loadReviseResults: () => ipcRenderer.invoke('load-revise-results'),
+  loadScreeningResults: () => ipcRenderer.invoke('load-screening-results'),
+  toggleFavorite: (ticker) => ipcRenderer.invoke('toggle-favorite', ticker),
+  getFavorites: () => ipcRenderer.invoke('get-favorites'),
   onReviseProgress: (callback) => ipcRenderer.on('revise-progress', (event, data) => callback(data)),
 
   // Get current state

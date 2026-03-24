@@ -249,7 +249,8 @@ async function main() {
       ),
     };
 
-    const screenHits = await screenTickers(priceTracker, screenConfig);
+    const screenResult = await screenTickers(priceTracker, screenConfig);
+    const screenHits = screenResult.hits;
 
     if (screenHits.length > 0) {
       console.log(`\nScreening hits: ${screenHits.length}`);

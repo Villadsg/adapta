@@ -1476,18 +1476,80 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
     if (options.lookbackDays) config.screenLookbackDays = options.lookbackDays;
     if (options.percentileThreshold) config.screenPercentileThreshold = options.percentileThreshold;
 
+    // Override tickers if provided (bypass saved list)
+    if (options.overrideTickers && options.overrideTickers.length > 0) {
+      config.screenTickers = options.overrideTickers;
+    }
+
+    // Filter to favorites only if requested
+    if (options.favoritesOnly) {
+      const favs = loadFavorites();
+      if (favs.length > 0) {
+        config.screenTickers = (config.screenTickers || []).filter(t => favs.includes(t));
+      }
+    }
+
     const tickers = config.screenTickers || [];
     console.log(`\nRunning ticker screening on ${tickers.length} tickers...`);
 
-    const hits = await screenTickers(priceTracker, config);
+    const createYF = () => new YahooFinance({ suppressNotices: ['yahooSurvey'] });
+    const result = await screenTickers(priceTracker, config, createYF);
 
-    // Sort by percentile descending
-    hits.sort((a, b) => b.percentile - a.percentile);
+    // Sort allTickers: hits first (by percentile desc), then non-hits alphabetically
+    result.allTickers.sort((a, b) => {
+      const aHit = a.classification ? 1 : 0;
+      const bHit = b.classification ? 1 : 0;
+      if (aHit !== bHit) return bHit - aHit;
+      if (aHit && bHit) return (b.percentile || 0) - (a.percentile || 0);
+      return (a.ticker || '').localeCompare(b.ticker || '');
+    });
+
+    // Fetch top 5 Finviz news headlines per ticker (if enabled)
+    if (options.fetchNews) {
+      for (const entry of result.allTickers) {
+        if (!entry.ticker || entry.skipped || entry.error) continue;
+        try {
+          const headlines = await fetchFinvizNews(entry.ticker);
+          entry.news = (headlines || []).slice(0, 5);
+        } catch (_) { entry.news = []; }
+      }
+    }
+
+    // Save weighted IV history
+    const ivHistoryPath = path.join(__dirname, 'ci', 'weighted-iv-history.json');
+    let ivHistory = {};
+    try { ivHistory = JSON.parse(fs.readFileSync(ivHistoryPath, 'utf-8')); } catch (_) {}
+    const today = new Date().toISOString().split('T')[0];
+    for (const entry of result.allTickers) {
+      const od = entry.chartData?.optionsStrikes;
+      if (!od || od.length === 0) continue;
+      if (!ivHistory[entry.ticker]) ivHistory[entry.ticker] = [];
+      const record = { date: today };
+      if (od[0]) { record.exp1 = { label: od[0].label, callIV: od[0].wCallIV, putIV: od[0].wPutIV }; }
+      if (od[1]) { record.exp2 = { label: od[1].label, callIV: od[1].wCallIV, putIV: od[1].wPutIV }; }
+      // Replace if same date exists, otherwise append
+      const existing = ivHistory[entry.ticker].findIndex(r => r.date === today);
+      if (existing >= 0) ivHistory[entry.ticker][existing] = record;
+      else ivHistory[entry.ticker].push(record);
+    }
+    fs.writeFileSync(ivHistoryPath, JSON.stringify(ivHistory, null, 2) + '\n', 'utf-8');
+
+    // Load IV history for HTML generation
+    const ivHistoryForHTML = {};
+    for (const entry of result.allTickers) {
+      if (ivHistory[entry.ticker]) ivHistoryForHTML[entry.ticker] = ivHistory[entry.ticker];
+    }
 
     // Generate HTML results page
-    const html = generateScreeningHTML(hits, tickers.length, config);
+    const currentFavorites = loadFavorites();
+    const html = generateScreeningHTML(result.allTickers, tickers.length, config, ivHistoryForHTML, currentFavorites);
 
-    return { success: true, html, hitCount: hits.length };
+    // Save HTML for "Latest Run Results"
+    const screenResultsPath = path.join(__dirname, 'ci', 'screening-results.html');
+    fs.writeFileSync(screenResultsPath, html, 'utf-8');
+    console.log('[Screen] Results saved to ci/screening-results.html');
+
+    return { success: true, filePath: screenResultsPath, hitCount: result.hits.length };
   } catch (error) {
     console.error('Screening error:', error);
     return { success: false, error: error.message };
@@ -1515,23 +1577,80 @@ ipcMain.handle('revise-tickers', async (event) => {
     config.screenTickers = result.tickers;
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
 
-    console.log(`[Revise] Saved ${result.tickers.length} tickers to config.json`);
-
-    return {
-      success: true,
+    // Save full results for later viewing
+    const resultsPath = path.join(__dirname, 'ci', 'revise-results.json');
+    const fullResults = {
+      timestamp: new Date().toISOString(),
       tickers: result.tickers,
       details: result.details,
       excluded: result.excluded,
       errors: result.errors,
       totalScored: result.totalScored,
     };
+    fs.writeFileSync(resultsPath, JSON.stringify(fullResults, null, 2) + '\n', 'utf-8');
+
+    console.log(`[Revise] Saved ${result.tickers.length} tickers to config.json`);
+    console.log(`[Revise] Full results saved to ci/revise-results.json`);
+
+    return { success: true, ...fullResults };
   } catch (error) {
     console.error('Revise tickers error:', error);
     return { success: false, error: error.message };
   }
 });
 
-function generateScreeningHTML(hits, totalTickers, config) {
+// Load last Revise the 50 results from disk
+ipcMain.handle('load-revise-results', async () => {
+  try {
+    const fs = require('fs');
+    const resultsPath = path.join(__dirname, 'ci', 'revise-results.json');
+    if (!fs.existsSync(resultsPath)) {
+      return { success: false, error: 'No previous revision results found. Run "Revise the 50" first.' };
+    }
+    const data = JSON.parse(fs.readFileSync(resultsPath, 'utf-8'));
+    return { success: true, ...data };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Load last screening results from disk
+ipcMain.handle('load-screening-results', async () => {
+  try {
+    const fs = require('fs');
+    const resultsPath = path.join(__dirname, 'ci', 'screening-results.html');
+    if (!fs.existsSync(resultsPath)) {
+      return { success: false, error: 'No previous screening results found. Run screening first.' };
+    }
+    return { success: true, filePath: resultsPath };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+const FAVORITES_PATH = path.join(__dirname, 'ci', 'screening-favorites.json');
+
+function loadFavorites() {
+  try { return JSON.parse(require('fs').readFileSync(FAVORITES_PATH, 'utf-8')); } catch (_) { return []; }
+}
+
+function saveFavorites(favs) {
+  require('fs').writeFileSync(FAVORITES_PATH, JSON.stringify(favs, null, 2) + '\n', 'utf-8');
+}
+
+ipcMain.handle('toggle-favorite', async (event, ticker) => {
+  const favs = loadFavorites();
+  const idx = favs.indexOf(ticker);
+  if (idx >= 0) { favs.splice(idx, 1); } else { favs.push(ticker); }
+  saveFavorites(favs);
+  return { favorites: favs };
+});
+
+ipcMain.handle('get-favorites', async () => {
+  return { favorites: loadFavorites() };
+});
+
+function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData = {}, favorites = []) {
   const classColors = {
     surprising_positive: '#4caf50',
     positive_anticipated: '#8bc34a',
@@ -1546,41 +1665,524 @@ function generateScreeningHTML(hits, totalTickers, config) {
     surprising_negative: 'Surprising -',
   };
 
-  const rows = hits.map(h => {
-    const dateStr = h.date instanceof Date
-      ? h.date.toISOString().split('T')[0]
-      : new Date(h.date).toISOString().split('T')[0];
-    const color = classColors[h.classification] || '#999';
-    const label = classLabels[h.classification] || h.classification;
-    return `<tr>
-      <td style="font-weight:bold;">${h.ticker}</td>
-      <td>${dateStr}</td>
-      <td>${h.gap.toFixed(2)}%</td>
-      <td>${h.percentile.toFixed(1)}%</td>
-      <td style="color:${color}; font-weight:bold;">${label}</td>
-      <td style="text-align:right;">${(h.volume / 1e6).toFixed(1)}M</td>
+  const hitCount = allTickers.filter(h => h.classification).length;
+  const favSet = new Set(favorites);
+
+  // Build chart data JSON and summary map for each ticker
+  const chartDataMap = {};
+  const summaryMap = {};
+  const newsMap = {};
+  const tickerIVs = {}; // { ticker: { callIV, putIV } } — nearest expiry weighted IV
+  const tickerOptDV = {}; // { ticker: totalDollarVol } — sum of call+put dollar vol across strikes
+  for (const h of allTickers) {
+    if (h.chartData && h.chartData.dates && h.chartData.dates.length > 0) {
+      chartDataMap[h.ticker] = h.chartData;
+      const os = h.chartData.optionsStrikes;
+      if (os && os.length > 0) {
+        if (os[0].wCallIV > 0 || os[0].wPutIV > 0) {
+          tickerIVs[h.ticker] = { callIV: os[0].wCallIV, putIV: os[0].wPutIV };
+        }
+        const exp = os[0];
+        let totalDV = 0;
+        for (const c of exp.calls) totalDV += c.dollarVol || 0;
+        for (const p of exp.puts) totalDV += p.dollarVol || 0;
+        if (totalDV > 0) tickerOptDV[h.ticker] = totalDV;
+      }
+    }
+    if (h.summary) summaryMap[h.ticker] = h.summary;
+    if (h.news && h.news.length > 0) newsMap[h.ticker] = h.news;
+  }
+
+  // Compute average weighted IV across all tickers with data
+  const ivTickers = Object.keys(tickerIVs);
+  let avgCallIV = 0, avgPutIV = 0;
+  if (ivTickers.length > 0) {
+    avgCallIV = Math.round(ivTickers.reduce((s, t) => s + tickerIVs[t].callIV, 0) / ivTickers.length * 10) / 10;
+    avgPutIV = Math.round(ivTickers.reduce((s, t) => s + tickerIVs[t].putIV, 0) / ivTickers.length * 10) / 10;
+  }
+
+  const rows = allTickers.map((h, idx) => {
+    const hasEvent = !!h.classification;
+    const dateStr = h.date
+      ? (h.date instanceof Date ? h.date.toISOString().split('T')[0] : new Date(h.date).toISOString().split('T')[0])
+      : '';
+    const color = classColors[h.classification] || '#ccc';
+    const label = classLabels[h.classification] || '';
+    const r2 = h.rSquared != null ? h.rSquared.toFixed(3) : '—';
+    const r2Val = h.rSquared != null ? h.rSquared : -1;
+    const hasChart = !!chartDataMap[h.ticker];
+    const inlineStyle = (hasEvent ? '' : 'color:#aaa;') + (hasChart ? ' cursor:pointer;' : '');
+
+    const mcap = h.marketCap || 0;
+    const mcapStr = mcap >= 1e9 ? (mcap / 1e9).toFixed(1) + 'B' : mcap >= 1e6 ? (mcap / 1e6).toFixed(0) + 'M' : '';
+
+    const optDV = tickerOptDV[h.ticker] || 0;
+    const optDVStr = optDV >= 1e9 ? '$' + (optDV / 1e9).toFixed(1) + 'B' : optDV >= 1e6 ? '$' + (optDV / 1e6).toFixed(1) + 'M' : optDV >= 1e3 ? '$' + (optDV / 1e3).toFixed(0) + 'K' : optDV > 0 ? '$' + optDV.toFixed(0) : '';
+
+    const tiv = tickerIVs[h.ticker];
+    const callIVStr = tiv ? tiv.callIV.toFixed(1) + '%' : '';
+    const putIVStr = tiv ? tiv.putIV.toFixed(1) + '%' : '';
+    const callIVVal = tiv ? tiv.callIV : -1;
+    const putIVVal = tiv ? tiv.putIV : -1;
+
+    const isFav = favSet.has(h.ticker);
+
+    return `<tr ${hasChart ? `class="data-row" data-ticker="${h.ticker}"` : ''} style="${inlineStyle}">
+      <td style="text-align:center; width:28px; padding:4px;" data-v="${isFav ? 1 : 0}"><span class="fav-star" data-ticker="${h.ticker}" style="cursor:pointer; font-size:1.1em; color:${isFav ? '#f5c518' : '#ccc'};" title="Toggle favorite">${isFav ? '\u2605' : '\u2606'}</span></td>
+      <td data-v="${h.ticker}" style="font-weight:bold;">${h.ticker}${hasChart ? ' <span style="font-size:0.7em;color:#aaa;">▶</span>' : ''}</td>
+      <td data-v="${dateStr || 'zzz'}">${dateStr}</td>
+      <td data-v="${h.gap || 0}">${h.gap ? h.gap.toFixed(2) + '%' : ''}</td>
+      <td data-v="${h.percentile || 0}">${h.percentile ? h.percentile.toFixed(1) + '%' : ''}</td>
+      <td data-v="${h.classification || 'zzz'}" style="color:${color}; font-weight:bold;">${label}</td>
+      <td data-v="${h.volume || 0}" style="text-align:right;">${h.volume ? (h.volume / 1e6).toFixed(1) + 'M' : ''}</td>
+      <td data-v="${r2Val}" style="text-align:right;">${r2}</td>
+      <td data-v="${mcap}" style="text-align:right;">${mcapStr}</td>
+      <td data-v="${optDV}" style="text-align:right;">${optDVStr}</td>
+      <td data-v="${callIVVal}" style="text-align:right; color:rgba(72,187,120,0.9);">${callIVStr}</td>
+      <td data-v="${putIVVal}" style="text-align:right; color:rgba(245,101,101,0.9);">${putIVStr}</td>
+    </tr>
+    <tr class="chart-row" data-chart-for="${h.ticker}" style="display:none;">
+      <td colspan="12" style="padding:0; background:#1a1a2e;">
+        <div style="padding:12px 16px; height:480px;">
+          <canvas id="chart-${h.ticker}"></canvas>
+        </div>
+        <div id="opts-wrap-${h.ticker}" style="display:none; padding:8px 16px 4px;">
+          <div style="display:flex; gap:8px;">
+            <div style="flex:1; min-width:0;">
+              <div id="opts-iv-label-0-${h.ticker}" style="color:#aaa; font-size:0.82em; padding:2px 4px; cursor:pointer; user-select:none;" title="Click for historical weighted IV"></div>
+              <div style="height:360px;"><canvas id="opts-chart-0-${h.ticker}"></canvas></div>
+            </div>
+            <div style="flex:1; min-width:0;">
+              <div id="opts-iv-label-1-${h.ticker}" style="color:#aaa; font-size:0.82em; padding:2px 4px; cursor:pointer; user-select:none;" title="Click for historical weighted IV"></div>
+              <div style="height:360px;"><canvas id="opts-chart-1-${h.ticker}"></canvas></div>
+            </div>
+          </div>
+          <div id="iv-history-wrap-${h.ticker}" style="display:none; padding:8px 0; height:200px;">
+            <canvas id="iv-history-chart-${h.ticker}"></canvas>
+          </div>
+        </div>
+        <div id="summary-${h.ticker}" style="padding:4px 20px 14px; color:#999; font-size:0.92em; line-height:1.5; max-height:140px; overflow-y:auto;"></div>
+        <div id="news-${h.ticker}" style="padding:4px 20px 14px;"></div>
+      </td>
     </tr>`;
   }).join('');
 
   return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
 <title>Ticker Screening Results</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"><\/script>
 <style>
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 20px; background: #fafafa; color: #333; }
   h1 { font-size: 1.4em; margin-bottom: 4px; }
   .summary { color: #666; margin-bottom: 16px; font-size: 0.95em; }
   table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-  th { background: #f5f5f5; padding: 10px 12px; text-align: left; font-size: 0.85em; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+  #screen-table th { background: #f5f5f5; padding: 10px 12px; text-align: left; font-size: 0.85em; color: #666; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; user-select: none; }
+  #screen-table th:hover { color: #333; background: #eee; }
+  #screen-table th .sort-arrow { font-size: 0.7em; margin-left: 3px; color: #bbb; }
+  #screen-table th.sorted-asc .sort-arrow, #screen-table th.sorted-desc .sort-arrow { color: #333; }
   td { padding: 8px 12px; border-top: 1px solid #eee; font-size: 0.95em; }
+  tr.data-row:hover { background: #f0f4ff; }
   tr:hover { background: #f9f9f9; }
-  .no-hits { text-align: center; padding: 40px; color: #888; font-size: 1.1em; }
+  .chart-row td { border-top: none; }
 </style></head><body>
 <h1>Ticker Screening Results</h1>
-<p class="summary">${hits.length} hit${hits.length !== 1 ? 's' : ''} out of ${totalTickers} tickers screened &mdash; ${config.screenLookbackDays}d lookback, p${config.screenPercentileThreshold} threshold</p>
-${hits.length > 0 ? `<table>
-<thead><tr><th>Ticker</th><th>Date</th><th>Gap %</th><th>Percentile</th><th>Classification</th><th style="text-align:right;">Volume</th></tr></thead>
+<p class="summary">${hitCount} hit${hitCount !== 1 ? 's' : ''} out of ${totalTickers} tickers screened &mdash; ${config.screenLookbackDays}d lookback, p${config.screenPercentileThreshold} threshold</p>
+${ivTickers.length > 0 ? `<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.95em;">
+  <span style="color:#666; font-weight:600;">Avg Weighted IV (${ivTickers.length} tickers):</span>
+  <span style="color:rgba(72,187,120,0.9); font-weight:bold; margin-left:10px;">Call ${avgCallIV.toFixed(1)}%</span>
+  <span style="color:rgba(245,101,101,0.9); font-weight:bold; margin-left:10px;">Put ${avgPutIV.toFixed(1)}%</span>
+</div>` : ''}
+<table id="screen-table">
+<thead><tr>
+  <th style="width:28px; text-align:center; padding:4px;"><span class="sort-arrow"></span></th>
+  <th>Ticker<span class="sort-arrow"></span></th>
+  <th>Date<span class="sort-arrow"></span></th>
+  <th>Gap %<span class="sort-arrow"></span></th>
+  <th>Percentile<span class="sort-arrow"></span></th>
+  <th>Classification<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Volume<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">R&sup2; (SPY)<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Mkt Cap<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Opt $ Vol<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Call IV<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Put IV<span class="sort-arrow"></span></th>
+</tr></thead>
 <tbody>${rows}</tbody>
-</table>` : '<div class="no-hits">No screening hits found in the lookback period.</div>'}
+</table>
+
+<script>
+(function() {
+  const chartDataMap = ${JSON.stringify(chartDataMap)};
+  const summaryMap = ${JSON.stringify(summaryMap)};
+  const newsMap = ${JSON.stringify(newsMap)};
+  const ivHistoryMap = ${JSON.stringify(ivHistoryData)};
+  // Favorite star click handler
+  document.querySelectorAll('.fav-star').forEach(star => {
+    star.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const ticker = star.getAttribute('data-ticker');
+      if (!ticker || !window.electronAPI || !window.electronAPI.toggleFavorite) return;
+      const result = await window.electronAPI.toggleFavorite(ticker);
+      const isFav = result.favorites.includes(ticker);
+      star.textContent = isFav ? '\\u2605' : '\\u2606';
+      star.style.color = isFav ? '#f5c518' : '#ccc';
+      star.closest('td').setAttribute('data-v', isFav ? '1' : '0');
+    });
+  });
+
+  const classColors = {
+    surprising_positive: '#4caf50',
+    positive_anticipated: '#8bc34a',
+    negative_anticipated: '#ff9800',
+    surprising_negative: '#f44336',
+  };
+  const classNames = {
+    surprising_positive: 'Surprising +',
+    positive_anticipated: 'Anticipated +',
+    negative_anticipated: 'Anticipated -',
+    surprising_negative: 'Surprising -',
+  };
+
+  const renderedCharts = {};
+
+  // Click handler for data rows
+  document.querySelectorAll('tr.data-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      const ticker = row.getAttribute('data-ticker');
+      const chartRow = document.querySelector('tr.chart-row[data-chart-for="' + ticker + '"]');
+      if (!chartRow) return;
+
+      const isVisible = chartRow.style.display !== 'none';
+      // Toggle arrow indicator
+      const arrow = row.querySelector('td:first-child span');
+      if (arrow) arrow.textContent = isVisible ? '\\u25B6' : '\\u25BC';
+
+      if (isVisible) {
+        chartRow.style.display = 'none';
+        return;
+      }
+
+      chartRow.style.display = '';
+
+      // Render chart if not yet done
+      if (!renderedCharts[ticker]) {
+        const cd = chartDataMap[ticker];
+        if (!cd) return;
+
+        const canvas = document.getElementById('chart-' + ticker);
+        if (!canvas) return;
+
+        // Build all datasets using numeric indices for x — avoids category/scatter misalignment
+        const eventsByClass = {};
+        for (const ev of cd.events) {
+          if (!eventsByClass[ev.classification]) eventsByClass[ev.classification] = [];
+          if (ev.idx != null && ev.idx < cd.dates.length) {
+            eventsByClass[ev.classification].push({ x: ev.idx, y: ev.y });
+          }
+        }
+
+        // Convert line and bar data to {x, y} indexed points so all datasets share the linear x scale
+        const pricePoints = cd.closes.map((v, i) => ({ x: i, y: v }));
+        const volumePoints = cd.volumes.map((v, i) => ({ x: i, y: v }));
+
+        const datasets = [{
+          label: 'Volume',
+          data: volumePoints,
+          type: 'bar',
+          backgroundColor: 'rgba(100, 100, 180, 0.25)',
+          borderColor: 'rgba(100, 100, 180, 0.4)',
+          borderWidth: 1,
+          yAxisID: 'yVol',
+          order: 2,
+        }, {
+          label: ticker + ' Close',
+          data: pricePoints,
+          borderColor: 'rgba(136, 176, 136, 0.8)',
+          backgroundColor: 'rgba(136, 176, 136, 0.1)',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: true,
+          yAxisID: 'y',
+          order: 1,
+        }];
+
+        for (const [cls, points] of Object.entries(eventsByClass)) {
+          datasets.push({
+            label: classNames[cls] || cls,
+            data: points,
+            type: 'scatter',
+            backgroundColor: classColors[cls] || '#ccc',
+            borderColor: classColors[cls] || '#ccc',
+            pointRadius: 7,
+            pointHoverRadius: 9,
+            yAxisID: 'y',
+            order: 0,
+          });
+        }
+
+        const dates = cd.dates;
+        renderedCharts[ticker] = new Chart(canvas, {
+          type: 'line',
+          data: { datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 300 },
+            plugins: {
+              title: { display: true, text: ticker + ' Price with Events', color: '#b0b0b0' },
+              legend: { labels: { color: '#909090', boxWidth: 12, font: { size: 11 } } },
+              tooltip: {
+                callbacks: {
+                  title: function(items) { return items[0] ? dates[items[0].parsed.x] || '' : ''; }
+                }
+              },
+            },
+            scales: {
+              x: {
+                type: 'linear',
+                ticks: {
+                  color: '#909090',
+                  maxTicksLimit: 12,
+                  font: { size: 10 },
+                  callback: function(val) { return dates[val] || ''; },
+                },
+                grid: { color: '#2a2a4a' },
+                min: 0,
+                max: dates.length - 1,
+              },
+              y: {
+                position: 'left',
+                ticks: { color: '#909090', font: { size: 10 } },
+                grid: { color: '#2a2a4a' },
+              },
+              yVol: {
+                position: 'right',
+                display: false,
+                beginAtZero: true,
+                max: Math.max(...(cd.volumes || [0])) * 4,
+                grid: { drawOnChartArea: false },
+              },
+            },
+          },
+        });
+
+        // Populate company summary
+        const sumEl = document.getElementById('summary-' + ticker);
+        if (sumEl && summaryMap[ticker]) {
+          sumEl.textContent = summaryMap[ticker];
+        }
+
+        // Populate news headlines
+        const newsEl = document.getElementById('news-' + ticker);
+        const news = newsMap[ticker];
+        if (newsEl && news && news.length > 0) {
+          newsEl.innerHTML = news.map(n =>
+            '<div style="margin-bottom:6px; font-size:0.95em; line-height:1.5;">' +
+              '<span style="color:#666; font-size:0.85em; margin-right:6px;">' + (n.date ? n.date + ' ' : '') + (n.time || '') + '</span>' +
+              '<a href="' + n.url + '" style="color:#7aa2c7; text-decoration:none;">' + n.headline + '</a>' +
+            '</div>'
+          ).join('');
+        }
+
+        // Render options strike charts (nearest 2 expirations side by side)
+        const od = cd.optionsStrikes;
+        if (od && od.length > 0) {
+          const optsWrap = document.getElementById('opts-wrap-' + ticker);
+          if (optsWrap) {
+            optsWrap.style.display = 'block';
+            const fmtDollar = (v) => v >= 1e6 ? '$'+(v/1e6).toFixed(1)+'M' : v >= 1e3 ? '$'+(v/1e3).toFixed(0)+'K' : '$'+v.toFixed(0);
+
+            for (let ei = 0; ei < Math.min(2, od.length); ei++) {
+              const exp = od[ei];
+              const canvas = document.getElementById('opts-chart-' + ei + '-' + ticker);
+              if (!exp || !canvas) continue;
+
+              const strikeSet = new Set();
+              exp.calls.forEach(c => strikeSet.add(c.strike));
+              exp.puts.forEach(p => strikeSet.add(p.strike));
+              const strikes = Array.from(strikeSet).sort((a, b) => a - b);
+              const strikeLabels = strikes.map(s => '$' + s.toFixed(s >= 100 ? 0 : s >= 1 ? 1 : 2));
+
+              const callMap = {};
+              exp.calls.forEach(c => { callMap[c.strike] = c; });
+              const putMap = {};
+              exp.puts.forEach(p => { putMap[p.strike] = p; });
+
+              const callDollarVol = strikes.map(s => callMap[s] ? callMap[s].dollarVol : 0);
+              const putDollarVol = strikes.map(s => putMap[s] ? putMap[s].dollarVol : 0);
+              const callDollarOI = strikes.map(s => callMap[s] ? callMap[s].dollarOI : 0);
+              const putDollarOI = strikes.map(s => putMap[s] ? putMap[s].dollarOI : 0);
+              const callIV = strikes.map(s => callMap[s] && callMap[s].iv > 0 ? callMap[s].iv : null);
+              const putIV = strikes.map(s => putMap[s] && putMap[s].iv > 0 ? putMap[s].iv : null);
+
+              // Populate weighted IV label
+              const ivLabel = document.getElementById('opts-iv-label-' + ei + '-' + ticker);
+              if (ivLabel && (exp.wCallIV > 0 || exp.wPutIV > 0)) {
+                ivLabel.innerHTML = '<span style="color:rgba(72,187,120,0.9);">Call IV: ' + exp.wCallIV.toFixed(1) + '%</span> | <span style="color:rgba(245,101,101,0.9);">Put IV: ' + exp.wPutIV.toFixed(1) + '%</span> <span style="color:#555; font-size:0.85em;">($-weighted)</span>';
+              }
+
+              new Chart(canvas, {
+                type: 'bar',
+                data: {
+                  labels: strikeLabels,
+                  datasets: [
+                    { label: 'Call $ OI', data: callDollarOI, backgroundColor: 'rgba(72, 187, 120, 0.15)', borderColor: 'rgba(72, 187, 120, 0.3)', borderWidth: 1, yAxisID: 'yDollar', stack: 'call', order: 3, barPercentage: 0.95 },
+                    { label: 'Put $ OI', data: putDollarOI, backgroundColor: 'rgba(245, 101, 101, 0.15)', borderColor: 'rgba(245, 101, 101, 0.3)', borderWidth: 1, yAxisID: 'yDollar', stack: 'put', order: 3, barPercentage: 0.95 },
+                    { label: 'Call $ Vol', data: callDollarVol, backgroundColor: 'rgba(72, 187, 120, 0.6)', borderColor: 'rgba(72, 187, 120, 0.9)', borderWidth: 1, yAxisID: 'yDollar', stack: 'call', order: 2, barPercentage: 0.6 },
+                    { label: 'Put $ Vol', data: putDollarVol, backgroundColor: 'rgba(245, 101, 101, 0.6)', borderColor: 'rgba(245, 101, 101, 0.9)', borderWidth: 1, yAxisID: 'yDollar', stack: 'put', order: 2, barPercentage: 0.6 },
+                    { label: 'Call IV', data: callIV, borderColor: 'rgba(72, 187, 120, 0.9)', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, type: 'line', yAxisID: 'yIV', order: 1, spanGaps: true },
+                    { label: 'Put IV', data: putIV, borderColor: 'rgba(245, 101, 101, 0.9)', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, type: 'line', yAxisID: 'yIV', order: 1, spanGaps: true },
+                  ],
+                },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  animation: { duration: 200 },
+                  plugins: {
+                    title: { display: true, text: 'Exp: ' + exp.label, color: '#b0b0b0', font: { size: 11 } },
+                    legend: { display: false },
+                    tooltip: {
+                      callbacks: {
+                        label: function(ctx) {
+                          if (ctx.dataset.yAxisID === 'yIV') return ctx.dataset.label + ': ' + (ctx.raw !== null ? ctx.raw.toFixed(1) + '%' : 'N/A');
+                          return ctx.dataset.label + ': ' + fmtDollar(ctx.raw);
+                        }
+                      }
+                    },
+                  },
+                  scales: {
+                    x: { stacked: true, ticks: { color: '#909090', font: { size: 8 }, maxRotation: 45 }, grid: { color: '#2a2a4a' } },
+                    yDollar: {
+                      position: 'left',
+                      stacked: false,
+                      ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return fmtDollar(v); } },
+                      grid: { color: '#2a2a4a' },
+                      beginAtZero: true,
+                    },
+                    yIV: {
+                      position: 'right',
+                      ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } },
+                      grid: { drawOnChartArea: false },
+                    },
+                  },
+                },
+              });
+            }
+
+            // IV history click handler — either label toggles the history chart
+            let ivHistChart = null;
+            const histWrap = document.getElementById('iv-history-wrap-' + ticker);
+            const histCanvas = document.getElementById('iv-history-chart-' + ticker);
+            const hist = ivHistoryMap[ticker];
+
+            function toggleHistory() {
+              if (!histWrap || !histCanvas || !hist || hist.length < 2) return;
+              if (histWrap.style.display !== 'none') {
+                histWrap.style.display = 'none';
+                return;
+              }
+              histWrap.style.display = 'block';
+              if (ivHistChart) return; // already rendered
+
+              const labels = hist.map(r => r.date);
+              const datasets = [];
+              if (hist[0].exp1) {
+                datasets.push({ label: 'Exp1 Call IV', data: hist.map(r => r.exp1 ? r.exp1.callIV : null), borderColor: 'rgba(72,187,120,0.9)', borderWidth: 2, pointRadius: 3, fill: false, spanGaps: true });
+                datasets.push({ label: 'Exp1 Put IV', data: hist.map(r => r.exp1 ? r.exp1.putIV : null), borderColor: 'rgba(245,101,101,0.9)', borderWidth: 2, pointRadius: 3, fill: false, spanGaps: true });
+              }
+              if (hist[0].exp2) {
+                datasets.push({ label: 'Exp2 Call IV', data: hist.map(r => r.exp2 ? r.exp2.callIV : null), borderColor: 'rgba(72,187,120,0.4)', borderWidth: 2, pointRadius: 3, borderDash: [5,3], fill: false, spanGaps: true });
+                datasets.push({ label: 'Exp2 Put IV', data: hist.map(r => r.exp2 ? r.exp2.putIV : null), borderColor: 'rgba(245,101,101,0.4)', borderWidth: 2, pointRadius: 3, borderDash: [5,3], fill: false, spanGaps: true });
+              }
+
+              ivHistChart = new Chart(histCanvas, {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  animation: { duration: 200 },
+                  plugins: {
+                    title: { display: true, text: 'Weighted IV History — ' + ticker, color: '#b0b0b0', font: { size: 11 } },
+                    legend: { labels: { color: '#909090', boxWidth: 10, font: { size: 9 } } },
+                    tooltip: { callbacks: { label: function(ctx) { return ctx.dataset.label + ': ' + (ctx.raw != null ? ctx.raw.toFixed(1) + '%' : 'N/A'); } } },
+                  },
+                  scales: {
+                    x: { ticks: { color: '#909090', font: { size: 9 } }, grid: { color: '#2a2a4a' } },
+                    y: { ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } }, grid: { color: '#2a2a4a' } },
+                  },
+                },
+              });
+            }
+
+            for (let li = 0; li < 2; li++) {
+              const lbl = document.getElementById('opts-iv-label-' + li + '-' + ticker);
+              if (lbl) lbl.addEventListener('click', toggleHistory);
+            }
+          }
+        }
+      }
+    });
+  });
+
+  // Sorting — skip chart rows
+  const table = document.getElementById('screen-table');
+  const headers = table.querySelectorAll('th');
+  let currentCol = -1, ascending = true;
+
+  headers.forEach((th, colIdx) => {
+    th.addEventListener('click', () => {
+      if (currentCol === colIdx) {
+        ascending = !ascending;
+      } else {
+        currentCol = colIdx;
+        ascending = (colIdx === 1 || colIdx === 5);
+      }
+
+      headers.forEach(h => h.classList.remove('sorted-asc', 'sorted-desc'));
+      th.classList.add(ascending ? 'sorted-asc' : 'sorted-desc');
+
+      headers.forEach(h => h.querySelector('.sort-arrow').textContent = '');
+      th.querySelector('.sort-arrow').textContent = ascending ? ' \\u25B2' : ' \\u25BC';
+
+      const tbody = table.querySelector('tbody');
+      // Collect data-row + chart-row pairs
+      const pairs = [];
+      const dataRows = tbody.querySelectorAll('tr.data-row');
+      dataRows.forEach(dr => {
+        const ticker = dr.getAttribute('data-ticker');
+        const chartRow = tbody.querySelector('tr.chart-row[data-chart-for="' + ticker + '"]');
+        pairs.push({ dataRow: dr, chartRow });
+      });
+      // Also collect rows without data-row class (error/skipped tickers)
+      const allTrSet = new Set();
+      pairs.forEach(p => { allTrSet.add(p.dataRow); if (p.chartRow) allTrSet.add(p.chartRow); });
+      const otherRows = Array.from(tbody.querySelectorAll('tr')).filter(r => !allTrSet.has(r) && !r.classList.contains('chart-row'));
+      otherRows.forEach(r => pairs.push({ dataRow: r, chartRow: null }));
+
+      pairs.sort((a, b) => {
+        const aVal = a.dataRow.children[colIdx]?.getAttribute('data-v') || '';
+        const bVal = b.dataRow.children[colIdx]?.getAttribute('data-v') || '';
+        const aNum = parseFloat(aVal);
+        const bNum = parseFloat(bVal);
+
+        let cmp;
+        if (!isNaN(aNum) && !isNaN(bNum)) {
+          cmp = aNum - bNum;
+        } else {
+          cmp = aVal.localeCompare(bVal);
+        }
+        return ascending ? cmp : -cmp;
+      });
+
+      pairs.forEach(p => {
+        tbody.appendChild(p.dataRow);
+        if (p.chartRow) tbody.appendChild(p.chartRow);
+      });
+    });
+  });
+})();
+<\/script>
 </body></html>`;
 }
 

@@ -1045,6 +1045,27 @@ screenModal.addEventListener('click', async (e) => {
 
 // Revise the 50 button
 const screenRevise = document.getElementById('screen-revise');
+const screenViewLast = document.getElementById('screen-view-last');
+
+// View last revision results
+screenViewLast.addEventListener('click', async () => {
+  screenModal.style.display = 'none';
+  await window.electronAPI.hideModal();
+
+  try {
+    const result = await window.electronAPI.loadReviseResults();
+    if (!result.success) {
+      showToast('Error', result.error, 'error');
+      return;
+    }
+
+    const html = generateReviseHTML(result);
+    const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
+    await createTab(dataUrl);
+  } catch (error) {
+    showToast('Error', error.message, 'error');
+  }
+});
 
 // Listen for progress updates
 window.electronAPI.onReviseProgress((data) => {
@@ -1102,7 +1123,7 @@ function generateReviseHTML(result) {
   const nNoGrowth = ex.noGrowth.length;
   const nHighLev = ex.highLeverage.length;
   const nErrors = (result.errors || []).length;
-  const nTotal = result.totalScored + nIlliquid + nErrors;
+  const selectedSet = new Set(result.tickers || []);
 
   function fmtCap(v) {
     if (!v) return '—';
@@ -1111,32 +1132,57 @@ function generateReviseHTML(result) {
     return v.toLocaleString();
   }
 
-  const rows = result.details.map((d, i) => `<tr>
-    <td data-v="${i + 1}">${i + 1}</td>
-    <td data-v="${d.ticker}" style="font-weight:bold;">${d.ticker}</td>
-    <td data-v="${d.revenueGrowth}">${(d.revenueGrowth * 100).toFixed(1)}%</td>
-    <td data-v="${d.debtToEquity}">${d.debtToEquity.toFixed(0)}</td>
-    <td data-v="${d.leverageFactor}">${d.leverageFactor.toFixed(3)}</td>
-    <td data-v="${d.score}">${(d.score * 100).toFixed(2)}</td>
-    <td data-v="${d.avgVolume}" style="text-align:right;">${(d.avgVolume / 1e6).toFixed(1)}M</td>
-    <td data-v="${d.marketCap || 0}" style="text-align:right;">${fmtCap(d.marketCap)}</td>
-  </tr>`).join('');
+  // Status labels and sort-order values for each category
+  const statusMap = {
+    selected:     { label: 'Selected',       color: '#4caf50', order: 0 },
+    illiquid:     { label: 'Illiquid',        color: '#2196f3', order: 1 },
+    noGrowth:     { label: 'Low Growth',      color: '#ff9800', order: 2 },
+    highLeverage: { label: 'High Leverage',   color: '#f44336', order: 3 },
+    error:        { label: 'Error',           color: '#999',    order: 4 },
+  };
 
-  const illiquidRows = ex.illiquid.map(d =>
-    `<tr><td>${d.ticker}</td><td>${(d.avgVolume / 1e6).toFixed(2)}M</td><td>${(d.revenueGrowth * 100).toFixed(1)}%</td><td>${d.debtToEquity.toFixed(0)}</td><td style="text-align:right;">${fmtCap(d.marketCap)}</td></tr>`
-  ).join('');
+  // Build a unified list of all tickers
+  const allEntries = [];
 
-  const noGrowthRows = ex.noGrowth.map(d =>
-    `<tr><td>${d.ticker}</td><td>${(d.revenueGrowth * 100).toFixed(1)}%</td><td>${d.debtToEquity.toFixed(0)}</td><td>${(d.score * 100).toFixed(2)}</td><td style="text-align:right;">${fmtCap(d.marketCap)}</td></tr>`
-  ).join('');
+  // Selected (top 50)
+  for (const d of result.details) {
+    allEntries.push({ ...d, status: 'selected' });
+  }
+  // Excluded groups
+  for (const d of ex.illiquid) {
+    allEntries.push({ ...d, status: 'illiquid' });
+  }
+  for (const d of ex.noGrowth) {
+    allEntries.push({ ...d, status: 'noGrowth' });
+  }
+  for (const d of ex.highLeverage) {
+    allEntries.push({ ...d, status: 'highLeverage' });
+  }
+  // Errors
+  for (const e of (result.errors || [])) {
+    allEntries.push({ ticker: e.ticker, score: -1, revenueGrowth: 0, debtToEquity: 0, leverageFactor: 0, avgVolume: 0, marketCap: 0, status: 'error', errorMsg: e.error });
+  }
 
-  const highLevRows = ex.highLeverage.map(d =>
-    `<tr><td>${d.ticker}</td><td>${(d.revenueGrowth * 100).toFixed(1)}%</td><td>${d.debtToEquity.toFixed(0)}</td><td>${(d.score * 100).toFixed(2)}</td><td style="text-align:right;">${fmtCap(d.marketCap)}</td></tr>`
-  ).join('');
+  const nTotal = allEntries.length;
+  const timestamp = result.timestamp ? new Date(result.timestamp).toLocaleString() : '';
 
-  const errorRows = (result.errors || []).map(e =>
-    `<tr><td>${e.ticker}</td><td colspan="4" style="color:#f44336;">${e.error}</td></tr>`
-  ).join('');
+  const rows = allEntries.map(d => {
+    const st = statusMap[d.status];
+    const isSelected = d.status === 'selected';
+    const rowStyle = isSelected ? '' : ' style="color:#999;"';
+    const statusOrder = st.order;
+
+    return `<tr${rowStyle}>
+      <td data-v="${d.ticker}" style="font-weight:bold;">${d.ticker}</td>
+      <td data-v="${statusOrder}" style="color:${st.color}; font-weight:bold;">${st.label}</td>
+      <td data-v="${d.revenueGrowth || 0}">${d.revenueGrowth != null ? (d.revenueGrowth * 100).toFixed(1) + '%' : '—'}</td>
+      <td data-v="${d.debtToEquity || 0}">${d.debtToEquity != null ? d.debtToEquity.toFixed(0) : '—'}</td>
+      <td data-v="${d.leverageFactor || 0}">${d.leverageFactor != null ? d.leverageFactor.toFixed(3) : '—'}</td>
+      <td data-v="${d.score || 0}">${d.score != null && d.score >= 0 ? (d.score * 100).toFixed(2) : '—'}</td>
+      <td data-v="${d.avgVolume || 0}" style="text-align:right;">${d.avgVolume ? (d.avgVolume / 1e6).toFixed(1) + 'M' : '—'}</td>
+      <td data-v="${d.marketCap || 0}" style="text-align:right;">${fmtCap(d.marketCap)}</td>
+    </tr>`;
+  }).join('');
 
   return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
@@ -1146,7 +1192,7 @@ function generateReviseHTML(result) {
   h1 { font-size: 1.4em; margin-bottom: 4px; }
   .summary { color: #666; margin-bottom: 16px; font-size: 0.95em; }
   .exclusion-summary { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
-  .excl-card { background: #fff; border-radius: 8px; padding: 14px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); min-width: 160px; }
+  .excl-card { background: #fff; border-radius: 8px; padding: 14px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); min-width: 140px; }
   .excl-card .count { font-size: 1.8em; font-weight: bold; }
   .excl-card .label { font-size: 0.85em; color: #666; margin-top: 2px; }
   .excl-card.illiquid .count { color: #2196f3; }
@@ -1156,33 +1202,28 @@ function generateReviseHTML(result) {
   .excl-card.selected .count { color: #4caf50; }
   table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
   th { background: #f5f5f5; padding: 10px 12px; text-align: left; font-size: 0.85em; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
-  #top50 th { cursor: pointer; user-select: none; }
-  #top50 th:hover { color: #333; background: #eee; }
-  #top50 th .sort-arrow { font-size: 0.7em; margin-left: 3px; color: #bbb; }
-  #top50 th.sorted-asc .sort-arrow, #top50 th.sorted-desc .sort-arrow { color: #333; }
+  #revise-table th { cursor: pointer; user-select: none; }
+  #revise-table th:hover { color: #333; background: #eee; }
+  #revise-table th .sort-arrow { font-size: 0.7em; margin-left: 3px; color: #bbb; }
+  #revise-table th.sorted-asc .sort-arrow, #revise-table th.sorted-desc .sort-arrow { color: #333; }
   td { padding: 8px 12px; border-top: 1px solid #eee; font-size: 0.95em; }
   tr:hover { background: #f9f9f9; }
-  h2 { font-size: 1.1em; margin-top: 24px; color: #666; }
-  details { margin-top: 12px; }
-  details summary { cursor: pointer; color: #666; font-size: 0.95em; }
-  details summary:hover { color: #333; }
 </style></head><body>
-<h1>Revise the 50 — Results</h1>
-<p class="summary">Analyzed ${nTotal} tickers from universe. Config updated with top ${result.tickers.length}.</p>
+<h1>Revise the 50 — All Tickers</h1>
+<p class="summary">${nTotal} tickers analyzed${timestamp ? ' on ' + timestamp : ''}. ${selectedSet.size} selected for screening.</p>
 
 <div class="exclusion-summary">
-  <div class="excl-card selected"><div class="count">${result.tickers.length}</div><div class="label">Selected</div></div>
-  <div class="excl-card illiquid"><div class="count">${nIlliquid}</div><div class="label">Illiquid (&lt;500K avg vol)</div></div>
-  <div class="excl-card no-growth"><div class="count">${nNoGrowth}</div><div class="label">Low / No Growth</div></div>
-  <div class="excl-card high-lev"><div class="count">${nHighLev}</div><div class="label">High Leverage (D/E&gt;100)</div></div>
+  <div class="excl-card selected"><div class="count">${selectedSet.size}</div><div class="label">Selected</div></div>
+  <div class="excl-card illiquid"><div class="count">${nIlliquid}</div><div class="label">Illiquid</div></div>
+  <div class="excl-card no-growth"><div class="count">${nNoGrowth}</div><div class="label">Low Growth</div></div>
+  <div class="excl-card high-lev"><div class="count">${nHighLev}</div><div class="label">High Leverage</div></div>
   <div class="excl-card errors"><div class="count">${nErrors}</div><div class="label">Errors</div></div>
 </div>
 
-<h2>Top 50</h2>
-<table id="top50">
+<table id="revise-table">
 <thead><tr>
-  <th>#<span class="sort-arrow"></span></th>
   <th>Ticker<span class="sort-arrow"></span></th>
+  <th>Status<span class="sort-arrow"></span></th>
   <th>Rev Growth<span class="sort-arrow"></span></th>
   <th>D/E<span class="sort-arrow"></span></th>
   <th>Lev Factor<span class="sort-arrow"></span></th>
@@ -1195,7 +1236,7 @@ function generateReviseHTML(result) {
 
 <script>
 (function() {
-  const table = document.getElementById('top50');
+  const table = document.getElementById('revise-table');
   const headers = table.querySelectorAll('th');
   let currentCol = -1, ascending = true;
 
@@ -1205,18 +1246,15 @@ function generateReviseHTML(result) {
         ascending = !ascending;
       } else {
         currentCol = colIdx;
-        ascending = (colIdx === 1); // Ticker defaults ascending, numbers default descending
+        ascending = (colIdx === 0 || colIdx === 1); // Ticker/Status default ascending
       }
 
-      // Update header classes
       headers.forEach(h => h.classList.remove('sorted-asc', 'sorted-desc'));
       th.classList.add(ascending ? 'sorted-asc' : 'sorted-desc');
 
-      // Update arrows
       headers.forEach(h => h.querySelector('.sort-arrow').textContent = '');
       th.querySelector('.sort-arrow').textContent = ascending ? ' \\u25B2' : ' \\u25BC';
 
-      // Sort rows
       const tbody = table.querySelector('tbody');
       const rows = Array.from(tbody.querySelectorAll('tr'));
 
@@ -1240,42 +1278,52 @@ function generateReviseHTML(result) {
   });
 })();
 </script>
-
-${nIlliquid > 0 ? `<details><summary>Excluded — Illiquid (${nIlliquid})</summary>
-<table><thead><tr><th>Ticker</th><th>Avg Volume</th><th>Rev Growth</th><th>D/E</th><th style="text-align:right;">Mkt Cap</th></tr></thead><tbody>${illiquidRows}</tbody></table></details>` : ''}
-
-${nNoGrowth > 0 ? `<details><summary>Excluded — Low/No Growth (${nNoGrowth})</summary>
-<table><thead><tr><th>Ticker</th><th>Rev Growth</th><th>D/E</th><th>Score</th><th style="text-align:right;">Mkt Cap</th></tr></thead><tbody>${noGrowthRows}</tbody></table></details>` : ''}
-
-${nHighLev > 0 ? `<details><summary>Excluded — High Leverage (${nHighLev})</summary>
-<table><thead><tr><th>Ticker</th><th>Rev Growth</th><th>D/E</th><th>Score</th><th style="text-align:right;">Mkt Cap</th></tr></thead><tbody>${highLevRows}</tbody></table></details>` : ''}
-
-${nErrors > 0 ? `<details><summary>Errors (${nErrors})</summary>
-<table><thead><tr><th>Ticker</th><th>Error</th></tr></thead><tbody>${errorRows}</tbody></table></details>` : ''}
-
 </body></html>`;
 }
+
+// View latest screening results
+document.getElementById('screen-view-screening').addEventListener('click', async () => {
+  screenModal.style.display = 'none';
+  await window.electronAPI.hideModal();
+
+  try {
+    const result = await window.electronAPI.loadScreeningResults();
+    if (!result.success) {
+      showToast('Error', result.error, 'error');
+      return;
+    }
+    await createTab('file://' + result.filePath);
+  } catch (error) {
+    showToast('Error', error.message, 'error');
+  }
+});
 
 screenRun.addEventListener('click', async () => {
   const period = parseInt(screenPeriod.value, 10) || 200;
   const lookbackDays = parseInt(screenLookbackDays.value, 10) || 5;
   const percentileThreshold = parseInt(screenPercentile.value, 10) || 95;
+  const overrideRaw = document.getElementById('screen-override-tickers').value.trim();
+  const overrideTickers = overrideRaw
+    ? overrideRaw.split(/[,\s]+/).map(t => t.trim().toUpperCase()).filter(Boolean)
+    : null;
+  const fetchNews = document.getElementById('screen-fetch-news').checked;
+  const favoritesOnly = document.getElementById('screen-favorites-only').checked;
 
   screenModal.style.display = 'none';
   await window.electronAPI.hideModal();
 
-  showToast('Screening...', 'Screening tickers for recent events. This may take a couple minutes...', 'info', 120000);
+  const tickerCount = overrideTickers ? overrideTickers.length : (favoritesOnly ? 'favorites' : 'all');
+  showToast('Screening...', `Screening ${tickerCount} ticker${tickerCount === 1 ? '' : 's'} for recent events...`, 'info', 120000);
 
   try {
-    const result = await window.electronAPI.screenTickers({ period, lookbackDays, percentileThreshold });
+    const result = await window.electronAPI.screenTickers({ period, lookbackDays, percentileThreshold, overrideTickers, fetchNews, favoritesOnly });
 
     if (!result.success) {
       showToast('Error', result.error, 'error');
       return;
     }
 
-    const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(result.html);
-    await createTab(dataUrl);
+    await createTab('file://' + result.filePath);
     showToast('Screening Complete', `Found ${result.hitCount} hit${result.hitCount !== 1 ? 's' : ''}`, 'success');
   } catch (error) {
     console.error('Screening error:', error);

@@ -185,15 +185,33 @@
             <input type="number" id="screen-percentile" value="95" min="50" max="99" />
           </div>
         </div>
-      </div>
-      <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee;">
-        <button id="screen-revise" class="btn-modal btn-primary" style="width: 100%; background: #ff9800;">Revise the 50</button>
-        <div style="font-size: 0.8em; color: #888; margin-top: 4px;">Auto-select best 50 tickers from ~200 universe by revenue growth, leverage, and liquidity.</div>
+        <div style="margin-top: 10px;">
+          <label for="screen-override-tickers" style="font-size: 0.85em;">Override tickers <span style="color: #999;">(optional — comma-separated, bypasses saved list)</span></label>
+          <input type="text" id="screen-override-tickers" placeholder="e.g. AAPL, TSLA, NVDA" style="width: 100%; margin-top: 4px;" />
+        </div>
+        <div style="margin-top: 8px;">
+          <label style="font-size: 0.85em; display: flex; align-items: center; gap: 6px;">
+            <input type="checkbox" id="screen-fetch-news" />
+            Fetch news headlines <span style="color: #999;">(slower — scrapes Finviz per ticker)</span>
+          </label>
+        </div>
+        <div style="margin-top: 8px;">
+          <label style="font-size: 0.85em; display: flex; align-items: center; gap: 6px;">
+            <input type="checkbox" id="screen-favorites-only" />
+            Favorites only <span style="color: #999;">(run only starred tickers)</span>
+          </label>
+        </div>
       </div>
       <div class="modal-buttons">
         <button id="screen-cancel" class="btn-modal btn-cancel">Cancel</button>
+        <button id="screen-view-screening" class="btn-modal btn-cancel" style="flex: 0 0 auto;">Latest Run Results</button>
         <button id="screen-run" class="btn-modal btn-primary">Run Screening</button>
       </div>
+      <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; display: flex; gap: 8px;">
+        <button id="screen-revise" class="btn-modal btn-primary" style="flex: 1; background: #ff9800;">Revise the 50</button>
+        <button id="screen-view-last" class="btn-modal btn-cancel" style="flex: 0 0 auto;">View Last</button>
+      </div>
+      <div style="font-size: 0.8em; color: #888; margin-top: 4px;">Auto-select best 50 tickers from ~200 universe by revenue growth, leverage, and liquidity.</div>
     </div>
   </div>
 

@@ -963,11 +963,7 @@ class OptionsAnalysisService {
    */
   normalizeIV(rawIV) {
     if (!rawIV || rawIV <= 0) return 0;
-    // Raw values ≤ 0.02 are daily variance (sqrt(0.02*252) = 224% — highest plausible IV)
-    // Raw values > 0.02 are already annualized decimal (2% IV min — near impossible for options)
-    if (rawIV <= 0.02) {
-      return Math.sqrt(rawIV * 252);
-    }
+    // Yahoo Finance returns annualized IV as decimal (e.g. 0.35 = 35%)
     return rawIV;
   }
 
