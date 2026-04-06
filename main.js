@@ -20,12 +20,14 @@ const ArticleDatabase = require('./src/services/database');
 const PriceTrackingService = require('./src/services/priceTracking');
 const StockAnalysisService = require('./src/services/stockAnalysis');
 const OptionsAnalysisService = require('./src/services/optionsAnalysis');
+const IBOptionsProvider = require('./src/services/ibOptionsProvider');
 const PortfolioAnalysisService = require('./src/services/portfolioAnalysis');
 const articleExtractor = require('./src/services/articleExtractor');
 const newsScraper = require('./src/services/newsScraper');
 const TickerDiscoveryService = require('./src/services/tickerDiscovery');
 const ChronosHoldPeriodService = require('./src/services/chronosHoldPeriod');
 const { screenTickers, reviseTickers } = require('./ci/ticker-screen');
+const { classifyTickerNews } = require('./src/services/newsClassifier');
 const YahooFinance = require('yahoo-finance2').default;
 
 let mainWindow;
@@ -284,7 +286,7 @@ function updateBrowserViewBounds(browserView) {
 }
 
 // Create a new tab
-function createTab(url = 'https://finviz.com') {
+function createTab(url = 'https://zerohedge.com') {
   const tabId = nextTabId++;
 
   const browserView = new BrowserView({
@@ -1481,7 +1483,7 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       config.screenTickers = options.overrideTickers;
     }
 
-    // Filter to favorites only if requested — include all favorites even if not in the 50 list
+    // Filter to favorites only if requested — include all favorites even if not in the 100 list
     if (options.favoritesOnly) {
       const favs = loadFavorites();
       if (favs.length > 0) {
@@ -1493,7 +1495,36 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
     console.log(`\nRunning ticker screening on ${tickers.length} tickers...`);
 
     const createYF = () => new YahooFinance({ suppressNotices: ['yahooSurvey'] });
-    const result = await screenTickers(priceTracker, config, createYF);
+
+    // If news is enabled, fetch Finviz headlines per ticker as stock data completes
+    // Finviz fetch is serial (shared BrowserView), queued via onTickerDone callback
+    const finvizQueue = [];
+    let finvizBusy = false;
+
+    async function processFinvizQueue() {
+      if (finvizBusy) return;
+      finvizBusy = true;
+      while (finvizQueue.length > 0) {
+        const entry = finvizQueue.shift();
+        if (!entry.ticker || entry.skipped || entry.error) continue;
+        try {
+          const headlines = await fetchFinvizNews(entry.ticker);
+          entry.news = (headlines || []).slice(0, 5);
+        } catch (_) { entry.news = []; }
+      }
+      finvizBusy = false;
+    }
+
+    const onTickerDone = options.fetchNews ? (entry) => {
+      finvizQueue.push(entry);
+      processFinvizQueue();
+    } : null;
+    const result = await screenTickers(priceTracker, config, createYF, onTickerDone);
+
+    // Wait for remaining Finviz fetches to finish
+    if (options.fetchNews) {
+      await processFinvizQueue();
+    }
 
     // Sort allTickers: hits first (by percentile desc), then non-hits alphabetically
     result.allTickers.sort((a, b) => {
@@ -1504,14 +1535,12 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       return (a.ticker || '').localeCompare(b.ticker || '');
     });
 
-    // Fetch top 5 Finviz news headlines per ticker (if enabled)
+    // Classify headlines from title text only (no article extraction)
     if (options.fetchNews) {
-      for (const entry of result.allTickers) {
-        if (!entry.ticker || entry.skipped || entry.error) continue;
-        try {
-          const headlines = await fetchFinvizNews(entry.ticker);
-          entry.news = (headlines || []).slice(0, 5);
-        } catch (_) { entry.news = []; }
+      try {
+        await classifyTickerNews(result.allTickers);
+      } catch (err) {
+        console.error('[Screen] News classification failed:', err.message);
       }
     }
 
@@ -1525,8 +1554,9 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       if (!od || od.length === 0) continue;
       if (!ivHistory[entry.ticker]) ivHistory[entry.ticker] = [];
       const record = { date: today };
-      if (od[0]) { record.exp1 = { label: od[0].label, callIV: od[0].wCallIV, putIV: od[0].wPutIV }; }
-      if (od[1]) { record.exp2 = { label: od[1].label, callIV: od[1].wCallIV, putIV: od[1].wPutIV }; }
+      if (od[0]) { record.exp1 = { label: od[0].label, callIV: od[0].wCallIV, putIV: od[0].wPutIV, atmCallIV: od[0].atmCallIV, atmPutIV: od[0].atmPutIV, deepOTMCallPct: od[0].deepOTMCallPct, deepOTMPutPct: od[0].deepOTMPutPct }; }
+      if (od[1]) { record.exp2 = { label: od[1].label, callIV: od[1].wCallIV, putIV: od[1].wPutIV, atmCallIV: od[1].atmCallIV, atmPutIV: od[1].atmPutIV, deepOTMCallPct: od[1].deepOTMCallPct, deepOTMPutPct: od[1].deepOTMPutPct }; }
+      if (od[2]) { record.exp3 = { label: od[2].label, callIV: od[2].wCallIV, putIV: od[2].wPutIV, atmCallIV: od[2].atmCallIV, atmPutIV: od[2].atmPutIV, deepOTMCallPct: od[2].deepOTMCallPct, deepOTMPutPct: od[2].deepOTMPutPct }; }
       // Replace if same date exists, otherwise append
       const existing = ivHistory[entry.ticker].findIndex(r => r.date === today);
       if (existing >= 0) ivHistory[entry.ticker][existing] = record;
@@ -1534,15 +1564,128 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
     }
     fs.writeFileSync(ivHistoryPath, JSON.stringify(ivHistory, null, 2) + '\n', 'utf-8');
 
+    // Append classified events to the persistent event log for backtesting.
+    // Each {ticker, eventDate} is unique — re-encountering the same event updates the
+    // record in place (bar revisions or IV snapshot refreshes). This builds a time-series
+    // dataset that can be joined with future price data to compute forward returns, or
+    // with IV history to study spread dynamics around classified events.
+    const eventLogPath = path.join(__dirname, 'ci', 'event-log.json');
+    let eventLog = [];
+    try { eventLog = JSON.parse(fs.readFileSync(eventLogPath, 'utf-8')); } catch (_) {}
+    const eventIndex = new Map();
+    eventLog.forEach((e, i) => eventIndex.set(`${e.ticker}|${e.eventDate}`, i));
+
+    const runDate = new Date().toISOString().split('T')[0];
+    let eventsAdded = 0, eventsUpdated = 0;
+    for (const entry of result.allTickers) {
+      if (!entry.classification) continue;
+      const ed = entry.date instanceof Date ? entry.date : new Date(entry.date);
+      if (isNaN(ed.getTime())) continue;
+      const eventDate = ed.toISOString().split('T')[0];
+      const os0 = entry.chartData?.optionsStrikes?.[0];
+      const record = {
+        ticker: entry.ticker,
+        eventDate,
+        runDate,
+        classification: entry.classification,
+        gap: entry.gap,
+        percentile: entry.percentile,
+        volume: entry.volume,
+        volumeGapProduct: entry.volumeGapProduct,
+        rSquared: entry.rSquared,
+        wCallIV: os0 ? os0.wCallIV : null,
+        wPutIV: os0 ? os0.wPutIV : null,
+        atmCallIV: os0 ? os0.atmCallIV : null,
+        atmPutIV: os0 ? os0.atmPutIV : null,
+      };
+      const key = `${entry.ticker}|${eventDate}`;
+      if (eventIndex.has(key)) {
+        eventLog[eventIndex.get(key)] = record;
+        eventsUpdated++;
+      } else {
+        eventLog.push(record);
+        eventIndex.set(key, eventLog.length - 1);
+        eventsAdded++;
+      }
+    }
+    fs.writeFileSync(eventLogPath, JSON.stringify(eventLog, null, 2) + '\n', 'utf-8');
+    console.log(`[Screen] Event log: ${eventsAdded} new, ${eventsUpdated} updated (total ${eventLog.length})`);
+
     // Load IV history for HTML generation
     const ivHistoryForHTML = {};
     for (const entry of result.allTickers) {
       if (ivHistory[entry.ticker]) ivHistoryForHTML[entry.ticker] = ivHistory[entry.ticker];
     }
 
+    // Aggregate pre-event IV profile across all logged events, grouped by classification.
+    // Uses point-in-time percentile rank: for each event, we rank the latest pre-event IV
+    // snapshot against that ticker's own history strictly before the event date (no lookahead).
+    // Averaging ranks across events normalizes away cross-ticker IV-level differences —
+    // deviation from 50 is the signal. Requires ≥10 prior history records per event.
+    const PRE_EVENT_MIN_HIST = 10;
+    const preEventByClass = {
+      surprising_positive: { callIVRanks: [], putIVRanks: [], callSpreadRanks: [], putSpreadRanks: [] },
+      positive_anticipated: { callIVRanks: [], putIVRanks: [], callSpreadRanks: [], putSpreadRanks: [] },
+      negative_anticipated: { callIVRanks: [], putIVRanks: [], callSpreadRanks: [], putSpreadRanks: [] },
+      surprising_negative: { callIVRanks: [], putIVRanks: [], callSpreadRanks: [], putSpreadRanks: [] },
+    };
+    const rankIn = (arr, val) => {
+      if (!arr || arr.length < PRE_EVENT_MIN_HIST) return null;
+      let below = 0;
+      for (const v of arr) if (v <= val) below++;
+      return (below / arr.length) * 100;
+    };
+    for (const ev of eventLog) {
+      const bucket = preEventByClass[ev.classification];
+      if (!bucket) continue;
+      const history = ivHistory[ev.ticker];
+      if (!Array.isArray(history) || history.length === 0) continue;
+      // Point-in-time: only records strictly before the event date.
+      const priorRecords = history.filter(r => r && r.date && r.exp1 && r.date < ev.eventDate);
+      if (priorRecords.length < PRE_EVENT_MIN_HIST) continue;
+      // Latest of those is the "pre-event snapshot" to be ranked.
+      priorRecords.sort((a, b) => a.date.localeCompare(b.date));
+      const prior = priorRecords[priorRecords.length - 1].exp1;
+      // Build historical series from the point-in-time set (includes the prior itself).
+      const callIVs = [], putIVs = [], callSpreads = [], putSpreads = [];
+      for (const r of priorRecords) {
+        const e = r.exp1;
+        if (e.callIV > 0) callIVs.push(e.callIV);
+        if (e.putIV > 0) putIVs.push(e.putIV);
+        if (e.callIV != null && e.atmCallIV != null) callSpreads.push(e.callIV - e.atmCallIV);
+        if (e.putIV != null && e.atmPutIV != null) putSpreads.push(e.putIV - e.atmPutIV);
+      }
+      const cR = prior.callIV > 0 ? rankIn(callIVs, prior.callIV) : null;
+      const pR = prior.putIV > 0 ? rankIn(putIVs, prior.putIV) : null;
+      const cSR = (prior.callIV != null && prior.atmCallIV != null) ? rankIn(callSpreads, prior.callIV - prior.atmCallIV) : null;
+      const pSR = (prior.putIV != null && prior.atmPutIV != null) ? rankIn(putSpreads, prior.putIV - prior.atmPutIV) : null;
+      if (cR != null) bucket.callIVRanks.push(cR);
+      if (pR != null) bucket.putIVRanks.push(pR);
+      if (cSR != null) bucket.callSpreadRanks.push(cSR);
+      if (pSR != null) bucket.putSpreadRanks.push(pSR);
+    }
+    const meanOf = (arr) => {
+      if (!arr || arr.length === 0) return null;
+      return arr.reduce((s, v) => s + v, 0) / arr.length;
+    };
+    const preEventStats = {};
+    for (const [cls, data] of Object.entries(preEventByClass)) {
+      preEventStats[cls] = {
+        callIVRank: meanOf(data.callIVRanks),
+        putIVRank: meanOf(data.putIVRanks),
+        callSpreadRank: meanOf(data.callSpreadRanks),
+        putSpreadRank: meanOf(data.putSpreadRanks),
+        nCallIV: data.callIVRanks.length,
+        nPutIV: data.putIVRanks.length,
+        nCallSpread: data.callSpreadRanks.length,
+        nPutSpread: data.putSpreadRanks.length,
+        n: Math.max(data.callIVRanks.length, data.putIVRanks.length, data.callSpreadRanks.length, data.putSpreadRanks.length),
+      };
+    }
+
     // Generate HTML results page
     const currentFavorites = loadFavorites();
-    const html = generateScreeningHTML(result.allTickers, tickers.length, config, ivHistoryForHTML, currentFavorites);
+    const html = generateScreeningHTML(result.allTickers, tickers.length, config, ivHistoryForHTML, currentFavorites, preEventStats);
 
     // Save HTML for "Latest Run Results"
     const screenResultsPath = path.join(__dirname, 'ci', 'screening-results.html');
@@ -1556,7 +1699,7 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
   }
 });
 
-// Revise the 50 — auto-select screening tickers by fundamentals
+// Revise the 100 — auto-select screening tickers by fundamentals
 ipcMain.handle('revise-tickers', async (event) => {
   try {
     const fs = require('fs');
@@ -1605,7 +1748,7 @@ ipcMain.handle('load-revise-results', async () => {
     const fs = require('fs');
     const resultsPath = path.join(__dirname, 'ci', 'revise-results.json');
     if (!fs.existsSync(resultsPath)) {
-      return { success: false, error: 'No previous revision results found. Run "Revise the 50" first.' };
+      return { success: false, error: 'No previous revision results found. Run "Revise the 100" first.' };
     }
     const data = JSON.parse(fs.readFileSync(resultsPath, 'utf-8'));
     return { success: true, ...data };
@@ -1650,7 +1793,7 @@ ipcMain.handle('get-favorites', async () => {
   return { favorites: loadFavorites() };
 });
 
-function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData = {}, favorites = []) {
+function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData = {}, favorites = [], preEventStats = {}) {
   const classColors = {
     surprising_positive: '#4caf50',
     positive_anticipated: '#8bc34a',
@@ -1672,7 +1815,7 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
   const chartDataMap = {};
   const summaryMap = {};
   const newsMap = {};
-  const tickerIVs = {}; // { ticker: { callIV, putIV } } — nearest expiry weighted IV
+  const tickerIVs = {}; // { ticker: { callIV, putIV, atmCallIV, atmPutIV } } — nearest expiry weighted IV
   const tickerOptDV = {}; // { ticker: totalDollarVol } — sum of call+put dollar vol across strikes
   for (const h of allTickers) {
     if (h.chartData && h.chartData.dates && h.chartData.dates.length > 0) {
@@ -1680,7 +1823,7 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
       const os = h.chartData.optionsStrikes;
       if (os && os.length > 0) {
         if (os[0].wCallIV > 0 || os[0].wPutIV > 0) {
-          tickerIVs[h.ticker] = { callIV: os[0].wCallIV, putIV: os[0].wPutIV };
+          tickerIVs[h.ticker] = { callIV: os[0].wCallIV, putIV: os[0].wPutIV, atmCallIV: os[0].atmCallIV || 0, atmPutIV: os[0].atmPutIV || 0 };
         }
         const exp = os[0];
         let totalDV = 0;
@@ -1693,12 +1836,44 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     if (h.news && h.news.length > 0) newsMap[h.ticker] = h.news;
   }
 
-  // Compute average weighted IV across all tickers with data
+  // Compute per-ticker IV history stats from weighted-iv-history.json.
+  // Uses exp1 (nearest expiration) to match what's displayed. Requires >=10 records
+  // so percentile rank has meaningful resolution.
+  const MIN_HIST_RECORDS = 10;
+  const ivHistStats = {};
+  for (const [ticker, records] of Object.entries(ivHistoryData)) {
+    if (!Array.isArray(records) || records.length < MIN_HIST_RECORDS) continue;
+    const callIVs = [], putIVs = [], callSpreads = [], putSpreads = [];
+    for (const r of records) {
+      const e = r.exp1;
+      if (!e) continue;
+      if (e.callIV > 0) callIVs.push(e.callIV);
+      if (e.putIV > 0) putIVs.push(e.putIV);
+      if (e.callIV > 0 && e.atmCallIV != null) callSpreads.push(e.callIV - e.atmCallIV);
+      if (e.putIV > 0 && e.atmPutIV != null) putSpreads.push(e.putIV - e.atmPutIV);
+    }
+    ivHistStats[ticker] = {
+      callIVs: callIVs.length >= MIN_HIST_RECORDS ? callIVs : null,
+      putIVs: putIVs.length >= MIN_HIST_RECORDS ? putIVs : null,
+      callSpreads: callSpreads.length >= MIN_HIST_RECORDS ? callSpreads : null,
+      putSpreads: putSpreads.length >= MIN_HIST_RECORDS ? putSpreads : null,
+    };
+  }
+  const pctRank = (arr, val) => {
+    if (!arr || arr.length === 0) return null;
+    let below = 0;
+    for (const v of arr) if (v <= val) below++;
+    return Math.round((below / arr.length) * 100);
+  };
+
+  // Compute average weighted IV and ATM IV across all tickers with data
   const ivTickers = Object.keys(tickerIVs);
-  let avgCallIV = 0, avgPutIV = 0;
+  let avgCallIV = 0, avgPutIV = 0, avgAtmCallIV = 0, avgAtmPutIV = 0;
   if (ivTickers.length > 0) {
     avgCallIV = Math.round(ivTickers.reduce((s, t) => s + tickerIVs[t].callIV, 0) / ivTickers.length * 10) / 10;
     avgPutIV = Math.round(ivTickers.reduce((s, t) => s + tickerIVs[t].putIV, 0) / ivTickers.length * 10) / 10;
+    avgAtmCallIV = Math.round(ivTickers.reduce((s, t) => s + tickerIVs[t].atmCallIV, 0) / ivTickers.length * 10) / 10;
+    avgAtmPutIV = Math.round(ivTickers.reduce((s, t) => s + tickerIVs[t].atmPutIV, 0) / ivTickers.length * 10) / 10;
   }
 
   const rows = allTickers.map((h, idx) => {
@@ -1720,10 +1895,23 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     const optDVStr = optDV >= 1e9 ? '$' + (optDV / 1e9).toFixed(1) + 'B' : optDV >= 1e6 ? '$' + (optDV / 1e6).toFixed(1) + 'M' : optDV >= 1e3 ? '$' + (optDV / 1e3).toFixed(0) + 'K' : optDV > 0 ? '$' + optDV.toFixed(0) : '';
 
     const tiv = tickerIVs[h.ticker];
-    const callIVStr = tiv ? tiv.callIV.toFixed(1) + '%' : '';
-    const putIVStr = tiv ? tiv.putIV.toFixed(1) + '%' : '';
+    const os0 = h.chartData?.optionsStrikes?.[0];
+    const callSpread = os0 ? os0.ivSpreadCall : null;
+    const putSpread = os0 ? os0.ivSpreadPut : null;
+    const stats = ivHistStats[h.ticker];
+    const rankTag = (r) => r != null ? ` <span style="color:#888; font-size:0.78em;">(p${r})</span>` : '';
+    const callIVRank = stats && tiv ? pctRank(stats.callIVs, tiv.callIV) : null;
+    const putIVRank = stats && tiv ? pctRank(stats.putIVs, tiv.putIV) : null;
+    const callSpreadRank = stats && callSpread != null ? pctRank(stats.callSpreads, callSpread) : null;
+    const putSpreadRank = stats && putSpread != null ? pctRank(stats.putSpreads, putSpread) : null;
+    const callIVStr = tiv ? tiv.callIV.toFixed(1) + '%' + rankTag(callIVRank) : '';
+    const putIVStr = tiv ? tiv.putIV.toFixed(1) + '%' + rankTag(putIVRank) : '';
     const callIVVal = tiv ? tiv.callIV : -1;
     const putIVVal = tiv ? tiv.putIV : -1;
+    const callSpreadStr = callSpread != null ? (callSpread >= 0 ? '+' : '') + callSpread.toFixed(1) + rankTag(callSpreadRank) : '';
+    const putSpreadStr = putSpread != null ? (putSpread >= 0 ? '+' : '') + putSpread.toFixed(1) + rankTag(putSpreadRank) : '';
+    const callSpreadVal = callSpread != null ? callSpread : -9999;
+    const putSpreadVal = putSpread != null ? putSpread : -9999;
 
     const isFav = favSet.has(h.ticker);
 
@@ -1739,10 +1927,13 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
       <td data-v="${mcap}" style="text-align:right;">${mcapStr}</td>
       <td data-v="${optDV}" style="text-align:right;">${optDVStr}</td>
       <td data-v="${callIVVal}" style="text-align:right; color:rgba(72,187,120,0.9);">${callIVStr}</td>
+      <td data-v="${callSpreadVal}" style="text-align:right; color:rgba(72,187,120,0.7); font-size:0.88em;">${callSpreadStr}</td>
       <td data-v="${putIVVal}" style="text-align:right; color:rgba(245,101,101,0.9);">${putIVStr}</td>
+      <td data-v="${putSpreadVal}" style="text-align:right; color:rgba(245,101,101,0.7); font-size:0.88em;">${putSpreadStr}</td>
     </tr>
     <tr class="chart-row" data-chart-for="${h.ticker}" style="display:none;">
-      <td colspan="12" style="padding:0; background:#1a1a2e;">
+      <td colspan="14" style="padding:0; background:#1a1a2e;">
+        <div id="summary-${h.ticker}" style="padding:10px 20px 6px; color:#999; font-size:0.92em; line-height:1.5; max-height:140px; overflow-y:auto;"></div>
         <div style="padding:12px 16px; height:480px;">
           <canvas id="chart-${h.ticker}"></canvas>
         </div>
@@ -1757,11 +1948,10 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
               <div style="height:360px;"><canvas id="opts-chart-1-${h.ticker}"></canvas></div>
             </div>
           </div>
-          <div id="iv-history-wrap-${h.ticker}" style="display:none; padding:8px 0; height:200px;">
+          <div id="iv-history-wrap-${h.ticker}" style="display:none; padding:8px 0; height:420px;">
             <canvas id="iv-history-chart-${h.ticker}"></canvas>
           </div>
         </div>
-        <div id="summary-${h.ticker}" style="padding:4px 20px 14px; color:#999; font-size:0.92em; line-height:1.5; max-height:140px; overflow-y:auto;"></div>
         <div id="news-${h.ticker}" style="padding:4px 20px 14px;"></div>
       </td>
     </tr>`;
@@ -1794,7 +1984,57 @@ ${ivTickers.length > 0 ? `<div style="margin-bottom:14px; padding:10px 14px; bac
   <span style="color:#666; font-weight:600;">Avg Weighted IV (${ivTickers.length} tickers):</span>
   <span style="color:rgba(72,187,120,0.9); font-weight:bold; margin-left:10px;">Call ${avgCallIV.toFixed(1)}%</span>
   <span style="color:rgba(245,101,101,0.9); font-weight:bold; margin-left:10px;">Put ${avgPutIV.toFixed(1)}%</span>
+  <span style="color:#999; margin-left:16px;">|</span>
+  <span style="color:#666; font-weight:600; margin-left:16px;">Avg ATM IV:</span>
+  <span style="color:rgba(72,187,120,0.7); font-weight:bold; margin-left:10px;">Call ${avgAtmCallIV.toFixed(1)}%</span>
+  <span style="color:rgba(245,101,101,0.7); font-weight:bold; margin-left:10px;">Put ${avgAtmPutIV.toFixed(1)}%</span>
 </div>` : ''}
+${(() => {
+  const order = [
+    ['surprising_positive', 'Surprising +', '#4caf50'],
+    ['positive_anticipated', 'Anticipated +', '#8bc34a'],
+    ['negative_anticipated', 'Anticipated -', '#ff9800'],
+    ['surprising_negative', 'Surprising -', '#f44336'],
+  ];
+  const any = order.some(([k]) => preEventStats[k] && preEventStats[k].n > 0);
+  if (!any) return '';
+  // Color by deviation from 50 (neutral): >60 is elevated, <40 is suppressed.
+  const fmtRank = (v, n) => {
+    if (v == null || !n) return '<span style="color:#bbb;">—</span>';
+    let color = '#666';
+    if (v >= 65) color = '#d32f2f';
+    else if (v >= 55) color = '#ef6c00';
+    else if (v <= 35) color = '#1565c0';
+    else if (v <= 45) color = '#0277bd';
+    return `<span style="color:${color}; font-weight:600;">p${v.toFixed(0)}</span> <span style="color:#aaa; font-size:0.85em;">(${n})</span>`;
+  };
+  const rows = order.map(([k, label, color]) => {
+    const s = preEventStats[k] || {};
+    const n = s.n || 0;
+    const dim = n === 0 ? ' style="color:#bbb;"' : '';
+    return `<tr${dim}>
+      <td style="padding:6px 10px; font-weight:bold; color:${color};">${label}</td>
+      <td style="padding:6px 10px; text-align:right;">${fmtRank(s.callIVRank, s.nCallIV)}</td>
+      <td style="padding:6px 10px; text-align:right;">${fmtRank(s.putIVRank, s.nPutIV)}</td>
+      <td style="padding:6px 10px; text-align:right;">${fmtRank(s.callSpreadRank, s.nCallSpread)}</td>
+      <td style="padding:6px 10px; text-align:right;">${fmtRank(s.putSpreadRank, s.nPutSpread)}</td>
+    </tr>`;
+  }).join('');
+  return `<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.92em;">
+    <div style="color:#666; font-weight:600; margin-bottom:4px;">Pre-Event IV Profile <span style="color:#999; font-weight:normal; font-size:0.9em;">(avg percentile rank of each pre-event snapshot within that ticker's own point-in-time history; 50 = neutral, &gt;60 = elevated, &lt;40 = suppressed)</span></div>
+    <div style="color:#aaa; font-size:0.78em; margin-bottom:6px;">Requires ≥10 history records before the event date. (n) = events contributing.</div>
+    <table style="border-collapse:collapse;">
+      <thead><tr style="color:#888; font-size:0.8em; text-transform:uppercase;">
+        <th style="padding:4px 10px; text-align:left;">Classification</th>
+        <th style="padding:4px 10px; text-align:right;">Call IV</th>
+        <th style="padding:4px 10px; text-align:right;">Put IV</th>
+        <th style="padding:4px 10px; text-align:right;">C Spr</th>
+        <th style="padding:4px 10px; text-align:right;">P Spr</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+})()}
 <table id="screen-table">
 <thead><tr>
   <th style="width:28px; text-align:center; padding:4px;"><span class="sort-arrow"></span></th>
@@ -1808,7 +2048,9 @@ ${ivTickers.length > 0 ? `<div style="margin-bottom:14px; padding:10px 14px; bac
   <th style="text-align:right;">Mkt Cap<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Opt $ Vol<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Call IV<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Weighted OTM IV minus ATM IV">C Spr<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Put IV<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Weighted OTM IV minus ATM IV">P Spr<span class="sort-arrow"></span></th>
 </tr></thead>
 <tbody>${rows}</tbody>
 </table>
@@ -1997,12 +2239,16 @@ ${ivTickers.length > 0 ? `<div style="margin-bottom:14px; padding:10px 14px; bac
         const newsEl = document.getElementById('news-' + ticker);
         const news = newsMap[ticker];
         if (newsEl && news && news.length > 0) {
-          newsEl.innerHTML = news.map(n =>
-            '<div style="margin-bottom:6px; font-size:0.95em; line-height:1.5;">' +
+          newsEl.innerHTML = news.map(n => {
+            const catColors = { technical: '#5b9bd5', fear: '#c0392b', win: '#27ae60', macro_fear: '#e07c4f', macro_win: '#2ecc71', mixed: '#999' };
+            const catLabels = { technical: 'Technical', fear: 'Fear', win: 'Win', macro_fear: 'Macro Fear', macro_win: 'Macro Win', mixed: 'Mixed' };
+            const badge = n.category ? '<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.75em;font-weight:600;color:#fff;background:' + (catColors[n.category] || '#999') + ';margin-right:6px;vertical-align:middle;">' + (catLabels[n.category] || '') + '</span>' : '';
+            return '<div style="margin-bottom:6px; font-size:0.95em; line-height:1.5;">' +
               '<span style="color:#666; font-size:0.85em; margin-right:6px;">' + (n.date ? n.date + ' ' : '') + (n.time || '') + '</span>' +
+              badge +
               '<a href="' + n.url + '" style="color:#7aa2c7; text-decoration:none;">' + n.headline + '</a>' +
-            '</div>'
-          ).join('');
+            '</div>';
+          }).join('');
         }
 
         // Render options strike charts (nearest 2 expirations side by side)
@@ -2039,7 +2285,11 @@ ${ivTickers.length > 0 ? `<div style="margin-bottom:14px; padding:10px 14px; bac
               // Populate weighted IV label
               const ivLabel = document.getElementById('opts-iv-label-' + ei + '-' + ticker);
               if (ivLabel && (exp.wCallIV > 0 || exp.wPutIV > 0)) {
-                ivLabel.innerHTML = '<span style="color:rgba(72,187,120,0.9);">Call IV: ' + exp.wCallIV.toFixed(1) + '%</span> | <span style="color:rgba(245,101,101,0.9);">Put IV: ' + exp.wPutIV.toFixed(1) + '%</span> <span style="color:#555; font-size:0.85em;">($-weighted)</span>';
+                let ivHtml = '<span style="color:rgba(72,187,120,0.9);">Call IV: ' + exp.wCallIV.toFixed(1) + '%</span>';
+                if (exp.atmCallIV > 0) ivHtml += '<span style="color:#888; font-size:0.85em;"> (ATM ' + exp.atmCallIV.toFixed(1) + '%, ' + (exp.ivSpreadCall >= 0 ? '+' : '') + exp.ivSpreadCall.toFixed(1) + ' spread, ' + (exp.deepOTMCallPct || 0).toFixed(0) + '% deep)</span>';
+                ivHtml += ' | <span style="color:rgba(245,101,101,0.9);">Put IV: ' + exp.wPutIV.toFixed(1) + '%</span>';
+                if (exp.atmPutIV > 0) ivHtml += '<span style="color:#888; font-size:0.85em;"> (ATM ' + exp.atmPutIV.toFixed(1) + '%, ' + (exp.ivSpreadPut >= 0 ? '+' : '') + exp.ivSpreadPut.toFixed(1) + ' spread, ' + (exp.deepOTMPutPct || 0).toFixed(0) + '% deep)</span>';
+                ivLabel.innerHTML = ivHtml;
               }
 
               new Chart(canvas, {
@@ -2108,16 +2358,34 @@ ${ivTickers.length > 0 ? `<div style="margin-bottom:14px; padding:10px 14px; bac
               const labels = hist.map(r => r.date);
               const datasets = [];
               if (hist[0].exp1) {
-                datasets.push({ label: 'Exp1 Call IV', data: hist.map(r => r.exp1 ? r.exp1.callIV : null), borderColor: 'rgba(72,187,120,0.9)', borderWidth: 2, pointRadius: 3, fill: false, spanGaps: true });
-                datasets.push({ label: 'Exp1 Put IV', data: hist.map(r => r.exp1 ? r.exp1.putIV : null), borderColor: 'rgba(245,101,101,0.9)', borderWidth: 2, pointRadius: 3, fill: false, spanGaps: true });
+                datasets.push({ label: 'Call IV', type: 'bar', data: hist.map(r => r.exp1 ? r.exp1.callIV : null), backgroundColor: 'rgba(72,187,120,0.7)', borderColor: 'rgba(72,187,120,0.9)', borderWidth: 1, yAxisID: 'y' });
+                datasets.push({ label: 'Put IV', type: 'bar', data: hist.map(r => r.exp1 ? r.exp1.putIV : null), backgroundColor: 'rgba(245,101,101,0.7)', borderColor: 'rgba(245,101,101,0.9)', borderWidth: 1, yAxisID: 'y' });
+                // ATM IV lines (if available in history)
+                const hasAtmData = hist.some(r => r.exp1 && (r.exp1.atmCallIV > 0 || r.exp1.atmPutIV > 0));
+                if (hasAtmData) {
+                  datasets.push({ label: 'ATM Call IV', type: 'line', data: hist.map(r => r.exp1 && r.exp1.atmCallIV > 0 ? r.exp1.atmCallIV : null), borderColor: 'rgba(72,187,120,0.5)', borderWidth: 2, borderDash: [4, 3], pointRadius: 2, fill: false, spanGaps: true, yAxisID: 'y' });
+                  datasets.push({ label: 'ATM Put IV', type: 'line', data: hist.map(r => r.exp1 && r.exp1.atmPutIV > 0 ? r.exp1.atmPutIV : null), borderColor: 'rgba(245,101,101,0.5)', borderWidth: 2, borderDash: [4, 3], pointRadius: 2, fill: false, spanGaps: true, yAxisID: 'y' });
+                }
               }
-              if (hist[0].exp2) {
-                datasets.push({ label: 'Exp2 Call IV', data: hist.map(r => r.exp2 ? r.exp2.callIV : null), borderColor: 'rgba(72,187,120,0.4)', borderWidth: 2, pointRadius: 3, borderDash: [5,3], fill: false, spanGaps: true });
-                datasets.push({ label: 'Exp2 Put IV', data: hist.map(r => r.exp2 ? r.exp2.putIV : null), borderColor: 'rgba(245,101,101,0.4)', borderWidth: 2, pointRadius: 3, borderDash: [5,3], fill: false, spanGaps: true });
+
+              // Compute stock returns aligned to IV history dates
+              const cd = chartDataMap[ticker];
+              if (cd && cd.dates && cd.closes) {
+                const closeByDate = {};
+                for (let di = 0; di < cd.dates.length; di++) closeByDate[cd.dates[di]] = cd.closes[di];
+                const allDates = cd.dates.slice().sort();
+                const returns = labels.map(date => {
+                  const idx = allDates.indexOf(date);
+                  if (idx > 0 && closeByDate[allDates[idx]] != null && closeByDate[allDates[idx - 1]] != null) {
+                    return ((closeByDate[allDates[idx]] - closeByDate[allDates[idx - 1]]) / closeByDate[allDates[idx - 1]] * 100);
+                  }
+                  return null;
+                });
+                datasets.push({ label: 'Daily Return', type: 'line', data: returns, borderColor: 'rgba(100,149,237,0.9)', borderWidth: 2, pointRadius: 3, pointBackgroundColor: 'rgba(100,149,237,0.9)', fill: false, spanGaps: true, yAxisID: 'y1' });
               }
 
               ivHistChart = new Chart(histCanvas, {
-                type: 'line',
+                type: 'bar',
                 data: { labels, datasets },
                 options: {
                   responsive: true,
@@ -2130,7 +2398,8 @@ ${ivTickers.length > 0 ? `<div style="margin-bottom:14px; padding:10px 14px; bac
                   },
                   scales: {
                     x: { ticks: { color: '#909090', font: { size: 9 } }, grid: { color: '#2a2a4a' } },
-                    y: { ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } }, grid: { color: '#2a2a4a' } },
+                    y: { position: 'left', title: { display: true, text: 'IV %', color: '#909090', font: { size: 10 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } }, grid: { color: '#2a2a4a' } },
+                    y1: { position: 'right', title: { display: true, text: 'Return %', color: 'rgba(100,149,237,0.9)', font: { size: 10 } }, ticks: { color: 'rgba(100,149,237,0.9)', font: { size: 9 }, callback: function(v) { return v.toFixed(1) + '%'; } }, grid: { drawOnChartArea: false } },
                   },
                 },
               });
@@ -2272,8 +2541,11 @@ app.whenReady().then(async () => {
   // Initialize stock analyzer
   stockAnalyzer = new StockAnalysisService(database);
 
-  // Initialize options analyzer
-  optionsAnalyzer = new OptionsAnalysisService(database);
+  // Initialize IB Gateway provider (connects lazily — no error if Gateway not running)
+  const ibProvider = new IBOptionsProvider({ port: 4002 }); // 4002=paper, 4001=live
+
+  // Initialize options analyzer with IB fallback for international tickers
+  optionsAnalyzer = new OptionsAnalysisService(database, ibProvider);
   portfolioAnalyzer = new PortfolioAnalysisService(database, stockAnalyzer, optionsAnalyzer);
   tickerDiscovery = new TickerDiscoveryService();
   chronosHoldService = new ChronosHoldPeriodService(database);

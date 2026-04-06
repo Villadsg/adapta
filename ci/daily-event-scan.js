@@ -42,6 +42,7 @@ const { screenTickers } = require('./ticker-screen');
 const ArticleDatabase = require('../src/services/database');
 const StockAnalysisService = require('../src/services/stockAnalysis');
 const OptionsAnalysisService = require('../src/services/optionsAnalysis');
+const IBOptionsProvider = require('../src/services/ibOptionsProvider');
 const PriceTrackingService = require('../src/services/priceTracking');
 
 const DB_PATH = path.join(__dirname, '..', 'data', 'events.db');
@@ -69,7 +70,8 @@ async function main() {
 
   // Initialize services
   const stockAnalyzer = new StockAnalysisService(database);
-  const optionsAnalyzer = new OptionsAnalysisService(database);
+  const ibProvider = new IBOptionsProvider({ port: 4002 });
+  const optionsAnalyzer = new OptionsAnalysisService(database, ibProvider);
   const priceTracker = new PriceTrackingService(database, { useBun: false });
 
   const detectedEvents = [];

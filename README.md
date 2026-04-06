@@ -19,7 +19,7 @@ Results display in an interactive table with expandable rows showing price chart
 
 ### Options Analysis
 
-Per-ticker options surface visualization for the nearest two expirations, showing dollar volume, dollar open interest, and IV smile on a per-strike basis. Designed to reveal where money is flowing relative to how the market is pricing risk.
+Per-ticker options surface visualization for the nearest two expirations, showing dollar volume, dollar open interest, and IV smile on a per-strike basis. A third expiration is fetched and stored in history for term-structure backtesting but not displayed. Designed to reveal where money is flowing relative to how the market is pricing risk.
 
 ### Semantic Search
 
@@ -73,6 +73,9 @@ Used to select the best 50 tickers from the ~200 universe:
 | **Dollar Open Interest** | `openInterest * lastPrice * 100` | Accumulated positioning — where money has been sitting |
 | **Implied Volatility** | Yahoo Finance `impliedVolatility` (annualized) | Market's expected move priced into each strike |
 | **Dollar-Volume-Weighted IV** | `sum(IV * dollarVol) / sum(dollarVol)` | What IV level money is actually trading at (not simple average) |
+| **IV Spread (OTM vs ATM)** | `weightedIV - atmIV` | Measures how much more (or less) OTM flow is paying vs at-the-money — positive = OTM premium |
+| **IV Rank** | Percentile of current weighted IV within ticker's own history (≥10 records) | Context for how extreme today's IV is relative to that ticker's norms |
+| **IV Spread Rank** | Percentile of current OTM-vs-ATM spread within ticker's own history | Context for how extreme today's skew is — a spread at p90 means the OTM premium is near historical highs |
 
 The key insight: when dollar volume spikes at strikes where IV is low (or vice versa), it signals disagreement — potentially a contrarian opportunity.
 
@@ -114,6 +117,23 @@ Composite score from five components:
 | **Straddle Move %** | `(atmCallPrice + atmPutPrice) / price * 100` | Market-priced expected move |
 | **Event Premium %** | `straddleMove% - normalMove%` | Excess premium over what HV implies |
 
+### Pre-Event IV Profile (Backtest Panel)
+
+Displayed at the top of screening results. For each of the four event classifications, shows the **average point-in-time percentile rank** of Call IV, Put IV, Call Spread, and Put Spread across all logged events.
+
+| Aspect | Detail |
+|--------|--------|
+| **What it answers** | "Does the IV market forecast surprise direction?" |
+| **Pre-event snapshot** | Latest weighted-iv-history record strictly before the event date for that ticker |
+| **Rank computation** | Percentile of snapshot within that ticker's own history up to (but not including) the event date — no lookahead |
+| **Aggregation** | Mean of ranks across all qualifying events per classification |
+| **Null hypothesis** | Average rank = 50 (neutral). Deviations signal the market was pricing in directional risk |
+| **Minimum history** | 10 records required per ticker at event time; fewer → event excluded |
+
+### Event Log
+
+Each screening run appends classified events to `ci/event-log.json`, building a time-series dataset for backtesting. Each record stores ticker, event date, run date, classification, gap, percentile, volume, R², and an IV snapshot (weighted Call/Put IV, ATM Call/Put IV). Records are keyed on `{ticker, eventDate}` — re-encounters update in place.
+
 ---
 
 ## Project Structure
@@ -128,7 +148,8 @@ adapta/
 │   ├── config.json                  # Screening config (tickers, thresholds)
 │   ├── screening-results.html       # Latest screening output (generated)
 │   ├── screening-favorites.json     # Starred tickers (generated)
-│   └── weighted-iv-history.json     # Historical weighted IV per ticker (generated)
+│   ├── weighted-iv-history.json     # Historical weighted IV per ticker, 3 expirations (generated)
+│   └── event-log.json              # Classified event time-series for backtesting (generated)
 ├── src/
 │   ├── renderer/
 │   │   ├── index.html               # Main UI with screening modal

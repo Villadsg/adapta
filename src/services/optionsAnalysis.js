@@ -9,8 +9,9 @@
 const YahooFinance = require('yahoo-finance2').default;
 
 class OptionsAnalysisService {
-  constructor(database) {
+  constructor(database, ibProvider) {
     this.database = database;
+    this.ibProvider = ibProvider || null;
   }
 
   /**
@@ -29,6 +30,7 @@ class OptionsAnalysisService {
    * @returns {Promise<Object|null>} Raw options chain or null on error
    */
   async fetchOptionsChain(ticker, expirationDate, retries = 2) {
+    // Try Yahoo Finance first
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const yf = this._createYF();
@@ -37,18 +39,39 @@ class OptionsAnalysisService {
           queryOptions.date = new Date(expirationDate);
         }
         const chain = await yf.options(ticker, queryOptions);
-        return chain;
+        // Check if Yahoo actually returned option contracts (not just quote data)
+        const hasCalls = chain?.options?.[0]?.calls?.length > 0;
+        const hasPuts = chain?.options?.[0]?.puts?.length > 0;
+        if (hasCalls || hasPuts) return chain;
+        // Yahoo returned a chain structure but no contracts — fall through to IB
+        console.log(`  Yahoo returned no option contracts for ${ticker}, trying IB...`);
+        break;
       } catch (error) {
         const isLastAttempt = attempt === retries;
         if (isLastAttempt) {
-          console.error(`Error fetching options for ${ticker}: ${error.message}`);
-          return null;
+          console.log(`  Yahoo options failed for ${ticker}: ${error.message}`);
+          break; // Fall through to IB
         }
         const delay = 3000 * (attempt + 1);
         console.log(`  Options fetch attempt ${attempt + 1} failed (${error.message}), retrying in ${delay / 1000}s...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
+
+    // Fall back to IB Gateway if available
+    if (this.ibProvider) {
+      try {
+        const opts = expirationDate ? { date: new Date(expirationDate) } : {};
+        const chain = await this.ibProvider.fetchOptionsChain(ticker, opts);
+        if (chain) {
+          console.log(`  [IB fallback] Got options chain for ${ticker}`);
+          return chain;
+        }
+      } catch (err) {
+        console.error(`  [IB fallback] Failed for ${ticker}: ${err.message}`);
+      }
+    }
+
     return null;
   }
 
@@ -165,13 +188,9 @@ class OptionsAnalysisService {
     const totalPutOI = puts.reduce((sum, p) => sum + (p.openInterest || 0), 0);
     const putCallOIRatio = totalCallOI > 0 ? totalPutOI / totalCallOI : 0;
 
-    // ATM options (closest strike to current price)
+    // ATM options (closest strike — kept for expected move straddle calc)
     const atmCall = this.findATMOption(calls, currentPrice);
     const atmPut = this.findATMOption(puts, currentPrice);
-    const atmCallIV = this.normalizeIV(atmCall?.impliedVolatility);
-    const atmPutIV = this.normalizeIV(atmPut?.impliedVolatility);
-
-    console.log(`  ATM IV raw: call=${atmCall?.impliedVolatility}, put=${atmPut?.impliedVolatility} → normalized: call=${(atmCallIV*100).toFixed(1)}%, put=${(atmPutIV*100).toFixed(1)}%`);
 
     // Fresh trade filter — only count volume from the latest trade day
     const allRaw = [...calls, ...puts];
@@ -185,9 +204,24 @@ class OptionsAnalysisService {
       return new Date(c.lastTradeDate).toISOString().split('T')[0] === latestTradeDay;
     };
 
+    // ATM IV: dollar-volume-weighted IV for near-ATM strikes (within 2.5% of spot)
+    const nearATMCalls = calls.filter(c => c.strike >= currentPrice * 0.985 && c.strike <= currentPrice * 1.015 && isFreshTrade(c) && (c.volume || 0) > 0 && c.impliedVolatility > 0);
+    const nearATMPuts = puts.filter(p => p.strike >= currentPrice * 0.985 && p.strike <= currentPrice * 1.015 && isFreshTrade(p) && (p.volume || 0) > 0 && p.impliedVolatility > 0);
+    const dvWeightedIV = (opts) => {
+      let sumDvIv = 0, sumDv = 0;
+      for (const o of opts) {
+        const dv = (o.volume || 0) * (o.lastPrice || 0) * 100;
+        if (dv > 0) { sumDvIv += this.normalizeIV(o.impliedVolatility) * dv; sumDv += dv; }
+      }
+      return sumDv > 0 ? sumDvIv / sumDv : 0;
+    };
+    const atmCallIV = nearATMCalls.length > 0 ? dvWeightedIV(nearATMCalls) : this.interpolateATMIV(calls, currentPrice);
+    const atmPutIV = nearATMPuts.length > 0 ? dvWeightedIV(nearATMPuts) : this.interpolateATMIV(puts, currentPrice);
+    console.log(`  ATM IV ($-weighted, ${nearATMCalls.length}c/${nearATMPuts.length}p near-ATM): call=${(atmCallIV*100).toFixed(1)}%, put=${(atmPutIV*100).toFixed(1)}%`);
+
     // Average IV (2.5%+ OTM, fresh trades only — volume-weighted in averageIV)
-    const otmCalls = calls.filter(c => c.strike >= currentPrice * 1.025 && isFreshTrade(c));
-    const otmPuts = puts.filter(p => p.strike <= currentPrice * 0.975 && isFreshTrade(p));
+    const otmCalls = calls.filter(c => c.strike >= currentPrice * 1.015 && isFreshTrade(c));
+    const otmPuts = puts.filter(p => p.strike <= currentPrice * 0.985 && isFreshTrade(p));
     const avgCallIV = this.averageIV(otmCalls);
     const avgPutIV = this.averageIV(otmPuts);
 
@@ -238,8 +272,8 @@ class OptionsAnalysisService {
     };
 
     // Deep OTM only: 2.5%+ out of the money
-    const otmCalls2 = calls.filter(c => c.strike >= currentPrice * 1.025);
-    const otmPuts2 = puts.filter(p => p.strike <= currentPrice * 0.975);
+    const otmCalls2 = calls.filter(c => c.strike >= currentPrice * 1.015);
+    const otmPuts2 = puts.filter(p => p.strike <= currentPrice * 0.985);
     const freshCalls = otmCalls2.filter(isFreshTrade);
     const freshPuts = otmPuts2.filter(isFreshTrade);
     console.log(`  Dollar vol filter: latestTradeDay=${latestTradeDay}, globalLatestTradeDay=${globalLatestTradeDay || 'N/A'}, OTM calls ${otmCalls2.length}→${freshCalls.length}, OTM puts ${otmPuts2.length}→${freshPuts.length}`);
@@ -986,6 +1020,38 @@ class OptionsAnalysisService {
       }
     }
     return closest;
+  }
+
+  /**
+   * Interpolate ATM IV from the two strikes bracketing the current price.
+   * Falls back to the single closest strike if bracketing isn't possible.
+   */
+  interpolateATMIV(options, currentPrice) {
+    if (!options || options.length === 0) return 0;
+    const valid = options.filter(o => o.strike > 0 && o.impliedVolatility > 0)
+      .sort((a, b) => a.strike - b.strike);
+    if (valid.length === 0) return 0;
+
+    // Find the pair that brackets currentPrice
+    let below = null, above = null;
+    for (const o of valid) {
+      if (o.strike <= currentPrice) below = o;
+      if (o.strike >= currentPrice && !above) above = o;
+    }
+
+    // If price is exactly on a strike, or only one side available
+    if (below && above && below.strike === above.strike) {
+      return this.normalizeIV(below.impliedVolatility);
+    }
+    if (!below) return this.normalizeIV(above.impliedVolatility);
+    if (!above) return this.normalizeIV(below.impliedVolatility);
+
+    // Linear interpolation by strike distance
+    const range = above.strike - below.strike;
+    const weight = (currentPrice - below.strike) / range;
+    const ivBelow = this.normalizeIV(below.impliedVolatility);
+    const ivAbove = this.normalizeIV(above.impliedVolatility);
+    return ivBelow + weight * (ivAbove - ivBelow);
   }
 
   /**

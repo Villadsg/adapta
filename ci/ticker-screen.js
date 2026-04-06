@@ -9,6 +9,7 @@
  */
 
 const OptionsAnalysisService = require('../src/services/optionsAnalysis');
+const IBOptionsProvider = require('../src/services/ibOptionsProvider');
 
 /**
  * Simple linear regression: y = mx + b
@@ -29,13 +30,13 @@ function linReg(points) {
   return { m, b };
 }
 
-async function screenTickers(priceTracker, config = {}, createYF = null) {
+async function screenTickers(priceTracker, config = {}, createYF = null, onTickerDone = null) {
   const {
     screenTickers: tickers = [],
     screenDays = 100,
     screenLookbackDays = 5,
     screenPercentileThreshold = 95,
-    screenDelayMs = 1000,
+    screenDelayMs = 2500,
     screenMaxTickers = 0,
     benchmark = 'SPY',
   } = config;
@@ -272,17 +273,19 @@ async function screenTickers(priceTracker, config = {}, createYF = null) {
       }
 
       // Fetch per-strike options data for disagreement chart (nearest 3 expirations)
+      // Uses OptionsAnalysisService.fetchOptionsChain which tries Yahoo first,
+      // then falls back to IB Gateway for international tickers.
       let optionsStrikes = null;
       if (createYF) {
         try {
-          const optSvc = new OptionsAnalysisService(null);
-          const yf = createYF();
-          const initialChain = await yf.options(ticker);
+          const ibProvider = new IBOptionsProvider({ port: 4002 });
+          const optSvc = new OptionsAnalysisService(null, ibProvider);
+          const initialChain = await optSvc.fetchOptionsChain(ticker);
           const currentPrice = initialChain?.quote?.regularMarketPrice;
           const expirationDates = initialChain?.expirationDates || [];
 
           if (currentPrice && expirationDates.length > 0) {
-            const maxExp = Math.min(2, expirationDates.length);
+            const maxExp = Math.min(3, expirationDates.length);
             const results = [];
 
             // Dollar-volume-weighted IV for a set of contracts
@@ -297,14 +300,33 @@ async function screenTickers(priceTracker, config = {}, createYF = null) {
               return sumDv > 0 ? sumDvIv / sumDv : 0;
             }
 
+            // Deep OTM concentration: % of dollar volume in strikes >10% OTM
+            function deepOTMPct(contracts, price, side) {
+              const totalDV = contracts.reduce((s, c) => s + c.dollarVolume, 0);
+              if (totalDV <= 0) return 0;
+              const deepDV = contracts.filter(c =>
+                side === 'call' ? c.strike >= price * 1.10 : c.strike <= price * 0.90
+              ).reduce((s, c) => s + c.dollarVolume, 0);
+              return Math.round(deepDV / totalDV * 1000) / 10;
+            }
+
             function buildExpResult(metrics, expDate) {
-              const calls = metrics.allCallContracts.map(c => ({ strike: c.strike, dollarVol: c.dollarVolume, dollarOI: (c.openInterest || 0) * (c.lastPrice || 0) * 100, iv: c.normalizedIV * 100 }));
-              const puts = metrics.allPutContracts.map(c => ({ strike: c.strike, dollarVol: c.dollarVolume, dollarOI: (c.openInterest || 0) * (c.lastPrice || 0) * 100, iv: c.normalizedIV * 100 }));
+              const calls = metrics.callContracts.map(c => ({ strike: c.strike, dollarVol: c.dollarVolume, dollarOI: (c.openInterest || 0) * (c.lastPrice || 0) * 100, iv: c.normalizedIV * 100 }));
+              const puts = metrics.putContracts.map(c => ({ strike: c.strike, dollarVol: c.dollarVolume, dollarOI: (c.openInterest || 0) * (c.lastPrice || 0) * 100, iv: c.normalizedIV * 100 }));
+              const wCallIV = Math.round(weightedIV(metrics.callContracts) * 10) / 10;
+              const wPutIV = Math.round(weightedIV(metrics.putContracts) * 10) / 10;
+              const atmCallIVPct = Math.round((metrics.atmCallIV || 0) * 1000) / 10;
+              const atmPutIVPct = Math.round((metrics.atmPutIV || 0) * 1000) / 10;
               return {
                 label: optSvc.formatDate(expDate),
                 calls, puts,
-                wCallIV: Math.round(weightedIV(metrics.allCallContracts) * 10) / 10,
-                wPutIV: Math.round(weightedIV(metrics.allPutContracts) * 10) / 10,
+                wCallIV, wPutIV,
+                atmCallIV: atmCallIVPct,
+                atmPutIV: atmPutIVPct,
+                ivSpreadCall: Math.round((wCallIV - atmCallIVPct) * 10) / 10,
+                ivSpreadPut: Math.round((wPutIV - atmPutIVPct) * 10) / 10,
+                deepOTMCallPct: deepOTMPct(metrics.callContracts, currentPrice, 'call'),
+                deepOTMPutPct: deepOTMPct(metrics.putContracts, currentPrice, 'put'),
               };
             }
 
@@ -315,11 +337,10 @@ async function screenTickers(priceTracker, config = {}, createYF = null) {
               results.push(buildExpResult(firstMetrics, expirationDates[0]));
             }
 
-            // Remaining expirations
+            // Remaining expirations (use optSvc.fetchOptionsChain for IB fallback)
             for (let ei = 1; ei < maxExp; ei++) {
               try {
-                const yf2 = createYF();
-                const chain = await yf2.options(ticker, { date: expirationDates[ei] });
+                const chain = await optSvc.fetchOptionsChain(ticker, optSvc.formatDate(expirationDates[ei]));
                 if (chain) {
                   const metrics = optSvc.computeExpirationMetrics(chain, currentPrice, globalLatestTradeDay);
                   if (metrics) {
@@ -331,78 +352,140 @@ async function screenTickers(priceTracker, config = {}, createYF = null) {
 
             if (results.length > 0) optionsStrikes = results;
           }
+
+          // Clean up IB connection if it was opened
+          ibProvider.disconnect();
         } catch (_) { /* options fetch failed — skip silently */ }
       }
 
       // Add to allTickers — with best hit data if any, otherwise just the ticker + R²
       const chartData = { dates: chartDates, closes: chartCloses, volumes: chartVolumes, events: chartEvents, optionsStrikes };
+      let entry;
       if (bestHit) {
-        allTickers.push({ ...bestHit, chartData, summary, marketCap });
+        entry = { ...bestHit, chartData, summary, marketCap };
       } else {
-        allTickers.push({ ticker, rSquared, date: null, gap: 0, percentile: 0, classification: '', volume: 0, chartData, summary, marketCap });
+        entry = { ticker, rSquared, date: null, gap: 0, percentile: 0, classification: '', volume: 0, chartData, summary, marketCap };
       }
+      allTickers.push(entry);
+      if (onTickerDone) onTickerDone(entry);
     } catch (err) {
       console.error(`  [Screen] ${ticker}: error — ${err.message}`);
-      allTickers.push({ ticker, error: err.message });
+      const entry = { ticker, error: err.message };
+      allTickers.push(entry);
+      if (onTickerDone) onTickerDone(entry);
     }
   }
 
   return { hits, allTickers };
 }
 
-// ~200 liquid US small/mid-cap tickers spanning defense, biotech, clean energy,
+// ~400 liquid US tickers spanning defense, biotech, clean energy,
 // SaaS, fintech, medtech, semiconductors, industrials, consumer, cybersecurity.
+// Mix of small-cap growth and large mid-cap ($10B-$80B+).
 const UNIVERSE = [
+  // ── Small / Mid-cap ──────────────────────────────────────────────────
   // Defense / Aerospace
-  'KTOS','MRCY','RKLB','BWXT','AVAV','AXON','TDG','HEI','LDOS','BWA',
-  'CACI','JOBY','LUNR','RCAT','PLTR',
+  'KTOS','MRCY','RKLB','BWXT','AVAV','AXON','HEI','ATI',
+  'CACI','JOBY','LUNR','RCAT',
   // Biotech / Pharma
   'TWST','CYTK','ARWR','IONS','EXAS','HALO','NBIX','PCVX','VKTX','KRYS',
   'SRPT','ALNY','BMRN','INCY','ARGX','EXEL','CPRX','XENE','UTHR','RARE',
+  'RXRX','NUVB',
   // Clean Energy
-  'ENPH','SEDG','BE','FSLR','RUN','AES','CWEN','BEPC','QS','PLUG',
-  'ARRY','SHLS','VST','CEG',
+  'ENPH','SEDG','BE','FSLR','RUN','SHLS',
   // SaaS / Cloud / Software
-  'AI','UPST','BRZE','CFLT','S','GTLB','DOCN','PAYC','PCTY','GLOB',
-  'WIX','APPF','NTNX','JAMF','BL','SPSC','BILL','DDOG','ZS','CRWD',
+  'AI','UPST','BRZE','CFLT','S','GTLB','DOCN','PAYC','PCTY',
+  'WIX','APPF','NTNX','JAMF','BL','SPSC','BILL','DDOG','ZS',
   'MNDY','TOST','HUBS','VEEV','ESTC','FRSH','PTC','ASAN','PCOR','TYL',
+  'CWAN','TTGT','EVLV',
   // Cybersecurity
-  'TENB','QLYS','OKTA','VRNS','FTNT','PANW','NET','SAIL',
+  'TENB','QLYS','OKTA','VRNS','SAIL',
   // Fintech / Payments
-  'SOFI','LC','AFRM','PAYO','RELY','FOUR','ACIW','VRRM','HLNE','GPN',
-  'MQ','WEX','HOOD','SSNC',
+  'SOFI','LC','AFRM','PAYO','RELY','FOUR','ACIW','VRRM','HLNE',
+  'MQ','WEX','HOOD','SSNC','EVER','GENI',
   // Medtech / Healthcare
-  'INSP','GKOS','NVCR','TMDX','IRTC','DOCS','ALGN','HIMS','LNTH','MEDP',
-  'HQY','GMED','ISRG','DXCM','PODD','HOLX','RVMD','TFX','MMSI','PRCT',
+  'INSP','GKOS','NVCR','TMDX','IRTC','DOCS','ALGN','HIMS','MEDP',
+  'HQY','GMED','DXCM','PODD','HOLX','RVMD','MMSI','PRCT',
+  'GDRX',
   // Semiconductors
   'AEHR','LSCC','AMBA','SWKS','RMBS','CRUS','SLAB','ALGM','DIOD','PSTG',
-  'MTSI','ONTO','FORM','NOVT','MCHP','ACLS','SITM','MPWR','MRVL','LRCX',
+  'MTSI','ONTO','NOVT','ACLS','SITM',
   // Industrials / Infrastructure
-  'SAIA','TREX','ATKR','CWST','EXPO','AZEK','POWL','ESAB','SPXC','CGNX',
-  'GNRC','TT','XYL','WMS','SITE','AAON','MATX',
+  'SAIA','TREX','CWST','EXPO','POWL','ESAB','SPXC','CGNX',
+  'GNRC','AAON','DY',
   // Energy / Materials / Mining
-  'MP','UUUU','LEU','WFRD','TDW','CALX','HAYW','IREN','NE','RIG',
+  'MP','CALX','HAYW','IREN','RIG',
   // Consumer / Retail / Food
-  'CELH','SMPL','WING','ELF','SFM','DORM','OLED','DV','CARG','TTMI',
+  'CELH','WING','ELF','SFM','DORM','CARG','TTMI',
   'SHAK','BROS','CAVA','TXRH','DECK',
+  // AI / Robotics
+  'SOUN','SERV',
   // Misc growth
-  'EPAM','DUOL','RDDT','RBRK','IOT','APP','KVYO','AXSM','IOVA',
+  'EPAM','DUOL','RDDT','RBRK','IOT','KVYO','AXSM','IOVA',
+
+  // ── Large / Mega-cap ─────────────────────────────────────────────────
+  // Defense / Aerospace
+  'LHX','HII','TDG','LDOS','BWA','TXT','CW','PLTR',
+  'RTX','GD','NOC','BAH',
+  // Biotech / Pharma
+  'REGN','VRTX','GMAB','TECH','BIO','MRNA','BIIB',
+  'ILMN','MDGL','LEGN','INSM','FOLD','ACLX','TGTX','DAWN',
+  'LLY','ABBV','AZN','AMGN','JAZZ','NTRA','ITCI',
+  // Clean Energy / Utilities
+  'VST','CEG','AES','CWEN','BEPC','NEE','ORA','FLNC',
+  // SaaS / Cloud / Software
+  'CRWD','PANW','NET','SNOW','MDB','TEAM','WDAY','NOW',
+  'CDNS','SNPS','MANH','GWRE','DOCU','ROKU','U',
+  'PATH','PINS','SNAP','TTD','GRAB','SE','SHOP',
+  'MSFT','ADBE','CRM','ORCL','INTU','SAP','GDDY','ZM',
+  // Cybersecurity
+  'FTNT','RPD','FICO',
+  // Fintech / Payments
+  'GPN','FIS','FISV','PYPL','COIN','MKTX','LPLA','IBKR','NDAQ',
+  'CBOE','ICE','CME','MSCI','SPGI',
+  'V','MA','AXP','TW','CPAY','EFX',
+  // Medtech / Healthcare
+  'ISRG','EW','STE','TFX','LNTH','HSIC','XRAY',
+  'WST','IDXX','IQV','ZBH','BSX','PHG','RMD','GEHC',
+  'UNH','ABT','TMO','SYK','BDX','ZTS','MASI','ICLR',
+  // Semiconductors
+  'MCHP','MPWR','MRVL','LRCX','KLAC','AMAT','ASML','ON','NXPI',
+  'QCOM','TER','ENTG','WOLF','AMKR','COHR','CEVA','SMTC',
+  'NVDA','AMD','AVGO','ARM','MU','SMCI','TSM','GFS','KEYS',
+  // Industrials / Infrastructure
+  'ATKR','TT','XYL','WMS','SITE','MATX','EMR','ROK','NDSN',
+  'FELE','RBC','AOS','ITT','GGG','FLS','IR','AME',
+  'TRMB','LECO','ZWS',
+  'GE','CAT','ETN','PH','URI','HON','DE','HUBB','ODFL','TTEK',
+  // Energy / Materials / Mining
+  'UUUU','LEU','WFRD','TDW','NE','CCJ','UEC','DNN','NXE',
+  'STNG','DINO','SM','PR','CTRA','EQT','AR','CNX',
+  'XOM','SLB','EOG',
+  // Consumer / Retail / Food
+  'SMPL','LULU','ONON','CROX','YETI','FOXF','BURL','FIVE',
+  'BOOT','DKS','ANF','AEO','WOOF','MNST','COKE',
+  'CMG','DASH','UBER','LYFT','ABNB',
+  'COST','WMT','NKE','SBUX','MCD','PEP','DPZ','DKNG','POOL','FND',
 ];
 
 /**
  * Revise the screening ticker list by ranking the UNIVERSE by fundamentals.
  *
  * Scoring:
- *   1. Liquidity gate: skip if averageVolume < 500K
+ *   1. Liquidity gate: skip if averageVolume < 200K
  *   2. Revenue growth score: revenueGrowth (null/negative → 0)
- *   3. Leverage factor: 1 / (1 + debtToEquity/100)
- *   4. Final score: revenueGrowth * leverageFactor
- *   Top 50 by score descending.
+ *   3. Equity growth floor: YoY totalStockholderEquity growth, discounted by EQUITY_DISCOUNT
+ *   4. Effective growth: max(revenueGrowth, EQUITY_DISCOUNT * equityGrowth)
+ *   5. Leverage factor: 1 / (1 + debtToEquity/200)
+ *   6. Final score: effectiveGrowth * leverageFactor
+ *   Top 100 by score descending.
  *
  * @param {Function} createYF - Factory that returns a fresh yahoo-finance2 instance
  * @param {Function} [onProgress] - Optional callback(current, total, ticker)
  * @returns {Promise<{tickers: string[], details: Array}>}
  */
+const EQUITY_DISCOUNT = 0.4;
+
 async function reviseTickers(createYF, onProgress) {
   const scored = [];
   const errors = [];
@@ -419,7 +502,7 @@ async function reviseTickers(createYF, onProgress) {
     try {
       const yf = createYF();
       const result = await yf.quoteSummary(ticker, {
-        modules: ['financialData', 'summaryDetail'],
+        modules: ['financialData', 'summaryDetail', 'balanceSheetHistory'],
       });
 
       const fin = result.financialData || {};
@@ -428,26 +511,40 @@ async function reviseTickers(createYF, onProgress) {
       const avgVolume = summary.averageVolume ?? 0;
       const marketCap = summary.marketCap ?? 0;
 
+      const sheets = (result.balanceSheetHistory?.balanceSheetStatements) ?? [];
+      let equityGrowth = 0;
+      if (sheets.length >= 2) {
+        const recent = sheets[0].totalStockholderEquity;
+        const prior  = sheets[1].totalStockholderEquity;
+        if (recent != null && prior != null && prior !== 0) {
+          equityGrowth = Math.max(0, (recent - prior) / Math.abs(prior));
+        }
+      }
+
       const revenueGrowth = (fin.revenueGrowth != null && fin.revenueGrowth > 0)
         ? fin.revenueGrowth
         : 0;
 
-      const debtToEquity = fin.debtToEquity ?? 0;
-      const leverageFactor = 1 / (1 + Math.max(0, debtToEquity) / 100);
+      const effectiveGrowth = Math.max(revenueGrowth, EQUITY_DISCOUNT * equityGrowth);
 
-      const score = revenueGrowth * leverageFactor;
+      const debtToEquity = fin.debtToEquity ?? 0;
+      const leverageFactor = 1 / (1 + Math.max(0, debtToEquity) / 200);
+
+      const score = effectiveGrowth * leverageFactor;
 
       const entry = {
         ticker,
         score,
         revenueGrowth,
+        equityGrowth,
+        effectiveGrowth,
         debtToEquity,
         leverageFactor,
         avgVolume,
         marketCap,
       };
 
-      if (avgVolume < 500000) {
+      if (avgVolume < 200000) {
         console.log(`  [Revise] ${ticker}: skipped (avgVol ${(avgVolume/1e6).toFixed(2)}M < 500K)`);
         excluded.illiquid.push(entry);
         continue;
@@ -455,23 +552,24 @@ async function reviseTickers(createYF, onProgress) {
 
       scored.push(entry);
 
-      console.log(`  [Revise] ${ticker}: score=${score.toFixed(4)} (revGrowth=${(revenueGrowth*100).toFixed(1)}%, D/E=${debtToEquity.toFixed(0)}, avgVol=${(avgVolume/1e6).toFixed(1)}M)`);
+      const growthSource = (effectiveGrowth > revenueGrowth) ? ' [eqFloor]' : '';
+      console.log(`  [Revise] ${ticker}: score=${score.toFixed(4)} (revGrowth=${(revenueGrowth*100).toFixed(1)}%, eqGrowth=${(equityGrowth*100).toFixed(1)}%, effGrowth=${(effectiveGrowth*100).toFixed(1)}%${growthSource}, D/E=${debtToEquity.toFixed(0)}, avgVol=${(avgVolume/1e6).toFixed(1)}M)`);
     } catch (err) {
       console.error(`  [Revise] ${ticker}: error — ${err.message}`);
       errors.push({ ticker, error: err.message });
     }
   }
 
-  // Sort by score descending, take top 50
+  // Sort by score descending, take top 100
   scored.sort((a, b) => b.score - a.score);
-  const top50 = scored.slice(0, 50);
-  const top50Set = new Set(top50.map(s => s.ticker));
+  const top100 = scored.slice(0, 100);
+  const top100Set = new Set(top100.map(s => s.ticker));
 
-  // Classify tickers that scored but didn't make the top 50 by primary weakness
+  // Classify tickers that scored but didn't make the top 100 by primary weakness
   for (const s of scored) {
-    if (top50Set.has(s.ticker)) continue;
+    if (top100Set.has(s.ticker)) continue;
     // Primary reason: no/negative revenue growth vs high leverage
-    if (s.revenueGrowth === 0) {
+    if (s.effectiveGrowth === 0) {
       excluded.noGrowth.push(s);
     } else if (s.leverageFactor < 0.5) {
       // D/E > 100 → leverageFactor < 0.5 → leverage was the main drag
@@ -482,12 +580,12 @@ async function reviseTickers(createYF, onProgress) {
     }
   }
 
-  console.log(`[Revise] Done. ${scored.length} scored, ${errors.length} errors, top 50 selected.`);
+  console.log(`[Revise] Done. ${scored.length} scored, ${errors.length} errors, top 100 selected.`);
   console.log(`[Revise] Excluded: ${excluded.illiquid.length} illiquid, ${excluded.noGrowth.length} low/no growth, ${excluded.highLeverage.length} high leverage`);
 
   return {
-    tickers: top50.map(s => s.ticker),
-    details: top50,
+    tickers: top100.map(s => s.ticker),
+    details: top100,
     excluded,
     errors,
     totalScored: scored.length,

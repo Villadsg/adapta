@@ -1043,7 +1043,7 @@ screenModal.addEventListener('click', async (e) => {
   }
 });
 
-// Revise the 50 button
+// Revise the 100 button
 const screenRevise = document.getElementById('screen-revise');
 const screenViewLast = document.getElementById('screen-view-last');
 
@@ -1144,7 +1144,7 @@ function generateReviseHTML(result) {
   // Build a unified list of all tickers
   const allEntries = [];
 
-  // Selected (top 50)
+  // Selected (top 100)
   for (const d of result.details) {
     allEntries.push({ ...d, status: 'selected' });
   }
@@ -1160,7 +1160,7 @@ function generateReviseHTML(result) {
   }
   // Errors
   for (const e of (result.errors || [])) {
-    allEntries.push({ ticker: e.ticker, score: -1, revenueGrowth: 0, debtToEquity: 0, leverageFactor: 0, avgVolume: 0, marketCap: 0, status: 'error', errorMsg: e.error });
+    allEntries.push({ ticker: e.ticker, score: -1, revenueGrowth: 0, equityGrowth: 0, effectiveGrowth: 0, debtToEquity: 0, leverageFactor: 0, avgVolume: 0, marketCap: 0, status: 'error', errorMsg: e.error });
   }
 
   const nTotal = allEntries.length;
@@ -1176,6 +1176,7 @@ function generateReviseHTML(result) {
       <td data-v="${d.ticker}" style="font-weight:bold;">${d.ticker}</td>
       <td data-v="${statusOrder}" style="color:${st.color}; font-weight:bold;">${st.label}</td>
       <td data-v="${d.revenueGrowth || 0}">${d.revenueGrowth != null ? (d.revenueGrowth * 100).toFixed(1) + '%' : '—'}</td>
+      <td data-v="${d.equityGrowth || 0}">${d.equityGrowth != null ? (d.equityGrowth * 100).toFixed(1) + '%' : '—'}</td>
       <td data-v="${d.debtToEquity || 0}">${d.debtToEquity != null ? d.debtToEquity.toFixed(0) : '—'}</td>
       <td data-v="${d.leverageFactor || 0}">${d.leverageFactor != null ? d.leverageFactor.toFixed(3) : '—'}</td>
       <td data-v="${d.score || 0}">${d.score != null && d.score >= 0 ? (d.score * 100).toFixed(2) : '—'}</td>
@@ -1186,7 +1187,7 @@ function generateReviseHTML(result) {
 
   return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
-<title>Revise the 50 — Results</title>
+<title>Revise the 100 — Results</title>
 <style>
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 20px; background: #fafafa; color: #333; }
   h1 { font-size: 1.4em; margin-bottom: 4px; }
@@ -1209,7 +1210,7 @@ function generateReviseHTML(result) {
   td { padding: 8px 12px; border-top: 1px solid #eee; font-size: 0.95em; }
   tr:hover { background: #f9f9f9; }
 </style></head><body>
-<h1>Revise the 50 — All Tickers</h1>
+<h1>Revise the 100 — All Tickers</h1>
 <p class="summary">${nTotal} tickers analyzed${timestamp ? ' on ' + timestamp : ''}. ${selectedSet.size} selected for screening.</p>
 
 <div class="exclusion-summary">
@@ -1225,6 +1226,7 @@ function generateReviseHTML(result) {
   <th>Ticker<span class="sort-arrow"></span></th>
   <th>Status<span class="sort-arrow"></span></th>
   <th>Rev Growth<span class="sort-arrow"></span></th>
+  <th>Eq Growth<span class="sort-arrow"></span></th>
   <th>D/E<span class="sort-arrow"></span></th>
   <th>Lev Factor<span class="sort-arrow"></span></th>
   <th>Score<span class="sort-arrow"></span></th>
@@ -1333,8 +1335,8 @@ screenRun.addEventListener('click', async () => {
 
 // Initialize
 (async () => {
-  // Create one tab with finance.yahoo.com
-  await createTab('https://finance.yahoo.com');
+  // Create one tab with zerohedge.com
+  await createTab('https://zerohedge.com');
 
   // Load initial stats
   await updateStats();
