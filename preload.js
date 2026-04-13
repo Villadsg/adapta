@@ -60,6 +60,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   analyzeDiversification: (params) => ipcRenderer.invoke('analyze-diversification', params),
   discoverCandidates: (holdingTickers) => ipcRenderer.invoke('discover-candidates', holdingTickers),
 
+  // GLM analysis
+  runGlmAnalysis: (options) => ipcRenderer.invoke('run-glm-analysis', options),
+
   // Ticker screening
   screenTickers: (options) => ipcRenderer.invoke('screen-tickers', options),
   reviseTickers: () => ipcRenderer.invoke('revise-tickers'),

@@ -26,6 +26,7 @@ const articleExtractor = require('./src/services/articleExtractor');
 const newsScraper = require('./src/services/newsScraper');
 const TickerDiscoveryService = require('./src/services/tickerDiscovery');
 const ChronosHoldPeriodService = require('./src/services/chronosHoldPeriod');
+const GLMAnalysisService = require('./src/services/glmAnalysis');
 const { screenTickers, reviseTickers } = require('./ci/ticker-screen');
 const { classifyTickerNews } = require('./src/services/newsClassifier');
 const YahooFinance = require('yahoo-finance2').default;
@@ -38,6 +39,7 @@ let optionsAnalyzer;
 let portfolioAnalyzer;
 let tickerDiscovery;
 let chronosHoldService;
+let glmAnalyzer;
 
 // Tab management
 const tabs = new Map(); // tabId -> BrowserView
@@ -286,7 +288,7 @@ function updateBrowserViewBounds(browserView) {
 }
 
 // Create a new tab
-function createTab(url = 'https://zerohedge.com') {
+function createTab(url = 'https://simplywall.st/dashboard') {
   const tabId = nextTabId++;
 
   const browserView = new BrowserView({
@@ -382,6 +384,15 @@ function createTab(url = 'https://zerohedge.com') {
 
   // Handle links that try to open in new windows - open them in new tabs instead
   browserView.webContents.setWindowOpenHandler(({ url }) => {
+    // Allow OAuth popups to open as real windows so window.opener works
+    try {
+      const host = new URL(url).hostname;
+      if (host === 'accounts.google.com' || host === 'appleid.apple.com' ||
+          host.endsWith('.auth0.com') || host.endsWith('.okta.com')) {
+        return { action: 'allow' };
+      }
+    } catch (_) {}
+
     // Create a new tab with the URL and switch to it
     const newTabId = createTab(url);
     switchTab(newTabId);
@@ -391,6 +402,31 @@ function createTab(url = 'https://zerohedge.com') {
 
     // Prevent the default window from opening
     return { action: 'deny' };
+  });
+
+  // Block overlay popups on simplywall.st (paywall/signup modals that appear on scroll)
+  browserView.webContents.on('did-finish-load', () => {
+    const currentUrl = browserView.webContents.getURL();
+    if (currentUrl.includes('simplywall.st')) {
+      browserView.webContents.insertCSS(`
+        /* Hide overlay/modal popups and their backdrops */
+        [class*="modal"], [class*="Modal"],
+        [class*="overlay"], [class*="Overlay"],
+        [class*="paywall"], [class*="Paywall"],
+        [class*="signup-wall"], [class*="SignupWall"],
+        [class*="gate"], [class*="Gate"],
+        [role="dialog"],
+        .ReactModal__Overlay,
+        .ReactModal__Content {
+          display: none !important;
+        }
+        /* Restore scrolling if the modal locks the body */
+        body, html {
+          overflow: auto !important;
+          position: static !important;
+        }
+      `);
+    }
   });
 
   // Load URL if provided
@@ -406,9 +442,20 @@ function switchTab(tabId) {
   const browserView = tabs.get(tabId);
   if (!browserView) return;
 
+  // Guard: if the view's webContents was destroyed (e.g. OAuth popup closed itself),
+  // clean up the tab instead of crashing
+  if (browserView.webContents.isDestroyed()) {
+    tabs.delete(tabId);
+    if (activeTabId === tabId) activeTabId = null;
+    return;
+  }
+
   // Remove current browser view
   if (activeTabId) {
-    mainWindow.removeBrowserView(tabs.get(activeTabId));
+    const currentView = tabs.get(activeTabId);
+    if (currentView && !currentView.webContents.isDestroyed()) {
+      mainWindow.removeBrowserView(currentView);
+    }
   }
 
   // Add and position new browser view
@@ -1466,6 +1513,37 @@ ipcMain.handle('discover-candidates', async (event, holdingTickers) => {
   }
 });
 
+// Combine IV from a saved history record (exp1/exp2/exp3 format).
+// Uses dv field for weighting if available, otherwise equal weights.
+function combineHistRecord(record) {
+  const exps = [];
+  for (const key of ['exp1', 'exp2', 'exp3']) {
+    const e = record[key];
+    if (!e || (e.callIV <= 0 && e.putIV <= 0)) continue;
+    exps.push({ e, dv: e.dv || 0 });
+  }
+  if (exps.length === 0) return null;
+  const totalDV = exps.reduce((s, x) => s + x.dv, 0);
+  const useEqualWeights = totalDV === 0;
+  const weights = useEqualWeights
+    ? exps.map(() => 1 / exps.length)
+    : exps.map(x => x.dv / totalDV);
+  let callIV = 0, putIV = 0, atmCallIV = 0, atmPutIV = 0;
+  let hasAtmCall = false, hasAtmPut = false;
+  for (let i = 0; i < exps.length; i++) {
+    const e = exps[i].e;
+    callIV += (e.callIV || 0) * weights[i];
+    putIV += (e.putIV || 0) * weights[i];
+    if (e.atmCallIV != null) { atmCallIV += e.atmCallIV * weights[i]; hasAtmCall = true; }
+    if (e.atmPutIV != null) { atmPutIV += e.atmPutIV * weights[i]; hasAtmPut = true; }
+  }
+  return {
+    callIV, putIV,
+    atmCallIV: hasAtmCall ? atmCallIV : null,
+    atmPutIV: hasAtmPut ? atmPutIV : null,
+  };
+}
+
 // Ticker screening handler
 ipcMain.handle('screen-tickers', async (event, options = {}) => {
   try {
@@ -1519,7 +1597,7 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       finvizQueue.push(entry);
       processFinvizQueue();
     } : null;
-    const result = await screenTickers(priceTracker, config, createYF, onTickerDone);
+    const result = await screenTickers(priceTracker, config, createYF, onTickerDone, database);
 
     // Wait for remaining Finviz fetches to finish
     if (options.fetchNews) {
@@ -1553,10 +1631,16 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       const od = entry.chartData?.optionsStrikes;
       if (!od || od.length === 0) continue;
       if (!ivHistory[entry.ticker]) ivHistory[entry.ticker] = [];
-      const record = { date: today };
-      if (od[0]) { record.exp1 = { label: od[0].label, callIV: od[0].wCallIV, putIV: od[0].wPutIV, atmCallIV: od[0].atmCallIV, atmPutIV: od[0].atmPutIV, deepOTMCallPct: od[0].deepOTMCallPct, deepOTMPutPct: od[0].deepOTMPutPct }; }
-      if (od[1]) { record.exp2 = { label: od[1].label, callIV: od[1].wCallIV, putIV: od[1].wPutIV, atmCallIV: od[1].atmCallIV, atmPutIV: od[1].atmPutIV, deepOTMCallPct: od[1].deepOTMCallPct, deepOTMPutPct: od[1].deepOTMPutPct }; }
-      if (od[2]) { record.exp3 = { label: od[2].label, callIV: od[2].wCallIV, putIV: od[2].wPutIV, atmCallIV: od[2].atmCallIV, atmPutIV: od[2].atmPutIV, deepOTMCallPct: od[2].deepOTMCallPct, deepOTMPutPct: od[2].deepOTMPutPct }; }
+      const record = { date: today, sector: entry.sector || '' };
+      const expDV = (exp) => {
+        let dv = 0;
+        for (const c of (exp.calls || [])) dv += c.dollarVol || 0;
+        for (const p of (exp.puts || [])) dv += p.dollarVol || 0;
+        return dv;
+      };
+      if (od[0]) { record.exp1 = { label: od[0].label, callIV: od[0].wCallIV, putIV: od[0].wPutIV, atmCallIV: od[0].atmCallIV, atmPutIV: od[0].atmPutIV, deepOTMCallPct: od[0].deepOTMCallPct, deepOTMPutPct: od[0].deepOTMPutPct, dv: expDV(od[0]) }; }
+      if (od[1]) { record.exp2 = { label: od[1].label, callIV: od[1].wCallIV, putIV: od[1].wPutIV, atmCallIV: od[1].atmCallIV, atmPutIV: od[1].atmPutIV, deepOTMCallPct: od[1].deepOTMCallPct, deepOTMPutPct: od[1].deepOTMPutPct, dv: expDV(od[1]) }; }
+      if (od[2]) { record.exp3 = { label: od[2].label, callIV: od[2].wCallIV, putIV: od[2].wPutIV, atmCallIV: od[2].atmCallIV, atmPutIV: od[2].atmPutIV, deepOTMCallPct: od[2].deepOTMCallPct, deepOTMPutPct: od[2].deepOTMPutPct, dv: expDV(od[2]) }; }
       // Replace if same date exists, otherwise append
       const existing = ivHistory[entry.ticker].findIndex(r => r.date === today);
       if (existing >= 0) ivHistory[entry.ticker][existing] = record;
@@ -1640,16 +1724,17 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       if (!bucket) continue;
       const history = ivHistory[ev.ticker];
       if (!Array.isArray(history) || history.length === 0) continue;
-      // Point-in-time: only records strictly before the event date.
-      const priorRecords = history.filter(r => r && r.date && r.exp1 && r.date < ev.eventDate);
+      // Point-in-time: only records strictly before the event date, with valid combined IV.
+      const priorRecords = history.filter(r => r && r.date && combineHistRecord(r) && r.date < ev.eventDate);
       if (priorRecords.length < PRE_EVENT_MIN_HIST) continue;
       // Latest of those is the "pre-event snapshot" to be ranked.
       priorRecords.sort((a, b) => a.date.localeCompare(b.date));
-      const prior = priorRecords[priorRecords.length - 1].exp1;
+      const prior = combineHistRecord(priorRecords[priorRecords.length - 1]);
       // Build historical series from the point-in-time set (includes the prior itself).
       const callIVs = [], putIVs = [], callSpreads = [], putSpreads = [];
       for (const r of priorRecords) {
-        const e = r.exp1;
+        const e = combineHistRecord(r);
+        if (!e) continue;
         if (e.callIV > 0) callIVs.push(e.callIV);
         if (e.putIV > 0) putIVs.push(e.putIV);
         if (e.callIV != null && e.atmCallIV != null) callSpreads.push(e.callIV - e.atmCallIV);
@@ -1771,6 +1856,21 @@ ipcMain.handle('load-screening-results', async () => {
   }
 });
 
+// GLM Analysis — logistic regression on event features
+ipcMain.handle('run-glm-analysis', async (event, options = {}) => {
+  try {
+    const horizonDays = options.horizonDays || 10;
+    console.log(`\n[GLM] Training logistic regression with horizon=${horizonDays} days...`);
+    const result = await glmAnalyzer.trainModel(horizonDays);
+    const hNote = result.horizonDays !== result.requestedHorizon ? ` (fell back from ${result.requestedHorizon}d)` : '';
+    console.log(`[GLM] Done. horizon=${result.horizonDays}d${hNote}, LOO accuracy: ${(result.looAccuracy * 100).toFixed(1)}% (n=${result.nEvents}: ${result.nEventSamples} events + ${result.nNonEventSamples} non-events)`);
+    return { success: true, ...result };
+  } catch (error) {
+    console.error('GLM analysis error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 const FAVORITES_PATH = path.join(__dirname, 'ci', 'screening-favorites.json');
 
 function loadFavorites() {
@@ -1811,25 +1911,57 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
   const hitCount = allTickers.filter(h => h.classification).length;
   const favSet = new Set(favorites);
 
+  // Combine IV from up to 3 expirations, weighted by dollar volume per expiration.
+  function combineExpirations(os) {
+    const exps = [];
+    for (const exp of os) {
+      if (!exp || (exp.wCallIV <= 0 && exp.wPutIV <= 0)) continue;
+      let dv = 0;
+      for (const c of (exp.calls || [])) dv += c.dollarVol || 0;
+      for (const p of (exp.puts || [])) dv += p.dollarVol || 0;
+      exps.push({ exp, dv });
+    }
+    if (exps.length === 0) return null;
+    const totalDV = exps.reduce((s, e) => s + e.dv, 0);
+    const useEqualWeights = totalDV === 0;
+    const weights = useEqualWeights
+      ? exps.map(() => 1 / exps.length)
+      : exps.map(e => e.dv / totalDV);
+    let callIV = 0, putIV = 0, atmCallIV = 0, atmPutIV = 0;
+    for (let i = 0; i < exps.length; i++) {
+      const e = exps[i].exp;
+      callIV += (e.wCallIV || 0) * weights[i];
+      putIV += (e.wPutIV || 0) * weights[i];
+      atmCallIV += (e.atmCallIV || 0) * weights[i];
+      atmPutIV += (e.atmPutIV || 0) * weights[i];
+    }
+    return {
+      callIV: Math.round(callIV * 10) / 10,
+      putIV: Math.round(putIV * 10) / 10,
+      atmCallIV: Math.round(atmCallIV * 10) / 10,
+      atmPutIV: Math.round(atmPutIV * 10) / 10,
+      ivSpreadCall: Math.round((callIV - atmCallIV) * 10) / 10,
+      ivSpreadPut: Math.round((putIV - atmPutIV) * 10) / 10,
+      totalDV,
+    };
+  }
+
   // Build chart data JSON and summary map for each ticker
   const chartDataMap = {};
   const summaryMap = {};
   const newsMap = {};
-  const tickerIVs = {}; // { ticker: { callIV, putIV, atmCallIV, atmPutIV } } — nearest expiry weighted IV
-  const tickerOptDV = {}; // { ticker: totalDollarVol } — sum of call+put dollar vol across strikes
+  const tickerIVs = {}; // { ticker: { callIV, putIV, atmCallIV, atmPutIV, ivSpreadCall, ivSpreadPut } } — DV-weighted across expirations
+  const tickerOptDV = {}; // { ticker: totalDollarVol } — sum of call+put dollar vol across all expirations
   for (const h of allTickers) {
     if (h.chartData && h.chartData.dates && h.chartData.dates.length > 0) {
       chartDataMap[h.ticker] = h.chartData;
       const os = h.chartData.optionsStrikes;
       if (os && os.length > 0) {
-        if (os[0].wCallIV > 0 || os[0].wPutIV > 0) {
-          tickerIVs[h.ticker] = { callIV: os[0].wCallIV, putIV: os[0].wPutIV, atmCallIV: os[0].atmCallIV || 0, atmPutIV: os[0].atmPutIV || 0 };
+        const combined = combineExpirations(os);
+        if (combined && (combined.callIV > 0 || combined.putIV > 0)) {
+          tickerIVs[h.ticker] = combined;
         }
-        const exp = os[0];
-        let totalDV = 0;
-        for (const c of exp.calls) totalDV += c.dollarVol || 0;
-        for (const p of exp.puts) totalDV += p.dollarVol || 0;
-        if (totalDV > 0) tickerOptDV[h.ticker] = totalDV;
+        if (combined && combined.totalDV > 0) tickerOptDV[h.ticker] = combined.totalDV;
       }
     }
     if (h.summary) summaryMap[h.ticker] = h.summary;
@@ -1841,11 +1973,36 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
   // so percentile rank has meaningful resolution.
   const MIN_HIST_RECORDS = 10;
   const ivHistStats = {};
+  // Resolve each ticker's sector: prefer current run data, fall back to last saved record
+  const tickerSectors = {};
+  for (const h of allTickers) {
+    if (h.sector) tickerSectors[h.ticker] = h.sector;
+  }
+  for (const [ticker, records] of Object.entries(ivHistoryData)) {
+    if (!tickerSectors[ticker] && Array.isArray(records)) {
+      for (let i = records.length - 1; i >= 0; i--) {
+        if (records[i].sector) { tickerSectors[ticker] = records[i].sector; break; }
+      }
+    }
+  }
+  // Build per-sector spread distributions from all historical records
+  const sectorSpreads = {}; // { sector: { callSpreads: [], putSpreads: [] } }
+  for (const [ticker, records] of Object.entries(ivHistoryData)) {
+    const sec = tickerSectors[ticker];
+    if (!sec || !Array.isArray(records)) continue;
+    if (!sectorSpreads[sec]) sectorSpreads[sec] = { callSpreads: [], putSpreads: [] };
+    for (const r of records) {
+      const e = combineHistRecord(r);
+      if (!e) continue;
+      if (e.callIV > 0 && e.atmCallIV != null) sectorSpreads[sec].callSpreads.push(e.callIV - e.atmCallIV);
+      if (e.putIV > 0 && e.atmPutIV != null) sectorSpreads[sec].putSpreads.push(e.putIV - e.atmPutIV);
+    }
+  }
   for (const [ticker, records] of Object.entries(ivHistoryData)) {
     if (!Array.isArray(records) || records.length < MIN_HIST_RECORDS) continue;
     const callIVs = [], putIVs = [], callSpreads = [], putSpreads = [];
     for (const r of records) {
-      const e = r.exp1;
+      const e = combineHistRecord(r);
       if (!e) continue;
       if (e.callIV > 0) callIVs.push(e.callIV);
       if (e.putIV > 0) putIVs.push(e.putIV);
@@ -1855,8 +2012,8 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     ivHistStats[ticker] = {
       callIVs: callIVs.length >= MIN_HIST_RECORDS ? callIVs : null,
       putIVs: putIVs.length >= MIN_HIST_RECORDS ? putIVs : null,
-      callSpreads: callSpreads.length >= MIN_HIST_RECORDS ? callSpreads : null,
-      putSpreads: putSpreads.length >= MIN_HIST_RECORDS ? putSpreads : null,
+      callSpreads: callSpreads.length >= 3 ? callSpreads : null,
+      putSpreads: putSpreads.length >= 3 ? putSpreads : null,
     };
   }
   const pctRank = (arr, val) => {
@@ -1865,6 +2022,97 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     for (const v of arr) if (v <= val) below++;
     return Math.round((below / arr.length) * 100);
   };
+
+  // ── Package Suggestion: compute 2-snapshot avg call spread & pairwise correlations ──
+
+  // Step 1: Average call spread from last 2 IV history snapshots per ticker
+  const avgCallSpread2 = {};
+  for (const [ticker, records] of Object.entries(ivHistoryData)) {
+    if (!Array.isArray(records) || records.length === 0) continue;
+    const recent = records.slice(-2);
+    let sum = 0, count = 0;
+    for (const r of recent) {
+      const e = combineHistRecord(r);
+      if (!e || e.callIV <= 0 || e.atmCallIV == null) continue;
+      sum += (e.callIV - e.atmCallIV);
+      count++;
+    }
+    if (count >= 1) avgCallSpread2[ticker] = sum / count;
+  }
+
+  // Step 2: Server-side pairwise Pearson correlation for candidate tickers
+  const pkgCandidates = Object.keys(avgCallSpread2)
+    .filter(t => chartDataMap[t] && chartDataMap[t].dates && chartDataMap[t].closes);
+
+  function pearsonFromCloses(cd1, cd2) {
+    const dateIdx = {};
+    for (let i = 0; i < cd1.dates.length; i++) dateIdx[cd1.dates[i]] = i;
+    const pairedSrc = [], pairedOther = [];
+    let prevSrcIdx = -1, prevOtherIdx = -1;
+    for (let j = 0; j < cd2.dates.length; j++) {
+      const srcI = dateIdx[cd2.dates[j]];
+      if (srcI == null) { prevOtherIdx = j; continue; }
+      if (prevSrcIdx >= 0 && prevOtherIdx >= 0
+          && srcI === prevSrcIdx + 1 && j === prevOtherIdx + 1) {
+        if (cd1.closes[prevSrcIdx] > 0 && cd2.closes[prevOtherIdx] > 0) {
+          pairedSrc.push(Math.log(cd1.closes[srcI] / cd1.closes[prevSrcIdx]));
+          pairedOther.push(Math.log(cd2.closes[j] / cd2.closes[prevOtherIdx]));
+        }
+      }
+      prevSrcIdx = srcI;
+      prevOtherIdx = j;
+    }
+    if (pairedSrc.length < 20) return null;
+    const n = pairedSrc.length;
+    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
+    for (let k = 0; k < n; k++) {
+      sumX += pairedSrc[k]; sumY += pairedOther[k];
+      sumXY += pairedSrc[k] * pairedOther[k];
+      sumX2 += pairedSrc[k] * pairedSrc[k];
+      sumY2 += pairedOther[k] * pairedOther[k];
+    }
+    const denom = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+    return denom > 0 ? (n * sumXY - sumX * sumY) / denom : 0;
+  }
+
+  const pkgCorrMatrix = {};
+  for (let i = 0; i < pkgCandidates.length; i++) {
+    const t1 = pkgCandidates[i];
+    if (!pkgCorrMatrix[t1]) pkgCorrMatrix[t1] = {};
+    for (let j = i + 1; j < pkgCandidates.length; j++) {
+      const t2 = pkgCandidates[j];
+      if (!pkgCorrMatrix[t2]) pkgCorrMatrix[t2] = {};
+      const r = pearsonFromCloses(chartDataMap[t1], chartDataMap[t2]);
+      pkgCorrMatrix[t1][t2] = r;
+      pkgCorrMatrix[t2][t1] = r;
+    }
+  }
+
+  // Step 3: Find best 3-ticker combination (max spread, min correlation)
+  let bestCombo = null;
+  let bestScore = -Infinity;
+  const CORR_LAMBDA = 15;
+  for (let i = 0; i < pkgCandidates.length; i++) {
+    for (let j = i + 1; j < pkgCandidates.length; j++) {
+      for (let k = j + 1; k < pkgCandidates.length; k++) {
+        const t1 = pkgCandidates[i], t2 = pkgCandidates[j], t3 = pkgCandidates[k];
+        const r12 = pkgCorrMatrix[t1][t2], r13 = pkgCorrMatrix[t1][t3], r23 = pkgCorrMatrix[t2][t3];
+        if (r12 == null || r13 == null || r23 == null) continue;
+        const avgCorr = (Math.abs(r12) + Math.abs(r13) + Math.abs(r23)) / 3;
+        const avgSpread = (avgCallSpread2[t1] + avgCallSpread2[t2] + avgCallSpread2[t3]) / 3;
+        const score = avgSpread - CORR_LAMBDA * avgCorr;
+        if (score > bestScore) {
+          bestScore = score;
+          bestCombo = {
+            tickers: [t1, t2, t3],
+            avgSpread, avgCorr,
+            spreads: [avgCallSpread2[t1], avgCallSpread2[t2], avgCallSpread2[t3]],
+            corrs: { r12, r13, r23 },
+          };
+        }
+      }
+    }
+  }
 
   // Compute average weighted IV and ATM IV across all tickers with data
   const ivTickers = Object.keys(tickerIVs);
@@ -1895,21 +2143,27 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     const optDVStr = optDV >= 1e9 ? '$' + (optDV / 1e9).toFixed(1) + 'B' : optDV >= 1e6 ? '$' + (optDV / 1e6).toFixed(1) + 'M' : optDV >= 1e3 ? '$' + (optDV / 1e3).toFixed(0) + 'K' : optDV > 0 ? '$' + optDV.toFixed(0) : '';
 
     const tiv = tickerIVs[h.ticker];
-    const os0 = h.chartData?.optionsStrikes?.[0];
-    const callSpread = os0 ? os0.ivSpreadCall : null;
-    const putSpread = os0 ? os0.ivSpreadPut : null;
+    const callSpread = tiv ? tiv.ivSpreadCall : null;
+    const putSpread = tiv ? tiv.ivSpreadPut : null;
     const stats = ivHistStats[h.ticker];
     const rankTag = (r) => r != null ? ` <span style="color:#888; font-size:0.78em;">(p${r})</span>` : '';
+    const sectorRankTag = (r) => r != null ? ` <span style="color:#6a8; font-size:0.78em;">[s${r}]</span>` : '';
     const callIVRank = stats && tiv ? pctRank(stats.callIVs, tiv.callIV) : null;
     const putIVRank = stats && tiv ? pctRank(stats.putIVs, tiv.putIV) : null;
-    const callSpreadRank = stats && callSpread != null ? pctRank(stats.callSpreads, callSpread) : null;
-    const putSpreadRank = stats && putSpread != null ? pctRank(stats.putSpreads, putSpread) : null;
-    const callIVStr = tiv ? tiv.callIV.toFixed(1) + '%' + rankTag(callIVRank) : '';
-    const putIVStr = tiv ? tiv.putIV.toFixed(1) + '%' + rankTag(putIVRank) : '';
+    const MIN_SPREAD_RECORDS = 3;
+    const callSpreadRank = stats && stats.callSpreads && stats.callSpreads.length >= MIN_SPREAD_RECORDS && callSpread != null ? pctRank(stats.callSpreads, callSpread) : null;
+    const putSpreadRank = stats && stats.putSpreads && stats.putSpreads.length >= MIN_SPREAD_RECORDS && putSpread != null ? pctRank(stats.putSpreads, putSpread) : null;
+    // Sector-based spread rank: percentile within all historical spreads of same sector
+    const sec = tickerSectors[h.ticker];
+    const secData = sec ? sectorSpreads[sec] : null;
+    const callSectorRank = secData && callSpread != null && secData.callSpreads.length >= MIN_HIST_RECORDS ? pctRank(secData.callSpreads, callSpread) : null;
+    const putSectorRank = secData && putSpread != null && secData.putSpreads.length >= MIN_HIST_RECORDS ? pctRank(secData.putSpreads, putSpread) : null;
+    const callIVStr = tiv ? tiv.callIV.toFixed(1) + '%' : '';
+    const putIVStr = tiv ? tiv.putIV.toFixed(1) + '%' : '';
     const callIVVal = tiv ? tiv.callIV : -1;
     const putIVVal = tiv ? tiv.putIV : -1;
-    const callSpreadStr = callSpread != null ? (callSpread >= 0 ? '+' : '') + callSpread.toFixed(1) + rankTag(callSpreadRank) : '';
-    const putSpreadStr = putSpread != null ? (putSpread >= 0 ? '+' : '') + putSpread.toFixed(1) + rankTag(putSpreadRank) : '';
+    const callSpreadStr = callSpread != null ? (callSpread >= 0 ? '+' : '') + callSpread.toFixed(1) + rankTag(callSpreadRank) + sectorRankTag(callSectorRank) : '';
+    const putSpreadStr = putSpread != null ? (putSpread >= 0 ? '+' : '') + putSpread.toFixed(1) + rankTag(putSpreadRank) + sectorRankTag(putSectorRank) : '';
     const callSpreadVal = callSpread != null ? callSpread : -9999;
     const putSpreadVal = putSpread != null ? putSpread : -9999;
 
@@ -1918,6 +2172,7 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     return `<tr ${hasChart ? `class="data-row" data-ticker="${h.ticker}"` : ''} style="${inlineStyle}">
       <td style="text-align:center; width:28px; padding:4px;" data-v="${isFav ? 1 : 0}"><span class="fav-star" data-ticker="${h.ticker}" style="cursor:pointer; font-size:1.1em; color:${isFav ? '#f5c518' : '#ccc'};" title="Toggle favorite">${isFav ? '\u2605' : '\u2606'}</span></td>
       <td data-v="${h.ticker}" style="font-weight:bold;">${h.ticker}${hasChart ? ' <span style="font-size:0.7em;color:#aaa;">▶</span>' : ''}</td>
+      <td data-v="${sec || 'zzz'}" style="font-size:0.82em; color:#888;">${sec || ''}</td>
       <td data-v="${dateStr || 'zzz'}">${dateStr}</td>
       <td data-v="${h.gap || 0}">${h.gap ? h.gap.toFixed(2) + '%' : ''}</td>
       <td data-v="${h.percentile || 0}">${h.percentile ? h.percentile.toFixed(1) + '%' : ''}</td>
@@ -1932,7 +2187,7 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
       <td data-v="${putSpreadVal}" style="text-align:right; color:rgba(245,101,101,0.7); font-size:0.88em;">${putSpreadStr}</td>
     </tr>
     <tr class="chart-row" data-chart-for="${h.ticker}" style="display:none;">
-      <td colspan="14" style="padding:0; background:#1a1a2e;">
+      <td colspan="15" style="padding:0; background:#1a1a2e;">
         <div id="summary-${h.ticker}" style="padding:10px 20px 6px; color:#999; font-size:0.92em; line-height:1.5; max-height:140px; overflow-y:auto;"></div>
         <div style="padding:12px 16px; height:480px;">
           <canvas id="chart-${h.ticker}"></canvas>
@@ -2035,10 +2290,36 @@ ${(() => {
     </table>
   </div>`;
 })()}
+<div id="portfolio-corr-box" style="margin-bottom:14px; padding:12px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.95em;">
+  <div style="color:#666; font-weight:600; margin-bottom:6px;">Portfolio Correlation Check</div>
+  <div style="display:flex; align-items:center; gap:10px;">
+    <input id="portfolio-corr-input" type="text" placeholder="e.g. AAPL, MSFT, NVDA" style="flex:1; padding:7px 10px; border:1px solid #ddd; border-radius:6px; font-size:0.95em; outline:none;" />
+    <button id="portfolio-corr-btn" style="padding:7px 16px; border:none; border-radius:6px; background:#5b8cb8; color:#fff; font-size:0.9em; cursor:pointer;">Check</button>
+  </div>
+  <div id="portfolio-corr-result" style="margin-top:8px;"></div>
+</div>
+${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.93em;">
+  <div style="color:#444; font-weight:700; margin-bottom:8px;">
+    Package Suggestion
+    <span style="color:#999; font-weight:normal; font-size:0.85em; margin-left:8px;">(best 3-ticker combo: max avg call spread, min pairwise correlation &mdash; 2-snapshot avg)</span>
+  </div>
+  <div style="display:flex; gap:24px; align-items:center; flex-wrap:wrap;">
+    ${bestCombo.tickers.map((t, i) => `<div style="background:#f7f9fc; border-radius:6px; padding:8px 14px; min-width:120px;">
+        <div style="font-weight:bold; font-size:1.05em; color:#333;">${t}</div>
+        <div style="color:rgba(72,187,120,0.85); font-size:0.88em; margin-top:2px;">Avg C Spr: ${bestCombo.spreads[i] >= 0 ? '+' : ''}${bestCombo.spreads[i].toFixed(1)}</div>
+      </div>`).join('')}
+    <div style="color:#888; font-size:0.85em; line-height:1.6;">
+      <div>Avg |corr|: <span style="color:${bestCombo.avgCorr < 0.3 ? '#4caf50' : bestCombo.avgCorr < 0.6 ? '#ff9800' : '#f44336'}; font-weight:600;">${bestCombo.avgCorr.toFixed(2)}</span></div>
+      <div>Avg Call Spread: <span style="color:rgba(72,187,120,0.9); font-weight:600;">${bestCombo.avgSpread >= 0 ? '+' : ''}${bestCombo.avgSpread.toFixed(1)}</span></div>
+      <div style="font-size:0.82em; color:#bbb;">Corr: ${bestCombo.tickers[0]}/${bestCombo.tickers[1]}=${bestCombo.corrs.r12.toFixed(2)}, ${bestCombo.tickers[0]}/${bestCombo.tickers[2]}=${bestCombo.corrs.r13.toFixed(2)}, ${bestCombo.tickers[1]}/${bestCombo.tickers[2]}=${bestCombo.corrs.r23.toFixed(2)}</div>
+    </div>
+  </div>
+</div>` : ''}
 <table id="screen-table">
 <thead><tr>
   <th style="width:28px; text-align:center; padding:4px;"><span class="sort-arrow"></span></th>
   <th>Ticker<span class="sort-arrow"></span></th>
+  <th>Sector<span class="sort-arrow"></span></th>
   <th>Date<span class="sort-arrow"></span></th>
   <th>Gap %<span class="sort-arrow"></span></th>
   <th>Percentile<span class="sort-arrow"></span></th>
@@ -2048,9 +2329,9 @@ ${(() => {
   <th style="text-align:right;">Mkt Cap<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Opt $ Vol<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Call IV<span class="sort-arrow"></span></th>
-  <th style="text-align:right;" title="Weighted OTM IV minus ATM IV">C Spr<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Weighted OTM IV minus ATM IV. (pN) = self-history rank, [sN] = sector rank">C Spr<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Put IV<span class="sort-arrow"></span></th>
-  <th style="text-align:right;" title="Weighted OTM IV minus ATM IV">P Spr<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Weighted OTM IV minus ATM IV. (pN) = self-history rank, [sN] = sector rank">P Spr<span class="sort-arrow"></span></th>
 </tr></thead>
 <tbody>${rows}</tbody>
 </table>
@@ -2061,6 +2342,28 @@ ${(() => {
   const summaryMap = ${JSON.stringify(summaryMap)};
   const newsMap = ${JSON.stringify(newsMap)};
   const ivHistoryMap = ${JSON.stringify(ivHistoryData)};
+  // Combine IV from a saved history record (exp1/exp2/exp3), weighted by dv if available.
+  function combineHist(record) {
+    const exps = [];
+    for (const key of ['exp1', 'exp2', 'exp3']) {
+      const e = record[key];
+      if (!e || (e.callIV <= 0 && e.putIV <= 0)) continue;
+      exps.push({ e: e, dv: e.dv || 0 });
+    }
+    if (exps.length === 0) return null;
+    const totalDV = exps.reduce((s, x) => s + x.dv, 0);
+    const useEq = totalDV === 0;
+    const w = useEq ? exps.map(() => 1 / exps.length) : exps.map(x => x.dv / totalDV);
+    let cIV = 0, pIV = 0, acIV = 0, apIV = 0, hasAC = false, hasAP = false;
+    for (let i = 0; i < exps.length; i++) {
+      const e = exps[i].e;
+      cIV += (e.callIV || 0) * w[i];
+      pIV += (e.putIV || 0) * w[i];
+      if (e.atmCallIV != null) { acIV += e.atmCallIV * w[i]; hasAC = true; }
+      if (e.atmPutIV != null) { apIV += e.atmPutIV * w[i]; hasAP = true; }
+    }
+    return { callIV: cIV, putIV: pIV, atmCallIV: hasAC ? acIV : null, atmPutIV: hasAP ? apIV : null };
+  }
   // Favorite star click handler
   let favToastTimer = null;
   function showFavToast(msg, success) {
@@ -2107,6 +2410,124 @@ ${(() => {
   };
 
   const renderedCharts = {};
+
+  function pairwiseCorrelation(tickerA, tickerB) {
+    const cdA = chartDataMap[tickerA];
+    const cdB = chartDataMap[tickerB];
+    if (!cdA || !cdB || !cdA.dates || !cdB.dates) return null;
+
+    const dateIdxA = {};
+    for (let i = 0; i < cdA.dates.length; i++) dateIdxA[cdA.dates[i]] = i;
+
+    const retA = [], retB = [];
+    let prevIdxA = -1, prevIdxB = -1;
+    for (let j = 0; j < cdB.dates.length; j++) {
+      const idxA = dateIdxA[cdB.dates[j]];
+      if (idxA == null) continue;
+      if (prevIdxA >= 0 && prevIdxB >= 0 && idxA === prevIdxA + 1 && j === prevIdxB + 1) {
+        if (cdA.closes[prevIdxA] > 0 && cdB.closes[prevIdxB] > 0) {
+          retA.push(Math.log(cdA.closes[idxA] / cdA.closes[prevIdxA]));
+          retB.push(Math.log(cdB.closes[j] / cdB.closes[prevIdxB]));
+        }
+      }
+      prevIdxA = idxA;
+      prevIdxB = j;
+    }
+
+    if (retA.length < 20) return null;
+
+    const n = retA.length;
+    let sx = 0, sy = 0, sxy = 0, sx2 = 0, sy2 = 0;
+    for (let k = 0; k < n; k++) {
+      sx += retA[k]; sy += retB[k];
+      sxy += retA[k] * retB[k];
+      sx2 += retA[k] * retA[k];
+      sy2 += retB[k] * retB[k];
+    }
+    const denom = Math.sqrt((n * sx2 - sx * sx) * (n * sy2 - sy * sy));
+    return denom > 0 ? (n * sxy - sx * sy) / denom : 0;
+  }
+
+  function corrColor(r) {
+    const abs = Math.abs(r);
+    if (r < 0) return 'rgba(76, 175, 80, ' + (0.5 + abs * 0.5) + ')';
+    if (abs < 0.3) return 'rgba(76, 175, 80, 0.7)';
+    if (abs < 0.6) return 'rgba(255, 193, 7, ' + (0.6 + (abs - 0.3) * 1.3) + ')';
+    return 'rgba(244, 67, 54, ' + (0.6 + (abs - 0.6) * 1.0) + ')';
+  }
+
+  // Portfolio correlation checker
+  document.getElementById('portfolio-corr-btn').addEventListener('click', () => {
+    const raw = document.getElementById('portfolio-corr-input').value;
+    const tickers = raw.split(',').map(t => t.trim().toUpperCase()).filter(t => t.length > 0);
+    const resultDiv = document.getElementById('portfolio-corr-result');
+
+    if (tickers.length < 2) {
+      resultDiv.innerHTML = '<span style="color:#888; font-size:0.9em;">Enter at least 2 tickers separated by commas.</span>';
+      return;
+    }
+
+    const missing = tickers.filter(t => !chartDataMap[t]);
+    if (missing.length > 0) {
+      resultDiv.innerHTML = '<span style="color:#c62828; font-size:0.9em;">Not in screening data: ' + missing.join(', ') + '</span>';
+      return;
+    }
+
+    // Compute all pairwise correlations
+    const pairs = [];
+    for (let i = 0; i < tickers.length; i++) {
+      for (let j = i + 1; j < tickers.length; j++) {
+        const r = pairwiseCorrelation(tickers[i], tickers[j]);
+        pairs.push({ a: tickers[i], b: tickers[j], r });
+      }
+    }
+
+    const valid = pairs.filter(p => p.r !== null);
+    if (valid.length === 0) {
+      resultDiv.innerHTML = '<span style="color:#888; font-size:0.9em;">Not enough overlapping data to compute correlations.</span>';
+      return;
+    }
+
+    const avgCorr = valid.reduce((s, p) => s + p.r, 0) / valid.length;
+    const maxCorr = Math.max(...valid.map(p => p.r));
+    const minCorr = Math.min(...valid.map(p => p.r));
+
+    // Verdict
+    let verdict, verdictColor;
+    if (avgCorr >= 0.7) { verdict = 'Highly correlated — low diversification'; verdictColor = '#c62828'; }
+    else if (avgCorr >= 0.5) { verdict = 'Moderately correlated'; verdictColor = '#ef6c00'; }
+    else if (avgCorr >= 0.3) { verdict = 'Moderately diversified'; verdictColor = '#f9a825'; }
+    else { verdict = 'Well diversified — low correlation'; verdictColor = '#2e7d32'; }
+
+    let html = '<div style="margin-bottom:6px;"><span style="font-weight:700; font-size:1.05em; color:' + verdictColor + ';">' + verdict + '</span>';
+    html += '<span style="color:#888; margin-left:12px; font-size:0.9em;">avg ' + avgCorr.toFixed(3) + ' &nbsp;|&nbsp; range ' + minCorr.toFixed(3) + ' to ' + maxCorr.toFixed(3) + '</span></div>';
+
+    // Pair table
+    html += '<table style="width:100%; border-collapse:collapse; font-size:0.9em; margin-top:4px;">';
+    html += '<tr style="color:#888; font-size:0.8em; text-transform:uppercase; letter-spacing:0.5px;"><th style="text-align:left; padding:4px 8px;">Pair</th><th style="text-align:right; padding:4px 8px;">Correlation</th></tr>';
+    valid.sort((a, b) => b.r - a.r);
+    for (const p of valid) {
+      const color = corrColor(p.r);
+      html += '<tr style="border-top:1px solid #eee;">' +
+        '<td style="padding:4px 8px;">' + p.a + ' / ' + p.b + '</td>' +
+        '<td style="padding:4px 8px; text-align:right; color:' + color + '; font-weight:600;">' + p.r.toFixed(3) + '</td>' +
+        '</tr>';
+    }
+    const skipped = pairs.filter(p => p.r === null);
+    if (skipped.length > 0) {
+      for (const p of skipped) {
+        html += '<tr style="border-top:1px solid #eee;">' +
+          '<td style="padding:4px 8px; color:#bbb;">' + p.a + ' / ' + p.b + '</td>' +
+          '<td style="padding:4px 8px; text-align:right; color:#bbb;">insufficient data</td></tr>';
+      }
+    }
+    html += '</table>';
+    resultDiv.innerHTML = html;
+  });
+
+  document.getElementById('portfolio-corr-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('portfolio-corr-btn').click();
+  });
 
   // Click handler for data rows
   document.querySelectorAll('tr.data-row').forEach(row => {
@@ -2356,15 +2777,16 @@ ${(() => {
               if (ivHistChart) return; // already rendered
 
               const labels = hist.map(r => r.date);
+              const combined = hist.map(r => combineHist(r));
               const datasets = [];
-              if (hist[0].exp1) {
-                datasets.push({ label: 'Call IV', type: 'bar', data: hist.map(r => r.exp1 ? r.exp1.callIV : null), backgroundColor: 'rgba(72,187,120,0.7)', borderColor: 'rgba(72,187,120,0.9)', borderWidth: 1, yAxisID: 'y' });
-                datasets.push({ label: 'Put IV', type: 'bar', data: hist.map(r => r.exp1 ? r.exp1.putIV : null), backgroundColor: 'rgba(245,101,101,0.7)', borderColor: 'rgba(245,101,101,0.9)', borderWidth: 1, yAxisID: 'y' });
+              if (combined.some(c => c != null)) {
+                datasets.push({ label: 'Call IV', type: 'bar', data: combined.map(c => c ? c.callIV : null), backgroundColor: 'rgba(72,187,120,0.7)', borderColor: 'rgba(72,187,120,0.9)', borderWidth: 1, yAxisID: 'y' });
+                datasets.push({ label: 'Put IV', type: 'bar', data: combined.map(c => c ? c.putIV : null), backgroundColor: 'rgba(245,101,101,0.7)', borderColor: 'rgba(245,101,101,0.9)', borderWidth: 1, yAxisID: 'y' });
                 // ATM IV lines (if available in history)
-                const hasAtmData = hist.some(r => r.exp1 && (r.exp1.atmCallIV > 0 || r.exp1.atmPutIV > 0));
+                const hasAtmData = combined.some(c => c && (c.atmCallIV > 0 || c.atmPutIV > 0));
                 if (hasAtmData) {
-                  datasets.push({ label: 'ATM Call IV', type: 'line', data: hist.map(r => r.exp1 && r.exp1.atmCallIV > 0 ? r.exp1.atmCallIV : null), borderColor: 'rgba(72,187,120,0.5)', borderWidth: 2, borderDash: [4, 3], pointRadius: 2, fill: false, spanGaps: true, yAxisID: 'y' });
-                  datasets.push({ label: 'ATM Put IV', type: 'line', data: hist.map(r => r.exp1 && r.exp1.atmPutIV > 0 ? r.exp1.atmPutIV : null), borderColor: 'rgba(245,101,101,0.5)', borderWidth: 2, borderDash: [4, 3], pointRadius: 2, fill: false, spanGaps: true, yAxisID: 'y' });
+                  datasets.push({ label: 'ATM Call IV', type: 'line', data: combined.map(c => c && c.atmCallIV > 0 ? c.atmCallIV : null), borderColor: 'rgba(72,187,120,0.5)', borderWidth: 2, borderDash: [4, 3], pointRadius: 2, fill: false, spanGaps: true, yAxisID: 'y' });
+                  datasets.push({ label: 'ATM Put IV', type: 'line', data: combined.map(c => c && c.atmPutIV > 0 ? c.atmPutIV : null), borderColor: 'rgba(245,101,101,0.5)', borderWidth: 2, borderDash: [4, 3], pointRadius: 2, fill: false, spanGaps: true, yAxisID: 'y' });
                 }
               }
 
@@ -2411,6 +2833,7 @@ ${(() => {
             }
           }
         }
+
       }
     });
   });
@@ -2549,6 +2972,7 @@ app.whenReady().then(async () => {
   portfolioAnalyzer = new PortfolioAnalysisService(database, stockAnalyzer, optionsAnalyzer);
   tickerDiscovery = new TickerDiscoveryService();
   chronosHoldService = new ChronosHoldPeriodService(database);
+  glmAnalyzer = new GLMAnalysisService(database);
 
   // Inject options analyzer into price tracker for daily snapshot collection
   priceTracker.setOptionsAnalyzer(optionsAnalyzer);

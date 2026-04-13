@@ -8,7 +8,6 @@ const btnReload = document.getElementById('btn-reload');
 const btnAnalyze = document.getElementById('btn-analyze');
 const btnCountNews = document.getElementById('btn-count-news');
 const btnNotGood = document.getElementById('btn-not-good');
-const btnAnalyzeEvents = document.getElementById('btn-analyze-events');
 const btnSettings = document.getElementById('btn-settings');
 const statsText = document.getElementById('stats-text-bottom');
 const analysisBar = document.getElementById('analysis-bar');
@@ -19,21 +18,6 @@ const btnMinimize = document.getElementById('btn-minimize');
 const btnMaximize = document.getElementById('btn-maximize');
 const btnClose = document.getElementById('btn-close');
 const toastContainer = document.getElementById('toast-container');
-
-// Modal elements
-const analysisModal = document.getElementById('analysis-modal');
-const analysisTickerInput = document.getElementById('analysis-ticker-input');
-const analysisBenchmarkInput = document.getElementById('analysis-benchmark-input');
-const analysisDaysInput = document.getElementById('analysis-days-input');
-const analysisEventsInput = document.getElementById('analysis-events-input');
-const analysisApiSelect = document.getElementById('analysis-api-select');
-const analysisFetchNewsCheckbox = document.getElementById('analysis-fetch-news');
-const analysisOptionsCheckbox = document.getElementById('analysis-options-activity');
-const analysisFundamentalsCheckbox = document.getElementById('analysis-fundamentals');
-const analysisMaxExpirationsInput = document.getElementById('analysis-max-expirations');
-const analysisHoldDaysInput = document.getElementById('analysis-hold-days');
-const modalCancel = document.getElementById('modal-cancel');
-const modalAnalyze = document.getElementById('modal-analyze');
 
 // Toast notification function
 function showToast(title, message, type = 'success', duration = 3000) {
@@ -347,50 +331,16 @@ async function saveStockNews() {
     // Show extracted tickers
     const autoTickers = articleData.tickers || [];
     if (autoTickers.length > 0) {
-      analysisText.textContent = `Found tickers: ${autoTickers.join(', ')} | Analyzing similarity...`;
+      analysisText.textContent = `Found tickers: ${autoTickers.join(', ')}`;
       analysisText.style.color = '#2196f3'; // Blue for info
       analysisText.style.display = 'inline';
     } else {
-      analysisText.textContent = 'No tickers found automatically | Analyzing similarity...';
+      analysisText.textContent = 'No tickers found automatically';
       analysisText.style.color = '#ff9800'; // Orange for warning
       analysisText.style.display = 'inline';
     }
 
-    // Step 2: Analyze for similarity
-    btnAnalyze.textContent = '⏳ Analyzing...';
-    const analysisResult = await window.electronAPI.analyzePage();
-
-    if (analysisResult.skipped) {
-      // Internal page (settings, file://, etc.)
-      analysisText.style.display = 'none';
-      btnAnalyze.disabled = false;
-      btnAnalyze.textContent = '📈 Save Stock News';
-      return;
-    }
-
-    if (!analysisResult.success) {
-      analysisText.textContent = `Analysis error: ${analysisResult.error}`;
-      analysisText.style.color = '#f44336';
-      analysisText.style.display = 'inline';
-      btnAnalyze.disabled = false;
-      btnAnalyze.textContent = '📈 Save Stock News';
-      return;
-    }
-
-    // Display similarity results with tickers
-    let similarityMsg = '';
-    if (analysisResult.matches && analysisResult.matches.length > 0) {
-      const topMatch = analysisResult.matches[0];
-      const similarityPercent = (topMatch.similarity * 100).toFixed(1);
-      similarityMsg = `${similarityPercent}% similar | `;
-    }
-    analysisText.textContent = similarityMsg + (autoTickers.length > 0
-      ? `Tickers: ${autoTickers.join(', ')}`
-      : 'No tickers found');
-    analysisText.style.color = '#2196f3';
-    analysisText.style.display = 'inline';
-
-    // Step 3: Determine tickers - either "all stocks" or manual/auto tickers
+    // Step 2: Determine tickers - either "all stocks" or manual/auto tickers
     let tickersToSave;
     if (allStocksCheckbox.checked) {
       // "All stocks" mode - use special marker
@@ -403,7 +353,7 @@ async function saveStockNews() {
         : [];
     }
 
-    // Step 4: Save the article as 'stock_news' with tickers
+    // Step 3: Save the article as 'stock_news' with tickers
     btnAnalyze.textContent = '💾 Saving...';
     const saveResult = await window.electronAPI.saveArticle('stock_news', tickersToSave);
 
@@ -561,10 +511,10 @@ window.electronAPI.onUrlChanged(async (data) => {
   // Schedule batched DOM update for better performance
   scheduleDOMUpdate(tabId, url, title);
 
-  // Auto-analyze for "not good" similarity when active tab navigates
-  if (tabId === currentTabId && url.startsWith('http')) {
-    scheduleAutoAnalysis();
-  }
+  // Auto-analysis disabled - embedding model comparison not currently in use
+  // if (tabId === currentTabId && url.startsWith('http')) {
+  //   scheduleAutoAnalysis();
+  // }
 });
 
 // New tab button
@@ -684,140 +634,6 @@ btnMaximize.addEventListener('click', async () => {
 
 btnClose.addEventListener('click', async () => {
   await window.electronAPI.windowClose();
-});
-
-// ===== Stock Event Analysis =====
-
-// Show modal when button clicked
-btnAnalyzeEvents.addEventListener('click', async () => {
-  await window.electronAPI.showModal();
-  analysisModal.style.display = 'flex';
-  analysisTickerInput.value = '';
-  analysisBenchmarkInput.value = 'SPY';
-  analysisDaysInput.value = '200';
-  analysisEventsInput.value = '15';
-  analysisOptionsCheckbox.checked = true;
-  analysisHoldDaysInput.value = '60';
-  analysisTickerInput.focus();
-
-  // Populate previously analyzed tickers
-  const panel = document.getElementById('analyzed-tickers-section');
-  const list = document.getElementById('analyzed-tickers-list');
-  try {
-    const result = await window.electronAPI.getAnalyzedTickers();
-    if (result.success && result.tickers.length > 0) {
-      list.innerHTML = result.tickers.map(t => {
-        const date = new Date(t.last_analyzed);
-        const ago = formatTimeAgo(date);
-        return `<button class="analyzed-ticker-btn" data-ticker="${t.ticker}" title="Last analyzed: ${date.toLocaleString()}"><span>${t.ticker}</span><span style="color:#888;font-size:10px;">${ago}</span></button>`;
-      }).join('');
-      panel.style.display = 'block';
-
-      list.querySelectorAll('.analyzed-ticker-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          analysisTickerInput.value = btn.dataset.ticker;
-          analysisTickerInput.focus();
-        });
-      });
-    } else {
-      panel.style.display = 'none';
-    }
-  } catch {
-    panel.style.display = 'none';
-  }
-});
-
-function formatTimeAgo(date) {
-  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (seconds < 60) return 'just now';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  const months = Math.floor(days / 30);
-  return `${months}mo ago`;
-}
-
-// Cancel modal
-modalCancel.addEventListener('click', async () => {
-  analysisModal.style.display = 'none';
-  await window.electronAPI.hideModal();
-});
-
-// Close modal on background click
-analysisModal.addEventListener('click', async (e) => {
-  if (e.target === analysisModal) {
-    analysisModal.style.display = 'none';
-    await window.electronAPI.hideModal();
-  }
-});
-
-// Handle Enter key in input
-analysisTickerInput.addEventListener('keydown', async (e) => {
-  if (e.key === 'Enter') {
-    modalAnalyze.click();
-  } else if (e.key === 'Escape') {
-    analysisModal.style.display = 'none';
-    await window.electronAPI.hideModal();
-  }
-});
-
-// Run analysis
-modalAnalyze.addEventListener('click', async () => {
-  const ticker = analysisTickerInput.value.trim();
-  if (!ticker) {
-    analysisTickerInput.focus();
-    return;
-  }
-
-  const upperTicker = ticker.toUpperCase();
-  const benchmark = (analysisBenchmarkInput.value.trim() || 'SPY').toUpperCase();
-  const days = parseInt(analysisDaysInput.value, 10) || 200;
-  const minEvents = parseInt(analysisEventsInput.value, 10) || 15;
-  const dataSource = analysisApiSelect.value;
-  const fetchNews = analysisFetchNewsCheckbox.checked;
-  const analyzeOptions = analysisOptionsCheckbox.checked;
-  const fetchFundamentals = analysisFundamentalsCheckbox.checked;
-  const maxExpirations = parseInt(analysisMaxExpirationsInput.value, 10) || 4;
-  const holdDays = parseInt(analysisHoldDaysInput.value, 10) || 60;
-  analysisModal.style.display = 'none';
-  await window.electronAPI.hideModal();
-
-  try {
-    const fetchNewsMsg = fetchNews ? ' Fetching news articles...' : '';
-    const optionsMsg = analyzeOptions ? ' Analyzing options activity...' : '';
-    const fundMsg = fetchFundamentals ? ' Fetching fundamentals...' : '';
-    showToast('Analyzing...', `Running event analysis for ${upperTicker} vs ${benchmark}.${fetchNewsMsg}${optionsMsg}${fundMsg} This may take a minute...`, 'info', (fetchNews || analyzeOptions) ? 60000 : 10000);
-
-    const result = await window.electronAPI.analyzeStockEvents(upperTicker, {
-      benchmark,
-      days,
-      minEvents,
-      dataSource,
-      fetchNews,
-      analyzeOptions,
-      fetchFundamentals,
-      maxExpirations,
-      holdDays,
-    });
-
-    if (!result.success) {
-      showToast('Error', result.error, 'error');
-      return;
-    }
-
-    // Open results in new tab using data URL
-    const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(result.html);
-    await createTab(dataUrl);
-
-    showToast('Analysis Complete', `Found ${result.eventCount} events for ${upperTicker}`, 'success');
-
-  } catch (error) {
-    console.error('Error analyzing stock:', error);
-    showToast('Error', error.message, 'error');
-  }
 });
 
 // ===== Portfolio Diversification =====
@@ -1333,10 +1149,120 @@ screenRun.addEventListener('click', async () => {
   }
 });
 
+// ===== GLM Analysis =====
+
+const btnGlm = document.getElementById('btn-glm');
+const glmModal = document.getElementById('glm-modal');
+const glmCancel = document.getElementById('glm-cancel');
+const glmTrain = document.getElementById('glm-train');
+const glmHorizon = document.getElementById('glm-horizon');
+const glmResults = document.getElementById('glm-results');
+
+btnGlm.addEventListener('click', async () => {
+  await window.electronAPI.showModal();
+  glmModal.style.display = 'flex';
+  glmResults.style.display = 'none';
+});
+
+glmCancel.addEventListener('click', async () => {
+  glmModal.style.display = 'none';
+  await window.electronAPI.hideModal();
+});
+
+glmModal.addEventListener('click', async (e) => {
+  if (e.target === glmModal) {
+    glmModal.style.display = 'none';
+    await window.electronAPI.hideModal();
+  }
+});
+
+glmTrain.addEventListener('click', async () => {
+  const horizonDays = parseInt(glmHorizon.value);
+  glmTrain.disabled = true;
+  glmTrain.textContent = 'Training...';
+  glmResults.style.display = 'none';
+
+  try {
+    const result = await window.electronAPI.runGlmAnalysis({ horizonDays });
+
+    if (!result.success) {
+      showToast('GLM Error', result.error, 'error');
+      return;
+    }
+
+    renderGlmResults(result);
+  } catch (error) {
+    showToast('GLM Error', error.message, 'error');
+  } finally {
+    glmTrain.disabled = false;
+    glmTrain.textContent = 'Train Model';
+  }
+});
+
+function renderGlmResults(result) {
+  const { coefficients, intercept, looAccuracy, baseRate, liftOverBase, confusion, nEvents, nPositive, nNegative, horizonDays, predictions } = result;
+
+  const liftColor = liftOverBase > 0 ? '#4caf50' : liftOverBase < 0 ? '#f44336' : '#888';
+
+  let html = `
+    <div style="margin-bottom: 12px; padding: 10px; background: #f9f9f9; border-radius: 6px;">
+      <strong>Model Summary</strong> &mdash; ${nEvents} events, horizon = ${horizonDays}d<br>
+      Positive (up): ${nPositive} &nbsp;|&nbsp; Negative (down): ${nNegative}<br>
+      <strong>LOO Accuracy:</strong> ${(looAccuracy * 100).toFixed(1)}%
+      &nbsp;|&nbsp; Base rate: ${(baseRate * 100).toFixed(1)}%
+      &nbsp;|&nbsp; <span style="color: ${liftColor}; font-weight: bold;">Lift: ${liftOverBase > 0 ? '+' : ''}${(liftOverBase * 100).toFixed(1)}pp</span><br>
+      Confusion: TP=${confusion.tp} FP=${confusion.fp} TN=${confusion.tn} FN=${confusion.fn}
+    </div>
+
+    <table class="glm-table">
+      <thead>
+        <tr><th>Feature</th><th>Coefficient</th><th>Odds Ratio</th></tr>
+      </thead>
+      <tbody>
+        <tr style="background: #f0f0f0;"><td><em>intercept</em></td><td>${intercept.toFixed(4)}</td><td>${Math.exp(intercept).toFixed(4)}</td></tr>
+        ${coefficients.map(c => {
+          const color = c.coefficient > 0 ? '#4caf50' : c.coefficient < 0 ? '#f44336' : '#333';
+          return `<tr>
+            <td>${c.feature}</td>
+            <td style="color: ${color}; font-weight: 600;">${c.coefficient.toFixed(4)}</td>
+            <td>${c.oddsRatio.toFixed(4)}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+
+    <details style="margin-top: 12px;">
+      <summary style="cursor: pointer; font-weight: 600;">Per-Event Predictions (${predictions.length})</summary>
+      <table class="glm-table" style="margin-top: 8px;">
+        <thead>
+          <tr><th>Ticker</th><th>Date</th><th>Class</th><th>Predicted</th><th>Actual</th><th>P(up)</th><th>Return</th></tr>
+        </thead>
+        <tbody>
+          ${predictions.map(p => {
+            const rowColor = p.correct ? '#e8f5e9' : '#ffebee';
+            return `<tr style="background: ${rowColor};">
+              <td><strong>${p.ticker}</strong></td>
+              <td>${p.eventDate}</td>
+              <td style="font-size: 0.85em;">${p.classification.replace('_', ' ')}</td>
+              <td>${p.predicted === 1 ? 'UP' : 'DOWN'}</td>
+              <td>${p.actual === 1 ? 'UP' : 'DOWN'}</td>
+              <td>${(p.probability * 100).toFixed(1)}%</td>
+              <td style="color: ${p.cumReturn > 0 ? '#4caf50' : '#f44336'};">${(p.cumReturn * 100).toFixed(2)}%</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </details>
+  `;
+
+  glmResults.innerHTML = html;
+  glmResults.style.display = 'block';
+}
+
 // Initialize
 (async () => {
   // Create one tab with zerohedge.com
-  await createTab('https://zerohedge.com');
+  await createTab('https://simplywall.st/dashboard');
 
   // Load initial stats
   await updateStats();

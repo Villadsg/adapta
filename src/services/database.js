@@ -2000,6 +2000,37 @@ class ArticleDatabase {
   }
 
   /**
+   * Look up event IDs by (ticker, event_date) pairs.
+   * @param {Array<{ticker: string, eventDate: string}>} pairs
+   * @returns {Promise<Array<{event_id: number, ticker: string, event_date: string, classification: string}>>}
+   */
+  async getEventIdsByTickerDates(pairs) {
+    if (!pairs || pairs.length === 0) return [];
+
+    const conditions = pairs
+      .map(p => `(ticker = '${p.ticker.replace(/'/g, "''")}' AND event_date = '${p.eventDate}')`)
+      .join(' OR ');
+
+    const sql = `
+      SELECT id AS event_id, ticker, event_date::TEXT AS event_date, classification
+      FROM stock_events
+      WHERE ${conditions}
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, (err, rows) => {
+        if (err) reject(err);
+        else resolve((rows || []).map(r => ({
+          event_id: Number(r.event_id),
+          ticker: r.ticker,
+          event_date: r.event_date,
+          classification: r.classification,
+        })));
+      });
+    });
+  }
+
+  /**
    * Get all stock events with optional cached feature vectors (LEFT JOIN)
    * @returns {Promise<Array>} Rows with event_id, classification, ticker, event_date, feature_vector, snapshot_lag_days
    */

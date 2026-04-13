@@ -30,7 +30,7 @@ function linReg(points) {
   return { m, b };
 }
 
-async function screenTickers(priceTracker, config = {}, createYF = null, onTickerDone = null) {
+async function screenTickers(priceTracker, config = {}, createYF = null, onTickerDone = null, database = null) {
   const {
     screenTickers: tickers = [],
     screenDays = 100,
@@ -148,19 +148,20 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
       // Compute volumeGapProduct using residual returns
       const products = [];
       for (const d of dailyData) {
-        let residualPct;
+        let residualReturn;
         if (marketReturns && d.mktReturn !== undefined) {
-          const residual = d.stockReturn - (slope * d.mktReturn + intercept);
-          residualPct = Math.abs(residual * 100);
+          residualReturn = d.stockReturn - (slope * d.mktReturn + intercept);
         } else {
-          // Fallback: raw gap
-          residualPct = Math.abs((d.bar.open - d.prevClose) / d.prevClose) * 100;
+          // Fallback: raw open gap (signed)
+          residualReturn = (d.bar.open - d.prevClose) / d.prevClose;
         }
+        const residualPct = Math.abs(residualReturn * 100);
 
         products.push({
           bar: d.bar,
           prevClose: d.prevClose,
           gapPct: residualPct,
+          residualReturn,
           volumeGapProduct: d.bar.volume * residualPct,
         });
       }
@@ -192,8 +193,9 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
       const chartCloses = products.map(p => p.bar.close);
       const chartVolumes = products.map(p => p.bar.volume);
 
-      // Find ALL events above threshold (for chart dots)
+      // Find ALL events above threshold (for chart dots) and build DB event records in parallel
       const chartEvents = [];
+      const dbEvents = [];
       for (let k = 0; k < products.length; k++) {
         const entry = products[k];
         if (entry.volumeGapProduct < threshold) continue;
@@ -210,6 +212,45 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
         }
 
         chartEvents.push({ idx: k, y: entry.bar.close, classification: cls });
+        dbEvents.push({
+          dateStr: chartDates[k],
+          classification: cls,
+          strength: entry.gapPct,
+          residualReturn: entry.residualReturn,
+          volumeGapProduct: entry.volumeGapProduct,
+          open: entry.bar.open,
+          high: entry.bar.high,
+          low: entry.bar.low,
+          close: entry.bar.close,
+          volume: entry.bar.volume,
+        });
+      }
+
+      // Persist bars + events to DB so GLM analysis can join event-log entries against forward
+      // price returns. Without this, screening and the DB drift apart and GLM training fails.
+      if (database) {
+        try {
+          console.log(`  [Screen] ${ticker}: persisting ${products.length} bars + ${dbEvents.length} events to DB...`);
+          for (const p of products) {
+            const dStr = (p.bar.date instanceof Date
+              ? p.bar.date.toISOString() : new Date(p.bar.date).toISOString()
+            ).split('T')[0];
+            await database.saveStockPrice(
+              ticker,
+              dStr,
+              { open: p.bar.open, high: p.bar.high, low: p.bar.low, close: p.bar.close, volume: p.bar.volume },
+              'screening'
+            );
+          }
+          const startDate = chartDates[0];
+          const endDate = chartDates[chartDates.length - 1];
+          await database.saveStockEvents(ticker, dbEvents, benchmark, startDate, endDate);
+          console.log(`  [Screen] ${ticker}: DB persist OK`);
+        } catch (dbErr) {
+          console.error(`  [Screen] ${ticker}: DB persist failed — ${dbErr.message}`);
+        }
+      } else {
+        console.log(`  [Screen] ${ticker}: no database reference — skipping DB persist`);
       }
 
       // Check last N trading days for hits
@@ -260,15 +301,19 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
         }
       }
 
-      // Fetch company summary + market cap if yahoo-finance available
+      // Fetch company summary + market cap + sector/industry if yahoo-finance available
       let summary = '';
       let marketCap = 0;
+      let sector = '';
+      let industry = '';
       if (createYF) {
         try {
           const yf = createYF();
           const profile = await yf.quoteSummary(ticker, { modules: ['assetProfile', 'summaryDetail'] });
           summary = (profile.assetProfile && profile.assetProfile.longBusinessSummary) || '';
           marketCap = (profile.summaryDetail && profile.summaryDetail.marketCap) || 0;
+          sector = (profile.assetProfile && profile.assetProfile.sector) || '';
+          industry = (profile.assetProfile && profile.assetProfile.industry) || '';
         } catch (_) { /* ignore — summary is optional */ }
       }
 
@@ -362,9 +407,9 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
       const chartData = { dates: chartDates, closes: chartCloses, volumes: chartVolumes, events: chartEvents, optionsStrikes };
       let entry;
       if (bestHit) {
-        entry = { ...bestHit, chartData, summary, marketCap };
+        entry = { ...bestHit, chartData, summary, marketCap, sector, industry };
       } else {
-        entry = { ticker, rSquared, date: null, gap: 0, percentile: 0, classification: '', volume: 0, chartData, summary, marketCap };
+        entry = { ticker, rSquared, date: null, gap: 0, percentile: 0, classification: '', volume: 0, chartData, summary, marketCap, sector, industry };
       }
       allTickers.push(entry);
       if (onTickerDone) onTickerDone(entry);
@@ -426,24 +471,24 @@ const UNIVERSE = [
   // ── Large / Mega-cap ─────────────────────────────────────────────────
   // Defense / Aerospace
   'LHX','HII','TDG','LDOS','BWA','TXT','CW','PLTR',
-  'RTX','GD','NOC','BAH',
+  'RTX','GD','NOC','BAH','SAIC',
   // Biotech / Pharma
   'REGN','VRTX','GMAB','TECH','BIO','MRNA','BIIB',
   'ILMN','MDGL','LEGN','INSM','FOLD','ACLX','TGTX','DAWN',
-  'LLY','ABBV','AZN','AMGN','JAZZ','NTRA','ITCI',
+  'LLY','ABBV','AZN','AMGN','JAZZ','NTRA','ITCI','GILD',
   // Clean Energy / Utilities
   'VST','CEG','AES','CWEN','BEPC','NEE','ORA','FLNC',
   // SaaS / Cloud / Software
   'CRWD','PANW','NET','SNOW','MDB','TEAM','WDAY','NOW',
   'CDNS','SNPS','MANH','GWRE','DOCU','ROKU','U',
   'PATH','PINS','SNAP','TTD','GRAB','SE','SHOP',
-  'MSFT','ADBE','CRM','ORCL','INTU','SAP','GDDY','ZM',
+  'MSFT','ADBE','CRM','ORCL','INTU','SAP','GDDY','ZM','TWLO','APP',
   // Cybersecurity
   'FTNT','RPD','FICO',
   // Fintech / Payments
   'GPN','FIS','FISV','PYPL','COIN','MKTX','LPLA','IBKR','NDAQ',
   'CBOE','ICE','CME','MSCI','SPGI',
-  'V','MA','AXP','TW','CPAY','EFX',
+  'V','MA','AXP','TW','CPAY','EFX','XYZ','TROW',
   // Medtech / Healthcare
   'ISRG','EW','STE','TFX','LNTH','HSIC','XRAY',
   'WST','IDXX','IQV','ZBH','BSX','PHG','RMD','GEHC',
@@ -451,12 +496,12 @@ const UNIVERSE = [
   // Semiconductors
   'MCHP','MPWR','MRVL','LRCX','KLAC','AMAT','ASML','ON','NXPI',
   'QCOM','TER','ENTG','WOLF','AMKR','COHR','CEVA','SMTC',
-  'NVDA','AMD','AVGO','ARM','MU','SMCI','TSM','GFS','KEYS',
+  'NVDA','AMD','AVGO','ARM','MU','SMCI','TSM','GFS','KEYS','ANET',
   // Industrials / Infrastructure
   'ATKR','TT','XYL','WMS','SITE','MATX','EMR','ROK','NDSN',
   'FELE','RBC','AOS','ITT','GGG','FLS','IR','AME',
   'TRMB','LECO','ZWS',
-  'GE','CAT','ETN','PH','URI','HON','DE','HUBB','ODFL','TTEK',
+  'GE','CAT','ETN','PH','URI','HON','DE','HUBB','ODFL','TTEK','ZBRA','CARR','DELL',
   // Energy / Materials / Mining
   'UUUU','LEU','WFRD','TDW','NE','CCJ','UEC','DNN','NXE',
   'STNG','DINO','SM','PR','CTRA','EQT','AR','CNX',
@@ -466,6 +511,7 @@ const UNIVERSE = [
   'BOOT','DKS','ANF','AEO','WOOF','MNST','COKE',
   'CMG','DASH','UBER','LYFT','ABNB',
   'COST','WMT','NKE','SBUX','MCD','PEP','DPZ','DKNG','POOL','FND',
+  'ROST','TJX','CPNG','EXPE',
 ];
 
 /**

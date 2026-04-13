@@ -1,18 +1,22 @@
 {
-  "timestamp": "2026-04-01T09:18:39.470Z",
+  "timestamp": "2026-04-09T16:07:15.416Z",
   "tickers": [
     "JOBY",
     "ARWR",
     "RXRX",
     "NUVB",
     "SERV",
+    "MU",
     "MDGL",
+    "LHX",
     "AVAV",
     "FLNC",
     "CELH",
     "INSM",
+    "SMCI",
     "DAWN",
     "ARGX",
+    "NVDA",
     "RDDT",
     "PLTR",
     "SITM",
@@ -21,23 +25,23 @@
     "SOUN",
     "MP",
     "SNPS",
-    "EVGO",
     "LEGN",
     "RUN",
     "SEDG",
-    "PAYO",
     "RBRK",
     "TER",
+    "NTRA",
     "SOFI",
     "TTGT",
-    "BLDP",
     "GENI",
     "DKS",
+    "AAON",
     "SE",
     "DUOL",
     "SHLS",
     "IREN",
     "RKLB",
+    "AMD",
     "GKOS",
     "DASH",
     "EVER",
@@ -56,9 +60,9 @@
     "MQ",
     "MDB",
     "NBIX",
-    "PCTY",
     "BRZE",
     "RARE",
+    "ARM",
     "GMED",
     "DDOG",
     "SLAB",
@@ -67,6 +71,7 @@
     "LSCC",
     "EQT",
     "PODD",
+    "LLY",
     "GTLB",
     "RELY",
     "MNDY",
@@ -76,6 +81,7 @@
     "CRWD",
     "APPF",
     "KTOS",
+    "AVGO",
     "TMDX",
     "MPWR",
     "CTRA",
@@ -86,21 +92,15 @@
     "GWRE",
     "HUBS",
     "DY",
-    "PSTG",
+    "KEYS",
     "NOW",
     "MRVL",
     "ISRG",
+    "TSM",
     "BROS",
     "DOCN",
     "ZS",
-    "PTC",
-    "LRCX",
-    "RMBS",
-    "SNOW",
-    "MNST",
-    "KRYS",
-    "SPXC",
-    "IOVA"
+    "PTC"
   ],
   "details": [
     {
@@ -111,8 +111,8 @@
       "effectiveGrowth": 559.655,
       "debtToEquity": 3.14,
       "leverageFactor": 0.9845426799251747,
-      "avgVolume": 27402053,
-      "marketCap": 8089300992
+      "avgVolume": 27139498,
+      "marketCap": 8304753664
     },
     {
       "ticker": "ARWR",
@@ -122,8 +122,8 @@
       "effectiveGrowth": 104.613,
       "debtToEquity": 124.074,
       "leverageFactor": 0.6171429982041139,
-      "avgVolume": 3007250,
-      "marketCap": 8780018688
+      "avgVolume": 2794060,
+      "marketCap": 9170721792
     },
     {
       "ticker": "RXRX",
@@ -133,8 +133,8 @@
       "effectiveGrowth": 6.817,
       "debtToEquity": 6.894,
       "leverageFactor": 0.9666785890359314,
-      "avgVolume": 18999643,
-      "marketCap": 1621581056
+      "avgVolume": 18205141,
+      "marketCap": 1809092864
     },
     {
       "ticker": "NUVB",
@@ -144,8 +144,8 @@
       "effectiveGrowth": 6.331,
       "debtToEquity": 21.896,
       "leverageFactor": 0.9013231423730036,
-      "avgVolume": 5425056,
-      "marketCap": 1491192320
+      "avgVolume": 5290033,
+      "marketCap": 1591995520
     },
     {
       "ticker": "SERV",
@@ -155,8 +155,19 @@
       "effectiveGrowth": 4.011,
       "debtToEquity": 1.498,
       "leverageFactor": 0.9925656830340748,
-      "avgVolume": 5588793,
-      "marketCap": 638825024
+      "avgVolume": 5210396,
+      "marketCap": 627471552
+    },
+    {
+      "ticker": "MU",
+      "score": 1.8268792286716735,
+      "revenueGrowth": 1.963,
+      "equityGrowth": 0,
+      "effectiveGrowth": 1.963,
+      "debtToEquity": 14.902,
+      "leverageFactor": 0.9306567644786925,
+      "avgVolume": 40886315,
+      "marketCap": 459123163136
     },
     {
       "ticker": "MDGL",
@@ -166,8 +177,19 @@
       "effectiveGrowth": 2.108,
       "debtToEquity": 57.68,
       "leverageFactor": 0.776156473144986,
-      "avgVolume": 375893,
-      "marketCap": 12008384512
+      "avgVolume": 372725,
+      "marketCap": 11918689280
+    },
+    {
+      "ticker": "LHX",
+      "score": 1.6199578810950914,
+      "revenueGrowth": 1.9,
+      "equityGrowth": 0,
+      "effectiveGrowth": 1.9,
+      "debtToEquity": 34.574,
+      "leverageFactor": 0.8526094111026797,
+      "avgVolume": 1548923,
+      "marketCap": 67748564992
     },
     {
       "ticker": "AVAV",
@@ -177,8 +199,8 @@
       "effectiveGrowth": 1.434,
       "debtToEquity": 19.335,
       "leverageFactor": 0.9118471744135682,
-      "avgVolume": 1893326,
-      "marketCap": 9263258624
+      "avgVolume": 1832493,
+      "marketCap": 9130673152
     },
     {
       "ticker": "FLNC",
@@ -188,8 +210,8 @@
       "effectiveGrowth": 1.544,
       "debtToEquity": 82.778,
       "leverageFactor": 0.7072685993959926,
-      "avgVolume": 5397165,
-      "marketCap": 2530949376
+      "avgVolume": 5377576,
+      "marketCap": 2475768832
     },
     {
       "ticker": "CELH",
@@ -199,8 +221,8 @@
       "effectiveGrowth": 1.172,
       "debtToEquity": 23.633,
       "leverageFactor": 0.8943223942799139,
-      "avgVolume": 5570805,
-      "marketCap": 9146222592
+      "avgVolume": 5672381,
+      "marketCap": 9303471104
     },
     {
       "ticker": "INSM",
@@ -210,8 +232,19 @@
       "effectiveGrowth": 1.526,
       "debtToEquity": 101.429,
       "leverageFactor": 0.6635061656310441,
-      "avgVolume": 2543641,
-      "marketCap": 35247046656
+      "avgVolume": 2578048,
+      "marketCap": 34398199808
+    },
+    {
+      "ticker": "SMCI",
+      "score": 0.8965417029933158,
+      "revenueGrowth": 1.234,
+      "equityGrowth": 0,
+      "effectiveGrowth": 1.234,
+      "debtToEquity": 75.28,
+      "leverageFactor": 0.7265329845975007,
+      "avgVolume": 37628005,
+      "marketCap": 14213406720
     },
     {
       "ticker": "DAWN",
@@ -221,8 +254,8 @@
       "effectiveGrowth": 0.839,
       "debtToEquity": 0.633,
       "leverageFactor": 0.996844985620511,
-      "avgVolume": 4489916,
-      "marketCap": 2214702592
+      "avgVolume": 4445403,
+      "marketCap": 2217284864
     },
     {
       "ticker": "ARGX",
@@ -232,8 +265,19 @@
       "effectiveGrowth": 0.73,
       "debtToEquity": 0.644,
       "leverageFactor": 0.9967903351209106,
-      "avgVolume": 381321,
-      "marketCap": 45321424896
+      "avgVolume": 371233,
+      "marketCap": 49415397376
+    },
+    {
+      "ticker": "NVDA",
+      "score": 0.7063762032279076,
+      "revenueGrowth": 0.732,
+      "equityGrowth": 0,
+      "effectiveGrowth": 0.732,
+      "debtToEquity": 7.255,
+      "leverageFactor": 0.9649948131528793,
+      "avgVolume": 180352446,
+      "marketCap": 4465072013312
     },
     {
       "ticker": "RDDT",
@@ -243,8 +287,8 @@
       "effectiveGrowth": 0.697,
       "debtToEquity": 0.793,
       "leverageFactor": 0.9960506591365237,
-      "avgVolume": 5597795,
-      "marketCap": 25722966016
+      "avgVolume": 5624158,
+      "marketCap": 26523406336
     },
     {
       "ticker": "PLTR",
@@ -254,8 +298,8 @@
       "effectiveGrowth": 0.7,
       "debtToEquity": 3.063,
       "leverageFactor": 0.9849160112871376,
-      "avgVolume": 50116761,
-      "marketCap": 349854302208
+      "avgVolume": 49365361,
+      "marketCap": 315485945856
     },
     {
       "ticker": "SITM",
@@ -265,8 +309,8 @@
       "effectiveGrowth": 0.663,
       "debtToEquity": 0.312,
       "leverageFactor": 0.9984424298094972,
-      "avgVolume": 412053,
-      "marketCap": 9082676224
+      "avgVolume": 415850,
+      "marketCap": 10584269824
     },
     {
       "ticker": "TGTX",
@@ -276,8 +320,8 @@
       "effectiveGrowth": 0.78,
       "debtToEquity": 39.258,
       "leverageFactor": 0.835917712260405,
-      "avgVolume": 2113571,
-      "marketCap": 5304844288
+      "avgVolume": 2111938,
+      "marketCap": 5483694592
     },
     {
       "ticker": "CWAN",
@@ -287,8 +331,8 @@
       "effectiveGrowth": 0.72,
       "debtToEquity": 42.358,
       "leverageFactor": 0.8252254928659256,
-      "avgVolume": 10446963,
-      "marketCap": 7068026880
+      "avgVolume": 9658286,
+      "marketCap": 7141865472
     },
     {
       "ticker": "SOUN",
@@ -298,8 +342,8 @@
       "effectiveGrowth": 0.594,
       "debtToEquity": 0.94,
       "leverageFactor": 0.9953219866626855,
-      "avgVolume": 26906885,
-      "marketCap": 2904733440
+      "avgVolume": 26391768,
+      "marketCap": 2850909440
     },
     {
       "ticker": "MP",
@@ -309,8 +353,8 @@
       "effectiveGrowth": 0.7,
       "debtToEquity": 43.248,
       "leverageFactor": 0.8222061435243044,
-      "avgVolume": 7550310,
-      "marketCap": 8574231040
+      "avgVolume": 7292510,
+      "marketCap": 9647342592
     },
     {
       "ticker": "SNPS",
@@ -320,19 +364,8 @@
       "effectiveGrowth": 0.655,
       "debtToEquity": 35.579,
       "leverageFactor": 0.8489721070214239,
-      "avgVolume": 2245406,
-      "marketCap": 75950514176
-    },
-    {
-      "ticker": "EVGO",
-      "score": 0.5380635413845694,
-      "revenueGrowth": 0.755,
-      "equityGrowth": 0,
-      "effectiveGrowth": 0.755,
-      "debtToEquity": 80.636,
-      "leverageFactor": 0.7126669422312177,
-      "avgVolume": 4277598,
-      "marketCap": 538503680
+      "avgVolume": 2191188,
+      "marketCap": 77621886976
     },
     {
       "ticker": "LEGN",
@@ -342,8 +375,8 @@
       "effectiveGrowth": 0.642,
       "debtToEquity": 41.283,
       "leverageFactor": 0.8289021605334814,
-      "avgVolume": 2293746,
-      "marketCap": 3345847808
+      "avgVolume": 2192866,
+      "marketCap": 3449422848
     },
     {
       "ticker": "RUN",
@@ -353,8 +386,8 @@
       "effectiveGrowth": 1.235,
       "debtToEquity": 297.881,
       "leverageFactor": 0.4017024148340668,
-      "avgVolume": 9767440,
-      "marketCap": 3179717120
+      "avgVolume": 9779866,
+      "marketCap": 3194958848
     },
     {
       "ticker": "SEDG",
@@ -364,19 +397,8 @@
       "effectiveGrowth": 0.709,
       "debtToEquity": 94.575,
       "leverageFactor": 0.6789442417041501,
-      "avgVolume": 3403660,
-      "marketCap": 3081699072
-    },
-    {
-      "ticker": "PAYO",
-      "score": 0.4634971351932389,
-      "revenueGrowth": 0.47,
-      "equityGrowth": 0,
-      "effectiveGrowth": 0.47,
-      "debtToEquity": 2.806,
-      "leverageFactor": 0.9861641174324232,
-      "avgVolume": 4523818,
-      "marketCap": 1721606656
+      "avgVolume": 3383460,
+      "marketCap": 2678452224
     },
     {
       "ticker": "RBRK",
@@ -386,8 +408,8 @@
       "effectiveGrowth": 0.463,
       "debtToEquity": 0,
       "leverageFactor": 1,
-      "avgVolume": 4131076,
-      "marketCap": 9905463296
+      "avgVolume": 4137855,
+      "marketCap": 9551479808
     },
     {
       "ticker": "TER",
@@ -397,8 +419,19 @@
       "effectiveGrowth": 0.439,
       "debtToEquity": 10.131,
       "leverageFactor": 0.9517872184494436,
-      "avgVolume": 3484465,
-      "marketCap": 46412574720
+      "avgVolume": 3441626,
+      "marketCap": 56620498944
+    },
+    {
+      "ticker": "NTRA",
+      "score": 0.3745547456933263,
+      "revenueGrowth": 0.398,
+      "equityGrowth": 0,
+      "effectiveGrowth": 0.398,
+      "debtToEquity": 12.519,
+      "leverageFactor": 0.9410923258626288,
+      "avgVolume": 1195201,
+      "marketCap": 28652390400
     },
     {
       "ticker": "SOFI",
@@ -408,8 +441,8 @@
       "effectiveGrowth": 0.402,
       "debtToEquity": 18.487,
       "leverageFactor": 0.9153862701213344,
-      "avgVolume": 64587086,
-      "marketCap": 20251191296
+      "avgVolume": 63129333,
+      "marketCap": 20793178112
     },
     {
       "ticker": "TTGT",
@@ -419,19 +452,8 @@
       "effectiveGrowth": 0.401,
       "debtToEquity": 18.71,
       "leverageFactor": 0.9144529285355036,
-      "avgVolume": 438675,
-      "marketCap": 280495520
-    },
-    {
-      "ticker": "BLDP",
-      "score": 0.365147997820891,
-      "revenueGrowth": 0.372,
-      "equityGrowth": 0,
-      "effectiveGrowth": 0.372,
-      "debtToEquity": 3.753,
-      "leverageFactor": 0.9815806393034705,
-      "avgVolume": 3270478,
-      "marketCap": 728210624
+      "avgVolume": 435088,
+      "marketCap": 275073568
     },
     {
       "ticker": "GENI",
@@ -441,8 +463,8 @@
       "effectiveGrowth": 0.37,
       "debtToEquity": 4.209,
       "leverageFactor": 0.9793887634727168,
-      "avgVolume": 6712248,
-      "marketCap": 1139618176
+      "avgVolume": 6806306,
+      "marketCap": 1061156992
     },
     {
       "ticker": "DKS",
@@ -452,8 +474,19 @@
       "effectiveGrowth": 0.599,
       "debtToEquity": 139.828,
       "leverageFactor": 0.5885330225878974,
-      "avgVolume": 1186690,
-      "marketCap": 17839933440
+      "avgVolume": 1176463,
+      "marketCap": 18536742912
+    },
+    {
+      "ticker": "AAON",
+      "score": 0.344680764785791,
+      "revenueGrowth": 0.425,
+      "equityGrowth": 0,
+      "effectiveGrowth": 0.425,
+      "debtToEquity": 46.605,
+      "leverageFactor": 0.8110135642018612,
+      "avgVolume": 894598,
+      "marketCap": 7356931072
     },
     {
       "ticker": "SE",
@@ -463,8 +496,8 @@
       "effectiveGrowth": 0.384,
       "debtToEquity": 26.331,
       "leverageFactor": 0.8836615399569656,
-      "avgVolume": 5992815,
-      "marketCap": 49025167360
+      "avgVolume": 5816566,
+      "marketCap": 50212167680
     },
     {
       "ticker": "DUOL",
@@ -474,8 +507,8 @@
       "effectiveGrowth": 0.35,
       "debtToEquity": 7.497,
       "leverageFactor": 0.9638693571473322,
-      "avgVolume": 2737313,
-      "marketCap": 4627890176
+      "avgVolume": 2720158,
+      "marketCap": 4205807360
     },
     {
       "ticker": "SHLS",
@@ -485,8 +518,8 @@
       "effectiveGrowth": 0.386,
       "debtToEquity": 29.773,
       "leverageFactor": 0.8704242883193413,
-      "avgVolume": 4869183,
-      "marketCap": 1103938560
+      "avgVolume": 4917633,
+      "marketCap": 1208796032
     },
     {
       "ticker": "IREN",
@@ -496,8 +529,8 @@
       "effectiveGrowth": 0.59,
       "debtToEquity": 153.017,
       "leverageFactor": 0.5665449539257316,
-      "avgVolume": 39183820,
-      "marketCap": 11372703744
+      "avgVolume": 38731453,
+      "marketCap": 12630071296
     },
     {
       "ticker": "RKLB",
@@ -507,8 +540,19 @@
       "effectiveGrowth": 0.357,
       "debtToEquity": 15.395,
       "leverageFactor": 0.9285266603217345,
-      "avgVolume": 22229643,
-      "marketCap": 36567363584
+      "avgVolume": 21753710,
+      "marketCap": 38939140096
+    },
+    {
+      "ticker": "AMD",
+      "score": 0.33049200664860756,
+      "revenueGrowth": 0.341,
+      "equityGrowth": 0,
+      "effectiveGrowth": 0.341,
+      "debtToEquity": 6.359,
+      "leverageFactor": 0.9691847702305206,
+      "avgVolume": 38391631,
+      "marketCap": 384988938240
     },
     {
       "ticker": "GKOS",
@@ -518,8 +562,8 @@
       "effectiveGrowth": 0.357,
       "debtToEquity": 16.238,
       "leverageFactor": 0.9249068156383243,
-      "avgVolume": 801145,
-      "marketCap": 6252765184
+      "avgVolume": 817040,
+      "marketCap": 6857075200
     },
     {
       "ticker": "DASH",
@@ -529,8 +573,8 @@
       "effectiveGrowth": 0.377,
       "debtToEquity": 32.749,
       "leverageFactor": 0.8592947767766993,
-      "avgVolume": 5088953,
-      "marketCap": 65229115392
+      "avgVolume": 5105906,
+      "marketCap": 68506869760
     },
     {
       "ticker": "EVER",
@@ -540,8 +584,8 @@
       "effectiveGrowth": 0.325,
       "debtToEquity": 1.078,
       "leverageFactor": 0.9946388963486806,
-      "avgVolume": 906978,
-      "marketCap": 555577728
+      "avgVolume": 924598,
+      "marketCap": 563864512
     },
     {
       "ticker": "CALX",
@@ -551,8 +595,8 @@
       "effectiveGrowth": 0.322,
       "debtToEquity": 1.815,
       "leverageFactor": 0.991006614969155,
-      "avgVolume": 1100365,
-      "marketCap": 3214119680
+      "avgVolume": 1139855,
+      "marketCap": 3224616704
     },
     {
       "ticker": "CNX",
@@ -562,8 +606,8 @@
       "effectiveGrowth": 0.412,
       "debtToEquity": 60.061,
       "leverageFactor": 0.7690503381898862,
-      "avgVolume": 2362941,
-      "marketCap": 5488292864
+      "avgVolume": 2399991,
+      "marketCap": 5546663936
     },
     {
       "ticker": "SHOP",
@@ -573,8 +617,8 @@
       "effectiveGrowth": 0.306,
       "debtToEquity": 1.395,
       "leverageFactor": 0.9930733136373793,
-      "avgVolume": 11792866,
-      "marketCap": 154809024512
+      "avgVolume": 11902685,
+      "marketCap": 150436986880
     },
     {
       "ticker": "AXON",
@@ -584,8 +628,8 @@
       "effectiveGrowth": 0.385,
       "debtToEquity": 59.107,
       "leverageFactor": 0.7718818866337073,
-      "avgVolume": 993816,
-      "marketCap": 34144088064
+      "avgVolume": 992271,
+      "marketCap": 29147373568
     },
     {
       "ticker": "ALNY",
@@ -595,8 +639,8 @@
       "effectiveGrowth": 0.849,
       "debtToEquity": 376.19,
       "leverageFactor": 0.34710772488241726,
-      "avgVolume": 1395195,
-      "marketCap": 43881017344
+      "avgVolume": 1383713,
+      "marketCap": 43052126208
     },
     {
       "ticker": "AXSM",
@@ -606,8 +650,8 @@
       "effectiveGrowth": 0.65,
       "debtToEquity": 247.028,
       "leverageFactor": 0.44739926805479746,
-      "avgVolume": 653536,
-      "marketCap": 8645928960
+      "avgVolume": 622551,
+      "marketCap": 9091473408
     },
     {
       "ticker": "KVYO",
@@ -617,8 +661,8 @@
       "effectiveGrowth": 0.296,
       "debtToEquity": 10.091,
       "leverageFactor": 0.9519684327267709,
-      "avgVolume": 4434973,
-      "marketCap": 5930904064
+      "avgVolume": 4247193,
+      "marketCap": 5440218112
     },
     {
       "ticker": "MEDP",
@@ -628,8 +672,8 @@
       "effectiveGrowth": 0.32,
       "debtToEquity": 29.811,
       "leverageFactor": 0.8702803608182377,
-      "avgVolume": 340353,
-      "marketCap": 13628408832
+      "avgVolume": 346976,
+      "marketCap": 14393109504
     },
     {
       "ticker": "INCY",
@@ -639,8 +683,8 @@
       "effectiveGrowth": 0.278,
       "debtToEquity": 1.063,
       "leverageFactor": 0.9947130998741688,
-      "avgVolume": 1892463,
-      "marketCap": 18731243520
+      "avgVolume": 1776236,
+      "marketCap": 19228780544
     },
     {
       "ticker": "IOT",
@@ -650,8 +694,8 @@
       "effectiveGrowth": 0.283,
       "debtToEquity": 5.123,
       "leverageFactor": 0.9750247412528094,
-      "avgVolume": 8622930,
-      "marketCap": 18402899968
+      "avgVolume": 8537173,
+      "marketCap": 15987120128
     },
     {
       "ticker": "EVLV",
@@ -661,8 +705,8 @@
       "effectiveGrowth": 0.323,
       "debtToEquity": 35.37,
       "leverageFactor": 0.849725963376811,
-      "avgVolume": 3087250,
-      "marketCap": 1085072000
+      "avgVolume": 3054583,
+      "marketCap": 1098523264
     },
     {
       "ticker": "ELF",
@@ -672,8 +716,8 @@
       "effectiveGrowth": 0.378,
       "debtToEquity": 79.713,
       "leverageFactor": 0.7150186083592825,
-      "avgVolume": 2218925,
-      "marketCap": 3614584576
+      "avgVolume": 2302556,
+      "marketCap": 3764869120
     },
     {
       "ticker": "MQ",
@@ -683,8 +727,8 @@
       "effectiveGrowth": 0.267,
       "debtToEquity": 1.123,
       "leverageFactor": 0.9944163521824954,
-      "avgVolume": 3904151,
-      "marketCap": 1795604992
+      "avgVolume": 3880788,
+      "marketCap": 1722988544
     },
     {
       "ticker": "MDB",
@@ -694,8 +738,8 @@
       "effectiveGrowth": 0.267,
       "debtToEquity": 2.128,
       "leverageFactor": 0.9894720177313385,
-      "avgVolume": 1934008,
-      "marketCap": 19922262016
+      "avgVolume": 1897033,
+      "marketCap": 19279673344
     },
     {
       "ticker": "NBIX",
@@ -705,19 +749,8 @@
       "effectiveGrowth": 0.283,
       "debtToEquity": 14.488,
       "leverageFactor": 0.9324530976091902,
-      "avgVolume": 1138376,
-      "marketCap": 13221882880
-    },
-    {
-      "ticker": "PCTY",
-      "score": 0.2634406090896352,
-      "revenueGrowth": 0.282,
-      "equityGrowth": 0,
-      "effectiveGrowth": 0.282,
-      "debtToEquity": 14.09,
-      "leverageFactor": 0.9341865570554441,
-      "avgVolume": 848895,
-      "marketCap": 5875388928
+      "avgVolume": 1141965,
+      "marketCap": 13166683136
     },
     {
       "ticker": "BRZE",
@@ -727,8 +760,8 @@
       "effectiveGrowth": 0.279,
       "debtToEquity": 13.243,
       "leverageFactor": 0.9378971408205663,
-      "avgVolume": 3256941,
-      "marketCap": 2678523904
+      "avgVolume": 3288335,
+      "marketCap": 2352358912
     },
     {
       "ticker": "RARE",
@@ -738,8 +771,19 @@
       "effectiveGrowth": 0.259,
       "debtToEquity": 0,
       "leverageFactor": 1,
-      "avgVolume": 2458038,
-      "marketCap": 2059745920
+      "avgVolume": 2334673,
+      "marketCap": 2324710912
+    },
+    {
+      "ticker": "ARM",
+      "score": 0.25544892963984617,
+      "revenueGrowth": 0.263,
+      "equityGrowth": 0,
+      "effectiveGrowth": 0.263,
+      "debtToEquity": 5.912,
+      "leverageFactor": 0.9712887058549283,
+      "avgVolume": 6993006,
+      "marketCap": 158448173056
     },
     {
       "ticker": "GMED",
@@ -749,8 +793,8 @@
       "effectiveGrowth": 0.257,
       "debtToEquity": 2.612,
       "leverageFactor": 0.9871083647562828,
-      "avgVolume": 1272208,
-      "marketCap": 11653403648
+      "avgVolume": 1231591,
+      "marketCap": 12422992896
     },
     {
       "ticker": "DDOG",
@@ -760,8 +804,8 @@
       "effectiveGrowth": 0.292,
       "debtToEquity": 34.269,
       "leverageFactor": 0.8537194421797164,
-      "avgVolume": 5939411,
-      "marketCap": 41772150784
+      "avgVolume": 5909211,
+      "marketCap": 39272189952
     },
     {
       "ticker": "SLAB",
@@ -771,8 +815,8 @@
       "effectiveGrowth": 0.252,
       "debtToEquity": 2.189,
       "leverageFactor": 0.9891734960853459,
-      "avgVolume": 765930,
-      "marketCap": 6862375424
+      "avgVolume": 768135,
+      "marketCap": 6947269632
     },
     {
       "ticker": "ALGM",
@@ -782,8 +826,8 @@
       "effectiveGrowth": 0.289,
       "debtToEquity": 31.956,
       "leverageFactor": 0.8622324923692424,
-      "avgVolume": 2541728,
-      "marketCap": 5842221056
+      "avgVolume": 2476981,
+      "marketCap": 6761264128
     },
     {
       "ticker": "LPLA",
@@ -793,8 +837,8 @@
       "effectiveGrowth": 0.418,
       "debtToEquity": 141.662,
       "leverageFactor": 0.5853738490086694,
-      "avgVolume": 1001403,
-      "marketCap": 24090521600
+      "avgVolume": 1011585,
+      "marketCap": 25235189760
     },
     {
       "ticker": "LSCC",
@@ -804,8 +848,8 @@
       "effectiveGrowth": 0.242,
       "debtToEquity": 5.897,
       "leverageFactor": 0.9713594661408375,
-      "avgVolume": 2009890,
-      "marketCap": 12696007680
+      "avgVolume": 1967330,
+      "marketCap": 14712093696
     },
     {
       "ticker": "EQT",
@@ -815,8 +859,8 @@
       "effectiveGrowth": 0.269,
       "debtToEquity": 28.932,
       "leverageFactor": 0.8736218615134625,
-      "avgVolume": 10304560,
-      "marketCap": 39728795648
+      "avgVolume": 10261810,
+      "marketCap": 37534474240
     },
     {
       "ticker": "PODD",
@@ -826,8 +870,19 @@
       "effectiveGrowth": 0.312,
       "debtToEquity": 66.176,
       "leverageFactor": 0.7513825438807405,
-      "avgVolume": 1019306,
-      "marketCap": 14771864576
+      "avgVolume": 1043400,
+      "marketCap": 14189691904
+    },
+    {
+      "ticker": "LLY",
+      "score": 0.2332265746899893,
+      "revenueGrowth": 0.426,
+      "equityGrowth": 0,
+      "effectiveGrowth": 0.426,
+      "debtToEquity": 165.31,
+      "leverageFactor": 0.5474802222769702,
+      "avgVolume": 3177068,
+      "marketCap": 856336039936
     },
     {
       "ticker": "GTLB",
@@ -837,8 +892,8 @@
       "effectiveGrowth": 0.232,
       "debtToEquity": 0,
       "leverageFactor": 1,
-      "avgVolume": 6192255,
-      "marketCap": 3681656320
+      "avgVolume": 6210898,
+      "marketCap": 3377970688
     },
     {
       "ticker": "RELY",
@@ -848,8 +903,8 @@
       "effectiveGrowth": 0.257,
       "debtToEquity": 22.114,
       "leverageFactor": 0.9004385135561018,
-      "avgVolume": 3763811,
-      "marketCap": 3300954112
+      "avgVolume": 3716930,
+      "marketCap": 3542153472
     },
     {
       "ticker": "MNDY",
@@ -859,8 +914,8 @@
       "effectiveGrowth": 0.246,
       "debtToEquity": 13.536,
       "leverageFactor": 0.9366102202907238,
-      "avgVolume": 2452838,
-      "marketCap": 3562721792
+      "avgVolume": 2418786,
+      "marketCap": 3220935424
     },
     {
       "ticker": "SAIL",
@@ -870,8 +925,8 @@
       "effectiveGrowth": 0.227,
       "debtToEquity": 0.264,
       "leverageFactor": 0.998681740103064,
-      "avgVolume": 3035433,
-      "marketCap": 7464757760
+      "avgVolume": 3057743,
+      "marketCap": 6438635520
     },
     {
       "ticker": "TOST",
@@ -881,8 +936,8 @@
       "effectiveGrowth": 0.22,
       "debtToEquity": 0.942,
       "leverageFactor": 0.9953120801027162,
-      "avgVolume": 11885078,
-      "marketCap": 15614390272
+      "avgVolume": 11895120,
+      "marketCap": 14978270208
     },
     {
       "ticker": "STNG",
@@ -892,8 +947,8 @@
       "effectiveGrowth": 0.239,
       "debtToEquity": 19.356,
       "leverageFactor": 0.911759878918288,
-      "avgVolume": 1225116,
-      "marketCap": 3864610304
+      "avgVolume": 1207096,
+      "marketCap": 3952606720
     },
     {
       "ticker": "CRWD",
@@ -903,8 +958,8 @@
       "effectiveGrowth": 0.233,
       "debtToEquity": 18.336,
       "leverageFactor": 0.9160193463285945,
-      "avgVolume": 3983276,
-      "marketCap": 99013476352
+      "avgVolume": 3923811,
+      "marketCap": 102108839936
     },
     {
       "ticker": "APPF",
@@ -914,8 +969,8 @@
       "effectiveGrowth": 0.219,
       "debtToEquity": 7.033,
       "leverageFactor": 0.9660295701651427,
-      "avgVolume": 418608,
-      "marketCap": 5679930880
+      "avgVolume": 422018,
+      "marketCap": 5297537536
     },
     {
       "ticker": "KTOS",
@@ -925,8 +980,19 @@
       "effectiveGrowth": 0.219,
       "debtToEquity": 7.304,
       "leverageFactor": 0.9647667194072472,
-      "avgVolume": 4374798,
-      "marketCap": 13168287744
+      "avgVolume": 4472606,
+      "marketCap": 13441469440
+    },
+    {
+      "ticker": "AVGO",
+      "score": 0.2086988510951384,
+      "revenueGrowth": 0.295,
+      "equityGrowth": 0,
+      "effectiveGrowth": 0.295,
+      "debtToEquity": 82.704,
+      "leverageFactor": 0.7074537325258928,
+      "avgVolume": 26283911,
+      "marketCap": 1699675373568
     },
     {
       "ticker": "TMDX",
@@ -936,8 +1002,8 @@
       "effectiveGrowth": 0.322,
       "debtToEquity": 109.761,
       "leverageFactor": 0.645659072639874,
-      "avgVolume": 883976,
-      "marketCap": 3410006784
+      "avgVolume": 892716,
+      "marketCap": 3773612800
     },
     {
       "ticker": "MPWR",
@@ -947,8 +1013,8 @@
       "effectiveGrowth": 0.208,
       "debtToEquity": 0.683,
       "leverageFactor": 0.9965966225340462,
-      "avgVolume": 599421,
-      "marketCap": 53703163904
+      "avgVolume": 593973,
+      "marketCap": 65022410752
     },
     {
       "ticker": "CTRA",
@@ -958,8 +1024,8 @@
       "effectiveGrowth": 0.234,
       "debtToEquity": 26.984,
       "leverageFactor": 0.8811193740527967,
-      "avgVolume": 11727313,
-      "marketCap": 26680842240
+      "avgVolume": 11694768,
+      "marketCap": 25415534592
     },
     {
       "ticker": "MTSI",
@@ -969,8 +1035,8 @@
       "effectiveGrowth": 0.245,
       "debtToEquity": 42.486,
       "leverageFactor": 0.8247898847768532,
-      "avgVolume": 1394203,
-      "marketCap": 16657908736
+      "avgVolume": 1388065,
+      "marketCap": 18710984704
     },
     {
       "ticker": "S",
@@ -980,8 +1046,8 @@
       "effectiveGrowth": 0.202,
       "debtToEquity": 1.044,
       "leverageFactor": 0.9948071069019717,
-      "avgVolume": 8599165,
-      "marketCap": 4382760960
+      "avgVolume": 8515266,
+      "marketCap": 4353837568
     },
     {
       "ticker": "AMBA",
@@ -991,8 +1057,8 @@
       "effectiveGrowth": 0.201,
       "debtToEquity": 2.259,
       "leverageFactor": 0.9888311521366169,
-      "avgVolume": 959113,
-      "marketCap": 2254032640
+      "avgVolume": 907853,
+      "marketCap": 2365913088
     },
     {
       "ticker": "ONON",
@@ -1002,8 +1068,8 @@
       "effectiveGrowth": 0.226,
       "debtToEquity": 31.947,
       "leverageFactor": 0.8622659486865534,
-      "avgVolume": 6059238,
-      "marketCap": 11260536832
+      "avgVolume": 6243325,
+      "marketCap": 11353214976
     },
     {
       "ticker": "GWRE",
@@ -1013,8 +1079,8 @@
       "effectiveGrowth": 0.24,
       "debtToEquity": 46.669,
       "leverageFactor": 0.8108031410513685,
-      "avgVolume": 1700240,
-      "marketCap": 12715467776
+      "avgVolume": 1685605,
+      "marketCap": 11015084032
     },
     {
       "ticker": "HUBS",
@@ -1024,8 +1090,8 @@
       "effectiveGrowth": 0.204,
       "debtToEquity": 12.695,
       "leverageFactor": 0.9403135945837937,
-      "avgVolume": 1710076,
-      "marketCap": 12873965568
+      "avgVolume": 1707551,
+      "marketCap": 10725051392
     },
     {
       "ticker": "DY",
@@ -1035,19 +1101,19 @@
       "effectiveGrowth": 0.344,
       "debtToEquity": 160.935,
       "leverageFactor": 0.5541163921481708,
-      "avgVolume": 408811,
-      "marketCap": 10154459136
+      "avgVolume": 409200,
+      "marketCap": 11755759616
     },
     {
-      "ticker": "PSTG",
-      "score": 0.18963425687075589,
-      "revenueGrowth": 0.204,
+      "ticker": "KEYS",
+      "score": 0.19045750672323172,
+      "revenueGrowth": 0.233,
       "equityGrowth": 0,
-      "effectiveGrowth": 0.204,
-      "debtToEquity": 15.151,
-      "leverageFactor": 0.929579690542921,
-      "avgVolume": 3549568,
-      "marketCap": 19510413312
+      "effectiveGrowth": 0.233,
+      "debtToEquity": 44.674,
+      "leverageFactor": 0.8174141919452005,
+      "avgVolume": 1487580,
+      "marketCap": 54893404160
     },
     {
       "ticker": "NOW",
@@ -1057,8 +1123,8 @@
       "effectiveGrowth": 0.207,
       "debtToEquity": 18.536,
       "leverageFactor": 0.915181022806311,
-      "avgVolume": 18930886,
-      "marketCap": 110315200512
+      "avgVolume": 19308370,
+      "marketCap": 95949422592
     },
     {
       "ticker": "MRVL",
@@ -1068,8 +1134,8 @@
       "effectiveGrowth": 0.221,
       "debtToEquity": 33.479,
       "leverageFactor": 0.856608088950184,
-      "avgVolume": 17213708,
-      "marketCap": 86615089152
+      "avgVolume": 18276508,
+      "marketCap": 105039929344
     },
     {
       "ticker": "ISRG",
@@ -1079,8 +1145,19 @@
       "effectiveGrowth": 0.188,
       "debtToEquity": 0.953,
       "leverageFactor": 0.9952575975476854,
-      "avgVolume": 1951711,
-      "marketCap": 163729670144
+      "avgVolume": 1935071,
+      "marketCap": 162756509696
+    },
+    {
+      "ticker": "TSM",
+      "score": 0.1867328581513447,
+      "revenueGrowth": 0.205,
+      "equityGrowth": 0,
+      "effectiveGrowth": 0.205,
+      "debtToEquity": 19.565,
+      "leverageFactor": 0.9108919909821692,
+      "avgVolume": 13877321,
+      "marketCap": 1895874953216
     },
     {
       "ticker": "BROS",
@@ -1090,8 +1167,8 @@
       "effectiveGrowth": 0.294,
       "debtToEquity": 121.29,
       "leverageFactor": 0.6224905848299044,
-      "avgVolume": 4972156,
-      "marketCap": 8335848448
+      "avgVolume": 4980736,
+      "marketCap": 9275658240
     },
     {
       "ticker": "DOCN",
@@ -1101,8 +1178,8 @@
       "effectiveGrowth": 0.183,
       "debtToEquity": 0,
       "leverageFactor": 1,
-      "avgVolume": 3670163,
-      "marketCap": 8916328448
+      "avgVolume": 3784768,
+      "marketCap": 9050416128
     },
     {
       "ticker": "ZS",
@@ -1112,8 +1189,8 @@
       "effectiveGrowth": 0.259,
       "debtToEquity": 84.995,
       "leverageFactor": 0.7017666976613625,
-      "avgVolume": 2718963,
-      "marketCap": 22557327360
+      "avgVolume": 2734330,
+      "marketCap": 20090798080
     },
     {
       "ticker": "PTC",
@@ -1123,157 +1200,90 @@
       "effectiveGrowth": 0.214,
       "debtToEquity": 35.942,
       "leverageFactor": 0.847665951801714,
-      "avgVolume": 1147901,
-      "marketCap": 16955756544
-    },
-    {
-      "ticker": "LRCX",
-      "score": 0.18100288703699913,
-      "revenueGrowth": 0.221,
-      "equityGrowth": 0,
-      "effectiveGrowth": 0.221,
-      "debtToEquity": 44.195,
-      "leverageFactor": 0.819017588402711,
-      "avgVolume": 12003720,
-      "marketCap": 268363366400
-    },
-    {
-      "ticker": "RMBS",
-      "score": 0.17935797771402806,
-      "revenueGrowth": 0.181,
-      "equityGrowth": 0,
-      "effectiveGrowth": 0.181,
-      "debtToEquity": 1.831,
-      "leverageFactor": 0.9909280536686633,
-      "avgVolume": 2453136,
-      "marketCap": 9304950784
-    },
-    {
-      "ticker": "SNOW",
-      "score": 0.17578592661375567,
-      "revenueGrowth": 0.301,
-      "equityGrowth": 0,
-      "effectiveGrowth": 0.301,
-      "debtToEquity": 142.462,
-      "leverageFactor": 0.5840064007101518,
-      "avgVolume": 5981176,
-      "marketCap": 52138475520
-    },
-    {
-      "ticker": "MNST",
-      "score": 0.17529880478087648,
-      "revenueGrowth": 0.176,
-      "equityGrowth": 0,
-      "effectiveGrowth": 0.176,
-      "debtToEquity": 0.8,
-      "leverageFactor": 0.9960159362549801,
-      "avgVolume": 6214363,
-      "marketCap": 70885498880
-    },
-    {
-      "ticker": "KRYS",
-      "score": 0.174332307263182,
-      "revenueGrowth": 0.175,
-      "equityGrowth": 0,
-      "effectiveGrowth": 0.175,
-      "debtToEquity": 0.766,
-      "leverageFactor": 0.9961846129324686,
-      "avgVolume": 303766,
-      "marketCap": 7551259136
-    },
-    {
-      "ticker": "SPXC",
-      "score": 0.1718289150864016,
-      "revenueGrowth": 0.194,
-      "equityGrowth": 0,
-      "effectiveGrowth": 0.194,
-      "debtToEquity": 25.806,
-      "leverageFactor": 0.8857160571464,
-      "avgVolume": 431535,
-      "marketCap": 9972384768
-    },
-    {
-      "ticker": "IOVA",
-      "score": 0.1709500767826616,
-      "revenueGrowth": 0.177,
-      "equityGrowth": 0,
-      "effectiveGrowth": 0.177,
-      "debtToEquity": 7.078,
-      "leverageFactor": 0.9658196428398961,
-      "avgVolume": 15206250,
-      "marketCap": 1445985152
+      "avgVolume": 1148905,
+      "marketCap": 16721334272
     }
   ],
   "excluded": {
-    "illiquid": [
-      {
-        "ticker": "PLPC",
-        "score": 0.03427853211708023,
-        "revenueGrowth": 0.036,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0.036,
-        "debtToEquity": 10.044,
-        "leverageFactor": 0.9521814476966731,
-        "avgVolume": 134003,
-        "marketCap": 1325823744
-      },
-      {
-        "ticker": "GRC",
-        "score": 0.017186806261726414,
-        "revenueGrowth": 0.024,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0.024,
-        "debtToEquity": 79.284,
-        "leverageFactor": 0.7161169275719339,
-        "avgVolume": 135965,
-        "marketCap": 1634816896
-      },
-      {
-        "ticker": "ESLT",
-        "score": 0.10118149542668595,
-        "revenueGrowth": 0.113,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0.113,
-        "debtToEquity": 23.361,
-        "leverageFactor": 0.895411463952973,
-        "avgVolume": 176585,
-        "marketCap": 40371564544
-      },
-      {
-        "ticker": "WTS",
-        "score": 0.14645795630515496,
-        "revenueGrowth": 0.157,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0.157,
-        "debtToEquity": 14.396,
-        "leverageFactor": 0.9328532248735985,
-        "avgVolume": 192873,
-        "marketCap": 9678246912
-      },
-      {
-        "ticker": "BIRD",
-        "score": 0,
-        "revenueGrowth": 0,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0,
-        "debtToEquity": 83.278,
-        "leverageFactor": 0.7060202345399219,
-        "avgVolume": 71336,
-        "marketCap": 24721406
-      },
-      {
-        "ticker": "SAM",
-        "score": 0,
-        "revenueGrowth": 0,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0,
-        "debtToEquity": 4.607,
-        "leverageFactor": 0.9774836638042688,
-        "avgVolume": 170625,
-        "marketCap": 2455687936
-      }
-    ],
+    "illiquid": [],
     "noGrowth": [
+      {
+        "ticker": "LRCX",
+        "score": 0.18100288703699913,
+        "revenueGrowth": 0.221,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.221,
+        "debtToEquity": 44.195,
+        "leverageFactor": 0.819017588402711,
+        "avgVolume": 11522385,
+        "marketCap": 321336442880
+      },
+      {
+        "ticker": "RMBS",
+        "score": 0.17935797771402806,
+        "revenueGrowth": 0.181,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.181,
+        "debtToEquity": 1.831,
+        "leverageFactor": 0.9909280536686633,
+        "avgVolume": 2463545,
+        "marketCap": 11020358656
+      },
+      {
+        "ticker": "SNOW",
+        "score": 0.17578592661375567,
+        "revenueGrowth": 0.301,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.301,
+        "debtToEquity": 142.462,
+        "leverageFactor": 0.5840064007101518,
+        "avgVolume": 6103355,
+        "marketCap": 47459426304
+      },
+      {
+        "ticker": "MNST",
+        "score": 0.17529880478087648,
+        "revenueGrowth": 0.176,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.176,
+        "debtToEquity": 0.8,
+        "leverageFactor": 0.9960159362549801,
+        "avgVolume": 6207603,
+        "marketCap": 74715422720
+      },
+      {
+        "ticker": "KRYS",
+        "score": 0.174332307263182,
+        "revenueGrowth": 0.175,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.175,
+        "debtToEquity": 0.766,
+        "leverageFactor": 0.9961846129324686,
+        "avgVolume": 302461,
+        "marketCap": 7600456192
+      },
+      {
+        "ticker": "SPXC",
+        "score": 0.1718289150864016,
+        "revenueGrowth": 0.194,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.194,
+        "debtToEquity": 25.806,
+        "leverageFactor": 0.8857160571464,
+        "avgVolume": 421986,
+        "marketCap": 10779976704
+      },
+      {
+        "ticker": "IOVA",
+        "score": 0.1709500767826616,
+        "revenueGrowth": 0.177,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.177,
+        "debtToEquity": 7.078,
+        "leverageFactor": 0.9658196428398961,
+        "avgVolume": 14972751,
+        "marketCap": 1542796160
+      },
       {
         "ticker": "TEAM",
         "score": 0.16860904772070237,
@@ -1282,8 +1292,8 @@
         "effectiveGrowth": 0.233,
         "debtToEquity": 76.379,
         "leverageFactor": 0.7236439816339157,
-        "avgVolume": 6385920,
-        "marketCap": 18000533504
+        "avgVolume": 6464335,
+        "marketCap": 15604339712
       },
       {
         "ticker": "GRAB",
@@ -1293,8 +1303,8 @@
         "effectiveGrowth": 0.186,
         "debtToEquity": 23.576,
         "leverageFactor": 0.894550398969478,
-        "avgVolume": 48723761,
-        "marketCap": 15007763456
+        "avgVolume": 48849485,
+        "marketCap": 15254202368
       },
       {
         "ticker": "FIVE",
@@ -1304,8 +1314,19 @@
         "effectiveGrowth": 0.243,
         "debtToEquity": 92.655,
         "leverageFactor": 0.6833985409441151,
-        "avgVolume": 1129741,
-        "marketCap": 12620876800
+        "avgVolume": 1107541,
+        "marketCap": 12269284352
+      },
+      {
+        "ticker": "COST",
+        "score": 0.1652213004837526,
+        "revenueGrowth": 0.215,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.215,
+        "debtToEquity": 60.257,
+        "leverageFactor": 0.7684711650407098,
+        "avgVolume": 2182365,
+        "marketCap": 457351954432
       },
       {
         "ticker": "UBER",
@@ -1315,8 +1336,8 @@
         "effectiveGrowth": 0.201,
         "debtToEquity": 43.806,
         "leverageFactor": 0.8203243562504614,
-        "avgVolume": 20645738,
-        "marketCap": 148040286208
+        "avgVolume": 19970615,
+        "marketCap": 146074779648
       },
       {
         "ticker": "FICO",
@@ -1326,8 +1347,8 @@
         "effectiveGrowth": 0.164,
         "debtToEquity": 0,
         "leverageFactor": 1,
-        "avgVolume": 344603,
-        "marketCap": 25324326912
+        "avgVolume": 340881,
+        "marketCap": 25388138496
       },
       {
         "ticker": "BMRN",
@@ -1337,19 +1358,8 @@
         "effectiveGrowth": 0.17,
         "debtToEquity": 10.561,
         "leverageFactor": 0.9498435132811869,
-        "avgVolume": 2166466,
-        "marketCap": 10864347136
-      },
-      {
-        "ticker": "AAON",
-        "score": 0.16108849799358524,
-        "revenueGrowth": 0.168,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0.168,
-        "debtToEquity": 8.581,
-        "leverageFactor": 0.958860107104674,
-        "avgVolume": 938373,
-        "marketCap": 6755217920
+        "avgVolume": 2183555,
+        "marketCap": 10795110400
       },
       {
         "ticker": "CAVA",
@@ -1359,8 +1369,8 @@
         "effectiveGrowth": 0.209,
         "debtToEquity": 59.802,
         "leverageFactor": 0.7698170144956544,
-        "avgVolume": 3730441,
-        "marketCap": 9414961152
+        "avgVolume": 3564141,
+        "marketCap": 10003832832
       },
       {
         "ticker": "VEEV",
@@ -1370,30 +1380,8 @@
         "effectiveGrowth": 0.16,
         "debtToEquity": 1.329,
         "leverageFactor": 0.9933988645450978,
-        "avgVolume": 2186365,
-        "marketCap": 28875317248
-      },
-      {
-        "ticker": "VEEV",
-        "score": 0.15894381832721566,
-        "revenueGrowth": 0.16,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0.16,
-        "debtToEquity": 1.329,
-        "leverageFactor": 0.9933988645450978,
-        "avgVolume": 2186365,
-        "marketCap": 28875317248
-      },
-      {
-        "ticker": "MANH",
-        "score": 0.15867022878144132,
-        "revenueGrowth": 0.166,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0.166,
-        "debtToEquity": 9.239,
-        "leverageFactor": 0.9558447516954296,
-        "avgVolume": 813216,
-        "marketCap": 8021577728
+        "avgVolume": 2167685,
+        "marketCap": 25904936960
       },
       {
         "ticker": "HLNE",
@@ -1403,8 +1391,8 @@
         "effectiveGrowth": 0.18,
         "debtToEquity": 27.949,
         "leverageFactor": 0.8773892405757429,
-        "avgVolume": 709775,
-        "marketCap": 5546891264
+        "avgVolume": 707518,
+        "marketCap": 5360506880
       },
       {
         "ticker": "HOOD",
@@ -1414,8 +1402,8 @@
         "effectiveGrowth": 0.265,
         "debtToEquity": 136.04,
         "leverageFactor": 0.5951672419950006,
-        "avgVolume": 29382941,
-        "marketCap": 62391377920
+        "avgVolume": 29656018,
+        "marketCap": 64865419264
       },
       {
         "ticker": "PCOR",
@@ -1425,8 +1413,8 @@
         "effectiveGrowth": 0.156,
         "debtToEquity": 6.275,
         "leverageFactor": 0.9695794449157679,
-        "avgVolume": 2530393,
-        "marketCap": 8861782016
+        "avgVolume": 2555601,
+        "marketCap": 8023814656
       },
       {
         "ticker": "EXAS",
@@ -1447,8 +1435,8 @@
         "effectiveGrowth": 0.169,
         "debtToEquity": 24.787,
         "leverageFactor": 0.8897311677276711,
-        "avgVolume": 1324495,
-        "marketCap": 2913532160
+        "avgVolume": 1300780,
+        "marketCap": 3022360320
       },
       {
         "ticker": "DIOD",
@@ -1458,8 +1446,19 @@
         "effectiveGrowth": 0.154,
         "debtToEquity": 4.932,
         "leverageFactor": 0.9759334803739778,
-        "avgVolume": 438383,
-        "marketCap": 3166262784
+        "avgVolume": 448465,
+        "marketCap": 3697087488
+      },
+      {
+        "ticker": "INTU",
+        "score": 0.14736521164693325,
+        "revenueGrowth": 0.174,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.174,
+        "debtToEquity": 36.148,
+        "leverageFactor": 0.8469265037180073,
+        "avgVolume": 4006830,
+        "marketCap": 102838968320
       },
       {
         "ticker": "TTMI",
@@ -1469,8 +1468,8 @@
         "effectiveGrowth": 0.19,
         "debtToEquity": 58.421,
         "leverageFactor": 0.7739309111875583,
-        "avgVolume": 2593413,
-        "marketCap": 10116403200
+        "avgVolume": 2554065,
+        "marketCap": 11222332416
       },
       {
         "ticker": "ROKU",
@@ -1480,8 +1479,8 @@
         "effectiveGrowth": 0.161,
         "debtToEquity": 19.689,
         "leverageFactor": 0.9103778523276087,
-        "avgVolume": 3505678,
-        "marketCap": 13949616128
+        "avgVolume": 3479318,
+        "marketCap": 14853348352
       },
       {
         "ticker": "RBC",
@@ -1491,8 +1490,8 @@
         "effectiveGrowth": 0.17,
         "debtToEquity": 32.369,
         "leverageFactor": 0.8607000073159501,
-        "avgVolume": 205791,
-        "marketCap": 17172889600
+        "avgVolume": 202375,
+        "marketCap": 18714947584
       },
       {
         "ticker": "COHR",
@@ -1502,8 +1501,8 @@
         "effectiveGrowth": 0.175,
         "debtToEquity": 39.901,
         "leverageFactor": 0.8336772251887237,
-        "avgVolume": 7229575,
-        "marketCap": 44660056064
+        "avgVolume": 7322493,
+        "marketCap": 53292654592
       },
       {
         "ticker": "PANW",
@@ -1513,8 +1512,19 @@
         "effectiveGrowth": 0.149,
         "debtToEquity": 4.887,
         "leverageFactor": 0.9761478278270461,
-        "avgVolume": 10597603,
-        "marketCap": 130821128192
+        "avgVolume": 10555896,
+        "marketCap": 136818720768
+      },
+      {
+        "ticker": "MSFT",
+        "score": 0.1442521562242214,
+        "revenueGrowth": 0.167,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.167,
+        "debtToEquity": 31.539,
+        "leverageFactor": 0.8637853666121043,
+        "avgVolume": 36663266,
+        "marketCap": 2759419756544
       },
       {
         "ticker": "FRSH",
@@ -1524,19 +1534,8 @@
         "effectiveGrowth": 0.145,
         "debtToEquity": 4.116,
         "leverageFactor": 0.9798349957867095,
-        "avgVolume": 6021520,
-        "marketCap": 2281605632
-      },
-      {
-        "ticker": "MRCY",
-        "score": 0.1410941207729026,
-        "revenueGrowth": 0.154,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0.154,
-        "debtToEquity": 18.294,
-        "leverageFactor": 0.9161955894344325,
-        "avgVolume": 688978,
-        "marketCap": 4375667200
+        "avgVolume": 6084381,
+        "marketCap": 2234723328
       },
       {
         "ticker": "CFLT",
@@ -1557,8 +1556,8 @@
         "effectiveGrowth": 0.143,
         "debtToEquity": 5.522,
         "leverageFactor": 0.973131830169033,
-        "avgVolume": 19797671,
-        "marketCap": 12198642688
+        "avgVolume": 19963320,
+        "marketCap": 11902655488
       },
       {
         "ticker": "WIX",
@@ -1568,8 +1567,8 @@
         "effectiveGrowth": 0.139,
         "debtToEquity": 0,
         "leverageFactor": 1,
-        "avgVolume": 2528395,
-        "marketCap": 5252355584
+        "avgVolume": 2748660,
+        "marketCap": 4064496128
       },
       {
         "ticker": "TDG",
@@ -1579,8 +1578,8 @@
         "effectiveGrowth": 0.139,
         "debtToEquity": 0,
         "leverageFactor": 1,
-        "avgVolume": 394723,
-        "marketCap": 65450598400
+        "avgVolume": 397565,
+        "marketCap": 69032722432
       },
       {
         "ticker": "AMKR",
@@ -1590,30 +1589,8 @@
         "effectiveGrowth": 0.159,
         "debtToEquity": 36.97,
         "leverageFactor": 0.8439886905515467,
-        "avgVolume": 4544768,
-        "marketCap": 11136326656
-      },
-      {
-        "ticker": "FORM",
-        "score": 0.1339076923076923,
-        "revenueGrowth": 0.136,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0.136,
-        "debtToEquity": 3.125,
-        "leverageFactor": 0.9846153846153847,
-        "avgVolume": 1495858,
-        "marketCap": 7557261312
-      },
-      {
-        "ticker": "NNOX",
-        "score": 0.1336402832783815,
-        "revenueGrowth": 0.137,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0.137,
-        "debtToEquity": 5.028,
-        "leverageFactor": 0.975476520280157,
-        "avgVolume": 975693,
-        "marketCap": 157969808
+        "avgVolume": 4245546,
+        "marketCap": 13675463680
       },
       {
         "ticker": "PATH",
@@ -1623,8 +1600,8 @@
         "effectiveGrowth": 0.136,
         "debtToEquity": 3.901,
         "leverageFactor": 0.980868166414093,
-        "avgVolume": 33515651,
-        "marketCap": 5935721984
+        "avgVolume": 32559023,
+        "marketCap": 5272631808
       },
       {
         "ticker": "TTD",
@@ -1634,8 +1611,8 @@
         "effectiveGrowth": 0.143,
         "debtToEquity": 17.563,
         "leverageFactor": 0.9192739574284231,
-        "avgVolume": 18132033,
-        "marketCap": 10799920128
+        "avgVolume": 18683461,
+        "marketCap": 9659954176
       },
       {
         "ticker": "FOLD",
@@ -1645,8 +1622,8 @@
         "effectiveGrowth": 0.237,
         "debtToEquity": 161.304,
         "leverageFactor": 0.5535504727321038,
-        "avgVolume": 6453363,
-        "marketCap": 4540450304
+        "avgVolume": 5499958,
+        "marketCap": 4542020096
       },
       {
         "ticker": "ESTC",
@@ -1656,8 +1633,8 @@
         "effectiveGrowth": 0.177,
         "debtToEquity": 74.802,
         "leverageFactor": 0.7277967409261942,
-        "avgVolume": 2160808,
-        "marketCap": 5267586560
+        "avgVolume": 2172560,
+        "marketCap": 4838718976
       },
       {
         "ticker": "EW",
@@ -1667,7 +1644,7 @@
         "effectiveGrowth": 0.133,
         "debtToEquity": 6.824,
         "leverageFactor": 0.9670057633543496,
-        "avgVolume": 4599661,
+        "avgVolume": 4612668,
         "marketCap": 46510465024
       },
       {
@@ -1678,8 +1655,8 @@
         "effectiveGrowth": 0.196,
         "debtToEquity": 106.156,
         "leverageFactor": 0.6532617358470845,
-        "avgVolume": 815766,
-        "marketCap": 6876970496
+        "avgVolume": 817441,
+        "marketCap": 6987572224
       },
       {
         "ticker": "BSX",
@@ -1689,8 +1666,8 @@
         "effectiveGrowth": 0.159,
         "debtToEquity": 48.921,
         "leverageFactor": 0.8034677668818622,
-        "avgVolume": 15750763,
-        "marketCap": 93257490432
+        "avgVolume": 16492816,
+        "marketCap": 91206565888
       },
       {
         "ticker": "SPSC",
@@ -1700,8 +1677,8 @@
         "effectiveGrowth": 0.127,
         "debtToEquity": 0.738,
         "leverageFactor": 0.9963235660413076,
-        "avgVolume": 782630,
-        "marketCap": 2099265280
+        "avgVolume": 806023,
+        "marketCap": 1991040256
       },
       {
         "ticker": "BOOT",
@@ -1711,8 +1688,8 @@
         "effectiveGrowth": 0.16,
         "debtToEquity": 54.875,
         "leverageFactor": 0.784698381559588,
-        "avgVolume": 670113,
-        "marketCap": 4461584896
+        "avgVolume": 693366,
+        "marketCap": 4730755072
       },
       {
         "ticker": "EPAM",
@@ -1722,8 +1699,19 @@
         "effectiveGrowth": 0.128,
         "debtToEquity": 3.907,
         "leverageFactor": 0.9808393041925976,
-        "avgVolume": 1193738,
-        "marketCap": 7479850496
+        "avgVolume": 1204515,
+        "marketCap": 6744757248
+      },
+      {
+        "ticker": "TW",
+        "score": 0.12368644990204032,
+        "revenueGrowth": 0.125,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.125,
+        "debtToEquity": 2.124,
+        "leverageFactor": 0.9894915992163226,
+        "avgVolume": 1509985,
+        "marketCap": 27256522752
       },
       {
         "ticker": "TXT",
@@ -1733,8 +1721,8 @@
         "effectiveGrowth": 0.156,
         "debtToEquity": 54.375,
         "leverageFactor": 0.7862407862407862,
-        "avgVolume": 1829976,
-        "marketCap": 15249661952
+        "avgVolume": 1767161,
+        "marketCap": 15949796352
       },
       {
         "ticker": "ITT",
@@ -1744,8 +1732,8 @@
         "effectiveGrowth": 0.135,
         "debtToEquity": 21.196,
         "leverageFactor": 0.9041754823776199,
-        "avgVolume": 972803,
-        "marketCap": 16393203712
+        "avgVolume": 957350,
+        "marketCap": 19072544768
       },
       {
         "ticker": "LC",
@@ -1755,8 +1743,8 @@
         "effectiveGrowth": 0.122,
         "debtToEquity": 1.055,
         "leverageFactor": 0.9947526796150308,
-        "avgVolume": 2160626,
-        "marketCap": 1651116544
+        "avgVolume": 2137220,
+        "marketCap": 1739898752
       },
       {
         "ticker": "HII",
@@ -1766,8 +1754,8 @@
         "effectiveGrowth": 0.157,
         "debtToEquity": 58.762,
         "leverageFactor": 0.7729110147548712,
-        "avgVolume": 581746,
-        "marketCap": 14959387648
+        "avgVolume": 572733,
+        "marketCap": 16167872512
       },
       {
         "ticker": "CW",
@@ -1777,8 +1765,8 @@
         "effectiveGrowth": 0.149,
         "debtToEquity": 46.104,
         "leverageFactor": 0.8126645645743262,
-        "avgVolume": 301776,
-        "marketCap": 25138212864
+        "avgVolume": 313686,
+        "marketCap": 27056832512
       },
       {
         "ticker": "SHAK",
@@ -1788,8 +1776,8 @@
         "effectiveGrowth": 0.219,
         "debtToEquity": 162.912,
         "leverageFactor": 0.5510977867912882,
-        "avgVolume": 1506681,
-        "marketCap": 3777006592
+        "avgVolume": 1464151,
+        "marketCap": 4205212416
       },
       {
         "ticker": "NEE",
@@ -1799,8 +1787,8 @@
         "effectiveGrowth": 0.207,
         "debtToEquity": 146.242,
         "leverageFactor": 0.5776306744993387,
-        "avgVolume": 9921361,
-        "marketCap": 193517502464
+        "avgVolume": 9964891,
+        "marketCap": 199000457216
       },
       {
         "ticker": "INSP",
@@ -1810,8 +1798,8 @@
         "effectiveGrowth": 0.122,
         "debtToEquity": 4.116,
         "leverageFactor": 0.9798349957867095,
-        "avgVolume": 1261185,
-        "marketCap": 1485365248
+        "avgVolume": 1263486,
+        "marketCap": 1663044480
       },
       {
         "ticker": "AME",
@@ -1821,19 +1809,8 @@
         "effectiveGrowth": 0.134,
         "debtToEquity": 24.194,
         "leverageFactor": 0.8920845339304352,
-        "avgVolume": 1410308,
-        "marketCap": 49102462976
-      },
-      {
-        "ticker": "PLUG",
-        "score": 0.11757318262589014,
-        "revenueGrowth": 0.176,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0.176,
-        "debtToEquity": 99.388,
-        "leverageFactor": 0.6680294467380122,
-        "avgVolume": 94098670,
-        "marketCap": 3150338560
+        "avgVolume": 1401433,
+        "marketCap": 53367087104
       },
       {
         "ticker": "CWEN",
@@ -1843,8 +1820,8 @@
         "effectiveGrowth": 0.211,
         "debtToEquity": 159.672,
         "leverageFactor": 0.5560621899953291,
-        "avgVolume": 1044076,
-        "marketCap": 8063051264
+        "avgVolume": 1019151,
+        "marketCap": 8418079744
       },
       {
         "ticker": "WDAY",
@@ -1854,8 +1831,8 @@
         "effectiveGrowth": 0.145,
         "debtToEquity": 48.956,
         "leverageFactor": 0.8033548096852456,
-        "avgVolume": 5169611,
-        "marketCap": 34168958976
+        "avgVolume": 5162598,
+        "marketCap": 29638785024
       },
       {
         "ticker": "BILL",
@@ -1865,8 +1842,8 @@
         "effectiveGrowth": 0.144,
         "debtToEquity": 49.571,
         "leverageFactor": 0.8013751597741725,
-        "avgVolume": 2907065,
-        "marketCap": 3836000768
+        "avgVolume": 2852148,
+        "marketCap": 3631681024
       },
       {
         "ticker": "HEI",
@@ -1876,30 +1853,19 @@
         "effectiveGrowth": 0.144,
         "debtToEquity": 49.699,
         "leverageFactor": 0.8009643610907533,
-        "avgVolume": 605298,
-        "marketCap": 38255947776
+        "avgVolume": 610946,
+        "marketCap": 40917954560
       },
       {
-        "ticker": "PGY",
-        "score": 0.11424087515434057,
-        "revenueGrowth": 0.198,
+        "ticker": "V",
+        "score": 0.11468430396053601,
+        "revenueGrowth": 0.146,
         "equityGrowth": 0,
-        "effectiveGrowth": 0.198,
-        "debtToEquity": 146.636,
-        "leverageFactor": 0.576974116941114,
-        "avgVolume": 4032330,
-        "marketCap": 961432896
-      },
-      {
-        "ticker": "TASK",
-        "score": 0.11297081186754371,
-        "revenueGrowth": 0.141,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0.141,
-        "debtToEquity": 49.622,
-        "leverageFactor": 0.8012114316847072,
-        "avgVolume": 573070,
-        "marketCap": 607665984
+        "effectiveGrowth": 0.146,
+        "debtToEquity": 54.612,
+        "leverageFactor": 0.7855089312365481,
+        "avgVolume": 8169893,
+        "marketCap": 593624104960
       },
       {
         "ticker": "OKTA",
@@ -1909,8 +1875,19 @@
         "effectiveGrowth": 0.116,
         "debtToEquity": 6.444,
         "leverageFactor": 0.9687857239735717,
-        "avgVolume": 3309000,
-        "marketCap": 13949791232
+        "avgVolume": 3338593,
+        "marketCap": 12388392960
+      },
+      {
+        "ticker": "GE",
+        "score": 0.1120769255261566,
+        "revenueGrowth": 0.176,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.176,
+        "debtToEquity": 114.07,
+        "leverageFactor": 0.6368007132167989,
+        "avgVolume": 5795531,
+        "marketCap": 329929981952
       },
       {
         "ticker": "MCHP",
@@ -1920,8 +1897,8 @@
         "effectiveGrowth": 0.156,
         "debtToEquity": 82.382,
         "leverageFactor": 0.7082604415295592,
-        "avgVolume": 9334311,
-        "marketCap": 34962763776
+        "avgVolume": 9120593,
+        "marketCap": 38317801472
       },
       {
         "ticker": "IDXX",
@@ -1931,8 +1908,8 @@
         "effectiveGrowth": 0.143,
         "debtToEquity": 60.827,
         "leverageFactor": 0.7667917815256856,
-        "avgVolume": 511231,
-        "marketCap": 44739948544
+        "avgVolume": 521811,
+        "marketCap": 46605139968
       },
       {
         "ticker": "PRCT",
@@ -1942,8 +1919,8 @@
         "effectiveGrowth": 0.119,
         "debtToEquity": 21.451,
         "leverageFactor": 0.9031343276842281,
-        "avgVolume": 1626046,
-        "marketCap": 1410318848
+        "avgVolume": 1621011,
+        "marketCap": 1323759872
       },
       {
         "ticker": "FSLR",
@@ -1953,8 +1930,8 @@
         "effectiveGrowth": 0.111,
         "debtToEquity": 6.871,
         "leverageFactor": 0.9667860647456629,
-        "avgVolume": 2420211,
-        "marketCap": 21168164864
+        "avgVolume": 2348140,
+        "marketCap": 21595777024
       },
       {
         "ticker": "MSCI",
@@ -1964,8 +1941,8 @@
         "effectiveGrowth": 0.106,
         "debtToEquity": 0,
         "leverageFactor": 1,
-        "avgVolume": 631873,
-        "marketCap": 39603245056
+        "avgVolume": 627965,
+        "marketCap": 40404475904
       },
       {
         "ticker": "ABNB",
@@ -1975,8 +1952,19 @@
         "effectiveGrowth": 0.12,
         "debtToEquity": 27.698,
         "leverageFactor": 0.8783564194678917,
-        "avgVolume": 4652675,
-        "marketCap": 75706621952
+        "avgVolume": 4607581,
+        "marketCap": 77939818496
+      },
+      {
+        "ticker": "CRM",
+        "score": 0.10524164263939081,
+        "revenueGrowth": 0.121,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.121,
+        "debtToEquity": 29.947,
+        "leverageFactor": 0.869765641647858,
+        "avgVolume": 13098255,
+        "marketCap": 158662213632
       },
       {
         "ticker": "DXCM",
@@ -1986,8 +1974,8 @@
         "effectiveGrowth": 0.131,
         "debtToEquity": 50.852,
         "leverageFactor": 0.7972828600130755,
-        "avgVolume": 5093856,
-        "marketCap": 24493021184
+        "avgVolume": 5026505,
+        "marketCap": 25588967424
       },
       {
         "ticker": "NTNX",
@@ -1997,8 +1985,8 @@
         "effectiveGrowth": 0.104,
         "debtToEquity": 0,
         "leverageFactor": 1,
-        "avgVolume": 4877178,
-        "marketCap": 10277901312
+        "avgVolume": 4878190,
+        "marketCap": 9939901440
       },
       {
         "ticker": "FTNT",
@@ -2008,8 +1996,8 @@
         "effectiveGrowth": 0.148,
         "debtToEquity": 85.802,
         "leverageFactor": 0.699785165954052,
-        "avgVolume": 6858126,
-        "marketCap": 60770926592
+        "avgVolume": 6723675,
+        "marketCap": 59714945024
       },
       {
         "ticker": "RMD",
@@ -2019,8 +2007,19 @@
         "effectiveGrowth": 0.11,
         "debtToEquity": 13.411,
         "leverageFactor": 0.9371588156186887,
-        "avgVolume": 1101835,
-        "marketCap": 32766511104
+        "avgVolume": 1100400,
+        "marketCap": 33430659072
+      },
+      {
+        "ticker": "ETN",
+        "score": 0.10279468135610509,
+        "revenueGrowth": 0.131,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.131,
+        "debtToEquity": 54.877,
+        "leverageFactor": 0.7846922240924052,
+        "avgVolume": 2866318,
+        "marketCap": 153181028352
       },
       {
         "ticker": "BWXT",
@@ -2030,19 +2029,19 @@
         "effectiveGrowth": 0.187,
         "debtToEquity": 167.087,
         "leverageFactor": 0.5448299721864299,
-        "avgVolume": 1057628,
-        "marketCap": 18733721600
+        "avgVolume": 1051511,
+        "marketCap": 21666220032
       },
       {
-        "ticker": "JAMF",
-        "score": 0.10119638089785157,
-        "revenueGrowth": 0.152,
+        "ticker": "ABBV",
+        "score": 0.1,
+        "revenueGrowth": 0.1,
         "equityGrowth": 0,
-        "effectiveGrowth": 0.152,
-        "debtToEquity": 100.406,
-        "leverageFactor": 0.6657656638016551,
-        "avgVolume": 2070883,
-        "marketCap": 1749694592
+        "effectiveGrowth": 0.1,
+        "debtToEquity": 0,
+        "leverageFactor": 1,
+        "avgVolume": 7231306,
+        "marketCap": 375384440832
       },
       {
         "ticker": "PAYC",
@@ -2052,8 +2051,19 @@
         "effectiveGrowth": 0.102,
         "debtToEquity": 5.215,
         "leverageFactor": 0.9745876276100675,
-        "avgVolume": 1917920,
-        "marketCap": 6673289728
+        "avgVolume": 1923905,
+        "marketCap": 6196723200
+      },
+      {
+        "ticker": "PCTY",
+        "score": 0.09804245049563287,
+        "revenueGrowth": 0.104,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.104,
+        "debtToEquity": 12.153,
+        "leverageFactor": 0.9427158701503161,
+        "avgVolume": 864813,
+        "marketCap": 5258701312
       },
       {
         "ticker": "CEG",
@@ -2063,8 +2073,8 @@
         "effectiveGrowth": 0.129,
         "debtToEquity": 63.94,
         "leverageFactor": 0.7577479730241721,
-        "avgVolume": 3743975,
-        "marketCap": 101170782208
+        "avgVolume": 3824043,
+        "marketCap": 106293633024
       },
       {
         "ticker": "DOCS",
@@ -2074,8 +2084,19 @@
         "effectiveGrowth": 0.098,
         "debtToEquity": 1.092,
         "leverageFactor": 0.9945696497125693,
-        "avgVolume": 3473563,
-        "marketCap": 4386720256
+        "avgVolume": 3508158,
+        "marketCap": 4027122176
+      },
+      {
+        "ticker": "MCD",
+        "score": 0.097,
+        "revenueGrowth": 0.097,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.097,
+        "debtToEquity": 0,
+        "leverageFactor": 1,
+        "avgVolume": 3287728,
+        "marketCap": 220646490112
       },
       {
         "ticker": "CGNX",
@@ -2085,8 +2106,8 @@
         "effectiveGrowth": 0.099,
         "debtToEquity": 5.133,
         "leverageFactor": 0.9749772099077184,
-        "avgVolume": 2205578,
-        "marketCap": 8182008832
+        "avgVolume": 2205651,
+        "marketCap": 8995365888
       },
       {
         "ticker": "QLYS",
@@ -2096,8 +2117,8 @@
         "effectiveGrowth": 0.101,
         "debtToEquity": 9.315,
         "leverageFactor": 0.9554976948618111,
-        "avgVolume": 666836,
-        "marketCap": 3150152192
+        "avgVolume": 691255,
+        "marketCap": 2836033536
       },
       {
         "ticker": "NDAQ",
@@ -2107,8 +2128,8 @@
         "effectiveGrowth": 0.134,
         "debtToEquity": 77.878,
         "leverageFactor": 0.7197403176933762,
-        "avgVolume": 4465696,
-        "marketCap": 48471805952
+        "avgVolume": 4408388,
+        "marketCap": 49242648576
       },
       {
         "ticker": "IBKR",
@@ -2118,8 +2139,30 @@
         "effectiveGrowth": 0.152,
         "debtToEquity": 124.331,
         "leverageFactor": 0.6166539738723711,
-        "avgVolume": 5093823,
-        "marketCap": 114031763456
+        "avgVolume": 5047138,
+        "marketCap": 123484815360
+      },
+      {
+        "ticker": "RTX",
+        "score": 0.09325159047908968,
+        "revenueGrowth": 0.121,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.121,
+        "debtToEquity": 59.513,
+        "leverageFactor": 0.77067430148008,
+        "avgVolume": 6247758,
+        "marketCap": 274942164992
+      },
+      {
+        "ticker": "ADBE",
+        "score": 0.09290082836571958,
+        "revenueGrowth": 0.12,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.12,
+        "debtToEquity": 58.34,
+        "leverageFactor": 0.7741735697143299,
+        "avgVolume": 5903686,
+        "marketCap": 93636239360
       },
       {
         "ticker": "AR",
@@ -2129,8 +2172,8 @@
         "effectiveGrowth": 0.111,
         "debtToEquity": 45.706,
         "leverageFactor": 0.8139809365664655,
-        "avgVolume": 6347845,
-        "marketCap": 13093799936
+        "avgVolume": 6358853,
+        "marketCap": 11949172736
       },
       {
         "ticker": "VRTX",
@@ -2140,30 +2183,30 @@
         "effectiveGrowth": 0.095,
         "debtToEquity": 10.908,
         "leverageFactor": 0.9482807669694843,
-        "avgVolume": 1514868,
-        "marketCap": 113421164544
+        "avgVolume": 1505666,
+        "marketCap": 112547823616
       },
       {
-        "ticker": "COKE",
-        "score": 0.09,
-        "revenueGrowth": 0.09,
+        "ticker": "HUBB",
+        "score": 0.08999028256192503,
+        "revenueGrowth": 0.119,
         "equityGrowth": 0,
-        "effectiveGrowth": 0.09,
-        "debtToEquity": 0,
-        "leverageFactor": 1,
-        "avgVolume": 492940,
-        "marketCap": 12763038720
+        "effectiveGrowth": 0.119,
+        "debtToEquity": 64.473,
+        "leverageFactor": 0.7562208618649162,
+        "avgVolume": 550805,
+        "marketCap": 28284628992
       },
       {
-        "ticker": "ACMR",
-        "score": 0.08726651565227077,
-        "revenueGrowth": 0.094,
+        "ticker": "UNH",
+        "score": 0.08735237094219829,
+        "revenueGrowth": 0.123,
         "equityGrowth": 0,
-        "effectiveGrowth": 0.094,
-        "debtToEquity": 15.432,
-        "leverageFactor": 0.9283671877901146,
-        "avgVolume": 1473740,
-        "marketCap": 2586380544
+        "effectiveGrowth": 0.123,
+        "debtToEquity": 81.618,
+        "leverageFactor": 0.7101818775788479,
+        "avgVolume": 9764700,
+        "marketCap": 278611099648
       },
       {
         "ticker": "MMSI",
@@ -2173,8 +2216,19 @@
         "effectiveGrowth": 0.109,
         "debtToEquity": 51.857,
         "leverageFactor": 0.7941014146916703,
-        "avgVolume": 806036,
-        "marketCap": 4096643072
+        "avgVolume": 804266,
+        "marketCap": 4073167616
+      },
+      {
+        "ticker": "MASI",
+        "score": 0.08647059459342607,
+        "revenueGrowth": 0.12,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.12,
+        "debtToEquity": 77.551,
+        "leverageFactor": 0.7205882882785506,
+        "avgVolume": 1711635,
+        "marketCap": 9345714176
       },
       {
         "ticker": "WING",
@@ -2184,8 +2238,19 @@
         "effectiveGrowth": 0.086,
         "debtToEquity": 0,
         "leverageFactor": 1,
-        "avgVolume": 942395,
-        "marketCap": 4306128896
+        "avgVolume": 1006618,
+        "marketCap": 4834811392
+      },
+      {
+        "ticker": "AEO",
+        "score": 0.08514963893912791,
+        "revenueGrowth": 0.129,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.129,
+        "debtToEquity": 102.996,
+        "leverageFactor": 0.6600747204583559,
+        "avgVolume": 5846251,
+        "marketCap": 3092648704
       },
       {
         "ticker": "ZWS",
@@ -2195,8 +2260,19 @@
         "effectiveGrowth": 0.098,
         "debtToEquity": 34.504,
         "leverageFactor": 0.8528639170333981,
-        "avgVolume": 1023715,
-        "marketCap": 7512596992
+        "avgVolume": 1019716,
+        "marketCap": 8080565248
+      },
+      {
+        "ticker": "SYK",
+        "score": 0.0835253561733664,
+        "revenueGrowth": 0.114,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.114,
+        "debtToEquity": 72.971,
+        "leverageFactor": 0.7326785629242667,
+        "avgVolume": 2083225,
+        "marketCap": 129553997824
       },
       {
         "ticker": "ZBH",
@@ -2206,8 +2282,8 @@
         "effectiveGrowth": 0.109,
         "debtToEquity": 61.971,
         "leverageFactor": 0.7634432818899802,
-        "avgVolume": 2239693,
-        "marketCap": 17919576064
+        "avgVolume": 2244410,
+        "marketCap": 18283679744
       },
       {
         "ticker": "IR",
@@ -2217,8 +2293,8 @@
         "effectiveGrowth": 0.101,
         "debtToEquity": 50.699,
         "leverageFactor": 0.7977694366551122,
-        "avgVolume": 3859118,
-        "marketCap": 31656247296
+        "avgVolume": 3891220,
+        "marketCap": 34192855040
       },
       {
         "ticker": "STE",
@@ -2228,8 +2304,8 @@
         "effectiveGrowth": 0.092,
         "debtToEquity": 28.651,
         "leverageFactor": 0.8746954966302357,
-        "avgVolume": 833481,
-        "marketCap": 21703247872
+        "avgVolume": 836871,
+        "marketCap": 21924079616
       },
       {
         "ticker": "GGG",
@@ -2239,8 +2315,8 @@
         "effectiveGrowth": 0.081,
         "debtToEquity": 1.944,
         "leverageFactor": 0.990373568910193,
-        "avgVolume": 1022790,
-        "marketCap": 14034126848
+        "avgVolume": 1048980,
+        "marketCap": 14718838784
       },
       {
         "ticker": "ROK",
@@ -2250,8 +2326,8 @@
         "effectiveGrowth": 0.119,
         "debtToEquity": 99.289,
         "leverageFactor": 0.6682504201624516,
-        "avgVolume": 1017236,
-        "marketCap": 40350019584
+        "avgVolume": 1023118,
+        "marketCap": 44197486592
       },
       {
         "ticker": "NOVT",
@@ -2261,8 +2337,8 @@
         "effectiveGrowth": 0.085,
         "debtToEquity": 23.034,
         "leverageFactor": 0.8967242662553692,
-        "avgVolume": 444198,
-        "marketCap": 4214609920
+        "avgVolume": 426310,
+        "marketCap": 4357523456
       },
       {
         "ticker": "CPRX",
@@ -2272,8 +2348,8 @@
         "effectiveGrowth": 0.076,
         "debtToEquity": 0.292,
         "leverageFactor": 0.9985421284924011,
-        "avgVolume": 1239540,
-        "marketCap": 3043310592
+        "avgVolume": 1218710,
+        "marketCap": 3110912256
       },
       {
         "ticker": "U",
@@ -2283,19 +2359,8 @@
         "effectiveGrowth": 0.101,
         "debtToEquity": 66.494,
         "leverageFactor": 0.7504859396459207,
-        "avgVolume": 18385528,
-        "marketCap": 9573081088
-      },
-      {
-        "ticker": "DV",
-        "score": 0.07567086049262688,
-        "revenueGrowth": 0.079,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0.079,
-        "debtToEquity": 8.799,
-        "leverageFactor": 0.9578589935775554,
-        "avgVolume": 2800910,
-        "marketCap": 1538885632
+        "avgVolume": 19285598,
+        "marketCap": 9463998464
       },
       {
         "ticker": "SPGI",
@@ -2305,8 +2370,8 @@
         "effectiveGrowth": 0.09,
         "debtToEquity": 37.912,
         "leverageFactor": 0.8406469619018797,
-        "avgVolume": 2632190,
-        "marketCap": 128792952832
+        "avgVolume": 2640020,
+        "marketCap": 126443200512
       },
       {
         "ticker": "CBOE",
@@ -2316,8 +2381,8 @@
         "effectiveGrowth": 0.087,
         "debtToEquity": 30.958,
         "leverageFactor": 0.8659583127668234,
-        "avgVolume": 914343,
-        "marketCap": 29418950656
+        "avgVolume": 911445,
+        "marketCap": 31345172480
       },
       {
         "ticker": "CME",
@@ -2327,8 +2392,8 @@
         "effectiveGrowth": 0.08,
         "debtToEquity": 13.078,
         "leverageFactor": 0.938623414899708,
-        "avgVolume": 2280248,
-        "marketCap": 107155374080
+        "avgVolume": 2265255,
+        "marketCap": 109909082112
       },
       {
         "ticker": "DOCU",
@@ -2338,8 +2403,8 @@
         "effectiveGrowth": 0.078,
         "debtToEquity": 9.653,
         "leverageFactor": 0.9539572531754852,
-        "avgVolume": 5057853,
-        "marketCap": 9217828864
+        "avgVolume": 5065928,
+        "marketCap": 8589340672
       },
       {
         "ticker": "UTHR",
@@ -2349,8 +2414,8 @@
         "effectiveGrowth": 0.074,
         "debtToEquity": 0.53,
         "leverageFactor": 0.9973570039395602,
-        "avgVolume": 470350,
-        "marketCap": 25988941824
+        "avgVolume": 500353,
+        "marketCap": 25442191360
       },
       {
         "ticker": "WST",
@@ -2360,8 +2425,8 @@
         "effectiveGrowth": 0.075,
         "debtToEquity": 10.271,
         "leverageFactor": 0.9511535114209757,
-        "avgVolume": 1001081,
-        "marketCap": 18066534400
+        "avgVolume": 1002013,
+        "marketCap": 18918537216
       },
       {
         "ticker": "RIG",
@@ -2371,8 +2436,8 @@
         "effectiveGrowth": 0.096,
         "debtToEquity": 73.643,
         "leverageFactor": 0.7308792843230049,
-        "avgVolume": 46862826,
-        "marketCap": 7311887360
+        "avgVolume": 47082053,
+        "marketCap": 7393536512
       },
       {
         "ticker": "CWST",
@@ -2382,8 +2447,8 @@
         "effectiveGrowth": 0.097,
         "debtToEquity": 79.527,
         "leverageFactor": 0.7154943887352564,
-        "avgVolume": 768956,
-        "marketCap": 5039261696
+        "avgVolume": 805445,
+        "marketCap": 5516257280
       },
       {
         "ticker": "CEVA",
@@ -2393,8 +2458,19 @@
         "effectiveGrowth": 0.071,
         "debtToEquity": 4.794,
         "leverageFactor": 0.976591111067707,
-        "avgVolume": 376883,
-        "marketCap": 518447264
+        "avgVolume": 379620,
+        "marketCap": 559939648
+      },
+      {
+        "ticker": "PH",
+        "score": 0.06767686157850701,
+        "revenueGrowth": 0.091,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.091,
+        "debtToEquity": 68.925,
+        "leverageFactor": 0.7437017755879892,
+        "avgVolume": 753080,
+        "marketCap": 123929485312
       },
       {
         "ticker": "DECK",
@@ -2404,8 +2480,8 @@
         "effectiveGrowth": 0.071,
         "debtToEquity": 13.14,
         "leverageFactor": 0.9383503800319039,
-        "avgVolume": 2663996,
-        "marketCap": 14587599872
+        "avgVolume": 2609288,
+        "marketCap": 15765218304
       },
       {
         "ticker": "NDSN",
@@ -2415,19 +2491,19 @@
         "effectiveGrowth": 0.088,
         "debtToEquity": 66.986,
         "leverageFactor": 0.7491029492183111,
-        "avgVolume": 410628,
-        "marketCap": 14841784320
+        "avgVolume": 410395,
+        "marketCap": 15545217024
       },
       {
-        "ticker": "OLED",
-        "score": 0.06555390567190271,
-        "revenueGrowth": 0.066,
+        "ticker": "GD",
+        "score": 0.06548980919795974,
+        "revenueGrowth": 0.078,
         "equityGrowth": 0,
-        "effectiveGrowth": 0.066,
-        "debtToEquity": 1.361,
-        "leverageFactor": 0.9932409950288289,
-        "avgVolume": 769923,
-        "marketCap": 4357722624
+        "effectiveGrowth": 0.078,
+        "debtToEquity": 38.205,
+        "leverageFactor": 0.8396129384353813,
+        "avgVolume": 1395916,
+        "marketCap": 93495721984
       },
       {
         "ticker": "VRNS",
@@ -2437,19 +2513,8 @@
         "effectiveGrowth": 0.094,
         "debtToEquity": 87.153,
         "leverageFactor": 0.6964928104529641,
-        "avgVolume": 3185163,
-        "marketCap": 2531255296
-      },
-      {
-        "ticker": "AEO",
-        "score": 0.06413965252177938,
-        "revenueGrowth": 0.097,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0.097,
-        "debtToEquity": 102.465,
-        "leverageFactor": 0.6612335311523647,
-        "avgVolume": 5935488,
-        "marketCap": 2830850560
+        "avgVolume": 3155170,
+        "marketCap": 2560729600
       },
       {
         "ticker": "TENB",
@@ -2459,8 +2524,19 @@
         "effectiveGrowth": 0.105,
         "debtToEquity": 127.822,
         "leverageFactor": 0.6100871814582304,
-        "avgVolume": 2742428,
-        "marketCap": 2018708352
+        "avgVolume": 2839355,
+        "marketCap": 1933377152
+      },
+      {
+        "ticker": "DPZ",
+        "score": 0.064,
+        "revenueGrowth": 0.064,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.064,
+        "debtToEquity": 0,
+        "leverageFactor": 1,
+        "avgVolume": 959126,
+        "marketCap": 12619411456
       },
       {
         "ticker": "SMTC",
@@ -2470,8 +2546,30 @@
         "effectiveGrowth": 0.093,
         "debtToEquity": 94.229,
         "leverageFactor": 0.6797426494329247,
-        "avgVolume": 1910148,
-        "marketCap": 7147015168
+        "avgVolume": 1955046,
+        "marketCap": 8253134336
+      },
+      {
+        "ticker": "NOC",
+        "score": 0.062488405471641015,
+        "revenueGrowth": 0.096,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.096,
+        "debtToEquity": 107.257,
+        "leverageFactor": 0.6509208903295939,
+        "avgVolume": 963148,
+        "marketCap": 98301853696
+      },
+      {
+        "ticker": "JAZZ",
+        "score": 0.062025405851882105,
+        "revenueGrowth": 0.101,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.101,
+        "debtToEquity": 125.673,
+        "leverageFactor": 0.6141129292265555,
+        "avgVolume": 983455,
+        "marketCap": 12127389696
       },
       {
         "ticker": "NVCR",
@@ -2481,8 +2579,19 @@
         "effectiveGrowth": 0.081,
         "debtToEquity": 72.945,
         "leverageFactor": 0.7327483558958765,
-        "avgVolume": 1941846,
-        "marketCap": 1240358912
+        "avgVolume": 1914860,
+        "marketCap": 1244910720
+      },
+      {
+        "ticker": "EFX",
+        "score": 0.059233124193190115,
+        "revenueGrowth": 0.092,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.092,
+        "debtToEquity": 110.637,
+        "leverageFactor": 0.6438383064477187,
+        "avgVolume": 1867996,
+        "marketCap": 21980831744
       },
       {
         "ticker": "HQY",
@@ -2492,8 +2601,8 @@
         "effectiveGrowth": 0.073,
         "debtToEquity": 47.527,
         "leverageFactor": 0.807992663426616,
-        "avgVolume": 1034810,
-        "marketCap": 7139910656
+        "avgVolume": 1033091,
+        "marketCap": 7038241280
       },
       {
         "ticker": "TYL",
@@ -2503,8 +2612,8 @@
         "effectiveGrowth": 0.063,
         "debtToEquity": 17.355,
         "leverageFactor": 0.9201536656621655,
-        "avgVolume": 663188,
-        "marketCap": 14717321216
+        "avgVolume": 669018,
+        "marketCap": 13994307584
       },
       {
         "ticker": "YETI",
@@ -2514,8 +2623,8 @@
         "effectiveGrowth": 0.068,
         "debtToEquity": 35.133,
         "leverageFactor": 0.8505824363232724,
-        "avgVolume": 1495858,
-        "marketCap": 2769630208
+        "avgVolume": 1452241,
+        "marketCap": 2805963264
       },
       {
         "ticker": "ICE",
@@ -2525,8 +2634,8 @@
         "effectiveGrowth": 0.078,
         "debtToEquity": 70.077,
         "leverageFactor": 0.7405295526831237,
-        "avgVolume": 3941173,
-        "marketCap": 89677684736
+        "avgVolume": 3984705,
+        "marketCap": 94367358976
       },
       {
         "ticker": "ESAB",
@@ -2536,8 +2645,8 @@
         "effectiveGrowth": 0.075,
         "debtToEquity": 60.826,
         "leverageFactor": 0.7667947213851379,
-        "avgVolume": 517046,
-        "marketCap": 5884808192
+        "avgVolume": 554586,
+        "marketCap": 6230614528
       },
       {
         "ticker": "XYL",
@@ -2547,8 +2656,8 @@
         "effectiveGrowth": 0.063,
         "debtToEquity": 21.066,
         "leverageFactor": 0.9047071915174655,
-        "avgVolume": 1859893,
-        "marketCap": 29055397888
+        "avgVolume": 1949788,
+        "marketCap": 31141552128
       },
       {
         "ticker": "HSIC",
@@ -2558,8 +2667,8 @@
         "effectiveGrowth": 0.077,
         "debtToEquity": 71.736,
         "leverageFactor": 0.736008478817676,
-        "avgVolume": 1381626,
-        "marketCap": 8676318208
+        "avgVolume": 1374336,
+        "marketCap": 8638232576
       },
       {
         "ticker": "FIS",
@@ -2569,8 +2678,30 @@
         "effectiveGrowth": 0.082,
         "debtToEquity": 95.893,
         "leverageFactor": 0.6759200116258242,
-        "avgVolume": 5306463,
-        "marketCap": 24292378624
+        "avgVolume": 5558843,
+        "marketCap": 23790063616
+      },
+      {
+        "ticker": "SBUX",
+        "score": 0.055,
+        "revenueGrowth": 0.055,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.055,
+        "debtToEquity": 0,
+        "leverageFactor": 1,
+        "avgVolume": 9230806,
+        "marketCap": 110030741504
+      },
+      {
+        "ticker": "AXP",
+        "score": 0.05423090598867802,
+        "revenueGrowth": 0.106,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.106,
+        "debtToEquity": 190.921,
+        "leverageFactor": 0.5116123206479058,
+        "avgVolume": 3757871,
+        "marketCap": 217162285056
       },
       {
         "ticker": "EXEL",
@@ -2580,8 +2711,8 @@
         "effectiveGrowth": 0.056,
         "debtToEquity": 9.296,
         "leverageFactor": 0.9555844354407155,
-        "avgVolume": 2824030,
-        "marketCap": 11499330560
+        "avgVolume": 2771613,
+        "marketCap": 11971208192
       },
       {
         "ticker": "SNAP",
@@ -2591,8 +2722,19 @@
         "effectiveGrowth": 0.102,
         "debtToEquity": 181.597,
         "leverageFactor": 0.5241131350613343,
-        "avgVolume": 50794461,
-        "marketCap": 7769178624
+        "avgVolume": 52847031,
+        "marketCap": 8106969600
+      },
+      {
+        "ticker": "ZM",
+        "score": 0.05284252926279686,
+        "revenueGrowth": 0.053,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.053,
+        "debtToEquity": 0.596,
+        "leverageFactor": 0.9970288540150352,
+        "avgVolume": 4155431,
+        "marketCap": 24526043136
       },
       {
         "ticker": "ALGN",
@@ -2602,8 +2744,8 @@
         "effectiveGrowth": 0.053,
         "debtToEquity": 2.826,
         "leverageFactor": 0.9860668750554663,
-        "avgVolume": 1264751,
-        "marketCap": 12300101632
+        "avgVolume": 1251515,
+        "marketCap": 12417718272
       },
       {
         "ticker": "SSNC",
@@ -2613,8 +2755,30 @@
         "effectiveGrowth": 0.081,
         "debtToEquity": 110.836,
         "leverageFactor": 0.6434261153791709,
-        "avgVolume": 2397263,
-        "marketCap": 16488932352
+        "avgVolume": 2469203,
+        "marketCap": 16678053888
+      },
+      {
+        "ticker": "MANH",
+        "score": 0.051959890610756614,
+        "revenueGrowth": 0.057,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.057,
+        "debtToEquity": 19.4,
+        "leverageFactor": 0.9115770282588879,
+        "avgVolume": 795525,
+        "marketCap": 7631759360
+      },
+      {
+        "ticker": "TMO",
+        "score": 0.05193774683955204,
+        "revenueGrowth": 0.072,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.072,
+        "debtToEquity": 77.255,
+        "leverageFactor": 0.7213575949937784,
+        "avgVolume": 2376296,
+        "marketCap": 186251100160
       },
       {
         "ticker": "HAYW",
@@ -2624,8 +2788,8 @@
         "effectiveGrowth": 0.068,
         "debtToEquity": 63.929,
         "leverageFactor": 0.7577795543498441,
-        "avgVolume": 1960863,
-        "marketCap": 2906238464
+        "avgVolume": 1998423,
+        "marketCap": 3139775744
       },
       {
         "ticker": "ASAN",
@@ -2635,8 +2799,8 @@
         "effectiveGrowth": 0.092,
         "debtToEquity": 161.837,
         "leverageFactor": 0.5527350713166427,
-        "avgVolume": 5490043,
-        "marketCap": 1523763584
+        "avgVolume": 5619606,
+        "marketCap": 1347578368
       },
       {
         "ticker": "CDNS",
@@ -2646,8 +2810,8 @@
         "effectiveGrowth": 0.062,
         "debtToEquity": 48.707,
         "leverageFactor": 0.8041591109216869,
-        "avgVolume": 2564990,
-        "marketCap": 76717703168
+        "avgVolume": 2514430,
+        "marketCap": 78092640256
       },
       {
         "ticker": "ACIW",
@@ -2657,8 +2821,8 @@
         "effectiveGrowth": 0.063,
         "debtToEquity": 56.984,
         "leverageFactor": 0.7782585686268405,
-        "avgVolume": 840536,
-        "marketCap": 4227639040
+        "avgVolume": 834190,
+        "marketCap": 4165270784
       },
       {
         "ticker": "CYTK",
@@ -2668,8 +2832,8 @@
         "effectiveGrowth": 0.049,
         "debtToEquity": 0,
         "leverageFactor": 1,
-        "avgVolume": 1928575,
-        "marketCap": 8117661184
+        "avgVolume": 1908025,
+        "marketCap": 7944001024
       },
       {
         "ticker": "GEHC",
@@ -2679,8 +2843,19 @@
         "effectiveGrowth": 0.071,
         "debtToEquity": 98.717,
         "leverageFactor": 0.6695300234000744,
-        "avgVolume": 3665463,
-        "marketCap": 32478732288
+        "avgVolume": 3676645,
+        "marketCap": 33201952768
+      },
+      {
+        "ticker": "PAYO",
+        "score": 0.04660718701847167,
+        "revenueGrowth": 0.049,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.049,
+        "debtToEquity": 10.268,
+        "leverageFactor": 0.9511670820096259,
+        "avgVolume": 4513640,
+        "marketCap": 1602199168
       },
       {
         "ticker": "KLAC",
@@ -2690,8 +2865,8 @@
         "effectiveGrowth": 0.072,
         "debtToEquity": 111.778,
         "leverageFactor": 0.6414820801980897,
-        "avgVolume": 1136493,
-        "marketCap": 193463386112
+        "avgVolume": 1117550,
+        "marketCap": 224845791232
       },
       {
         "ticker": "NXPI",
@@ -2701,8 +2876,8 @@
         "effectiveGrowth": 0.072,
         "debtToEquity": 119.711,
         "leverageFactor": 0.6255649633575323,
-        "avgVolume": 2889115,
-        "marketCap": 49745113088
+        "avgVolume": 2883020,
+        "marketCap": 51599880192
       },
       {
         "ticker": "SFM",
@@ -2712,8 +2887,8 @@
         "effectiveGrowth": 0.076,
         "debtToEquity": 138.506,
         "leverageFactor": 0.590831477137776,
-        "avgVolume": 2991563,
-        "marketCap": 7510104576
+        "avgVolume": 2904656,
+        "marketCap": 7230364672
       },
       {
         "ticker": "CARG",
@@ -2723,8 +2898,8 @@
         "effectiveGrowth": 0.055,
         "debtToEquity": 50.998,
         "leverageFactor": 0.7968190981601446,
-        "avgVolume": 1304318,
-        "marketCap": 3250181632
+        "avgVolume": 1325261,
+        "marketCap": 3236818176
       },
       {
         "ticker": "ASML",
@@ -2734,8 +2909,8 @@
         "effectiveGrowth": 0.049,
         "debtToEquity": 23.916,
         "leverageFactor": 0.8931920898908519,
-        "avgVolume": 1861135,
-        "marketCap": 518635356160
+        "avgVolume": 1818173,
+        "marketCap": 569406128128
       },
       {
         "ticker": "CRUS",
@@ -2745,8 +2920,8 @@
         "effectiveGrowth": 0.045,
         "debtToEquity": 6.529,
         "leverageFactor": 0.968387006183151,
-        "avgVolume": 641650,
-        "marketCap": 7380014592
+        "avgVolume": 649755,
+        "marketCap": 8129651200
       },
       {
         "ticker": "TT",
@@ -2756,8 +2931,30 @@
         "effectiveGrowth": 0.056,
         "debtToEquity": 63.247,
         "leverageFactor": 0.759742751104476,
-        "avgVolume": 1640630,
-        "marketCap": 92407513088
+        "avgVolume": 1566666,
+        "marketCap": 101476646912
+      },
+      {
+        "ticker": "WMT",
+        "score": 0.04235317251732888,
+        "revenueGrowth": 0.056,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.056,
+        "debtToEquity": 64.443,
+        "leverageFactor": 0.7563066520951586,
+        "avgVolume": 31191805,
+        "marketCap": 1026965045248
+      },
+      {
+        "ticker": "COKE",
+        "score": 0.04171839580202359,
+        "revenueGrowth": 0.083,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.083,
+        "debtToEquity": 197.906,
+        "leverageFactor": 0.5026312747231758,
+        "avgVolume": 490066,
+        "marketCap": 13724559360
       },
       {
         "ticker": "EXPO",
@@ -2767,8 +2964,19 @@
         "effectiveGrowth": 0.045,
         "debtToEquity": 21.221,
         "leverageFactor": 0.9040733022633476,
-        "avgVolume": 473900,
-        "marketCap": 3255141376
+        "avgVolume": 476995,
+        "marketCap": 3306525184
+      },
+      {
+        "ticker": "SLB",
+        "score": 0.04065453806281126,
+        "revenueGrowth": 0.05,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.05,
+        "debtToEquity": 45.975,
+        "leverageFactor": 0.8130907612562251,
+        "avgVolume": 20400193,
+        "marketCap": 78633869312
       },
       {
         "ticker": "CACI",
@@ -2778,8 +2986,8 @@
         "effectiveGrowth": 0.057,
         "debtToEquity": 81.91,
         "leverageFactor": 0.7094462771806606,
-        "avgVolume": 289218,
-        "marketCap": 12011789312
+        "avgVolume": 284065,
+        "marketCap": 12594191360
       },
       {
         "ticker": "POWL",
@@ -2789,8 +2997,8 @@
         "effectiveGrowth": 0.04,
         "debtToEquity": 0.218,
         "leverageFactor": 0.998911186806381,
-        "avgVolume": 274678,
-        "marketCap": 6569946624
+        "avgVolume": 788799,
+        "marketCap": 8265980416
       },
       {
         "ticker": "FELE",
@@ -2800,8 +3008,19 @@
         "effectiveGrowth": 0.043,
         "debtToEquity": 17.634,
         "leverageFactor": 0.9189740573623606,
-        "avgVolume": 358220,
-        "marketCap": 4074112000
+        "avgVolume": 362710,
+        "marketCap": 4415352320
+      },
+      {
+        "ticker": "ABT",
+        "score": 0.0388029296211864,
+        "revenueGrowth": 0.044,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.044,
+        "debtToEquity": 26.787,
+        "leverageFactor": 0.8818847641178728,
+        "avgVolume": 11523351,
+        "marketCap": 178468732928
       },
       {
         "ticker": "ANF",
@@ -2811,8 +3030,8 @@
         "effectiveGrowth": 0.054,
         "debtToEquity": 82.236,
         "leverageFactor": 0.708626822942502,
-        "avgVolume": 1617611,
-        "marketCap": 4190004992
+        "avgVolume": 1590628,
+        "marketCap": 4692603904
       },
       {
         "ticker": "QCOM",
@@ -2822,8 +3041,8 @@
         "effectiveGrowth": 0.05,
         "debtToEquity": 64.218,
         "leverageFactor": 0.7569506998009219,
-        "avgVolume": 11450783,
-        "marketCap": 137542844416
+        "avgVolume": 11494888,
+        "marketCap": 136378687488
       },
       {
         "ticker": "LECO",
@@ -2833,8 +3052,19 @@
         "effectiveGrowth": 0.055,
         "debtToEquity": 91.681,
         "leverageFactor": 0.6856805894110347,
-        "avgVolume": 361181,
-        "marketCap": 13655501824
+        "avgVolume": 376690,
+        "marketCap": 14077644800
+      },
+      {
+        "ticker": "MRCY",
+        "score": 0.03569704566382307,
+        "revenueGrowth": 0.044,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.044,
+        "debtToEquity": 46.519,
+        "leverageFactor": 0.8112964923596153,
+        "avgVolume": 669970,
+        "marketCap": 4865986560
       },
       {
         "ticker": "BIO",
@@ -2844,19 +3074,8 @@
         "effectiveGrowth": 0.039,
         "debtToEquity": 18.579,
         "leverageFactor": 0.9150009836260574,
-        "avgVolume": 292483,
-        "marketCap": 7526915584
-      },
-      {
-        "ticker": "BIO",
-        "score": 0.03568503836141624,
-        "revenueGrowth": 0.039,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0.039,
-        "debtToEquity": 18.579,
-        "leverageFactor": 0.9150009836260574,
-        "avgVolume": 292483,
-        "marketCap": 7526915584
+        "avgVolume": 291245,
+        "marketCap": 7452659200
       },
       {
         "ticker": "ILMN",
@@ -2866,8 +3085,8 @@
         "effectiveGrowth": 0.05,
         "debtToEquity": 93.757,
         "leverageFactor": 0.6808348396804161,
-        "avgVolume": 2058921,
-        "marketCap": 18846453760
+        "avgVolume": 2000433,
+        "marketCap": 19218765824
       },
       {
         "ticker": "XRAY",
@@ -2877,8 +3096,19 @@
         "effectiveGrowth": 0.062,
         "debtToEquity": 185,
         "leverageFactor": 0.5194805194805194,
-        "avgVolume": 4835563,
-        "marketCap": 2317092352
+        "avgVolume": 4790345,
+        "marketCap": 2369027072
+      },
+      {
+        "ticker": "AZN",
+        "score": 0.03142147696269275,
+        "revenueGrowth": 0.041,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.041,
+        "debtToEquity": 60.968,
+        "leverageFactor": 0.766377486894945,
+        "avgVolume": 3001630,
+        "marketCap": 318990974976
       },
       {
         "ticker": "MKTX",
@@ -2888,8 +3118,8 @@
         "effectiveGrowth": 0.035,
         "debtToEquity": 24.601,
         "leverageFactor": 0.8904679854497531,
-        "avgVolume": 563541,
-        "marketCap": 6132555264
+        "avgVolume": 546386,
+        "marketCap": 6519139328
       },
       {
         "ticker": "LNTH",
@@ -2899,8 +3129,19 @@
         "effectiveGrowth": 0.04,
         "debtToEquity": 57.188,
         "leverageFactor": 0.7776412585346127,
-        "avgVolume": 986451,
-        "marketCap": 4938032128
+        "avgVolume": 947118,
+        "marketCap": 5341017600
+      },
+      {
+        "ticker": "SAP",
+        "score": 0.0304728837505656,
+        "revenueGrowth": 0.033,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.033,
+        "debtToEquity": 16.586,
+        "leverageFactor": 0.923420719714109,
+        "avgVolume": 3122103,
+        "marketCap": 192425574400
       },
       {
         "ticker": "EMR",
@@ -2910,8 +3151,8 @@
         "effectiveGrowth": 0.041,
         "debtToEquity": 69.283,
         "leverageFactor": 0.7427130565241772,
-        "avgVolume": 3463750,
-        "marketCap": 73672818688
+        "avgVolume": 3468045,
+        "marketCap": 81036165120
       },
       {
         "ticker": "BWA",
@@ -2921,8 +3162,8 @@
         "effectiveGrowth": 0.039,
         "debtToEquity": 72.266,
         "leverageFactor": 0.7345757457780259,
-        "avgVolume": 3051840,
-        "marketCap": 11234465792
+        "avgVolume": 3010855,
+        "marketCap": 11423916032
       },
       {
         "ticker": "PYPL",
@@ -2932,8 +3173,8 @@
         "effectiveGrowth": 0.037,
         "debtToEquity": 60.703,
         "leverageFactor": 0.7671564960894198,
-        "avgVolume": 24323513,
-        "marketCap": 42319536128
+        "avgVolume": 24170201,
+        "marketCap": 42055954432
       },
       {
         "ticker": "CMG",
@@ -2943,19 +3184,8 @@
         "effectiveGrowth": 0.049,
         "debtToEquity": 179.319,
         "leverageFactor": 0.5272606961422971,
-        "avgVolume": 17314381,
-        "marketCap": 42326118400
-      },
-      {
-        "ticker": "EGAN",
-        "score": 0.0254956951499343,
-        "revenueGrowth": 0.026,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0.026,
-        "debtToEquity": 3.956,
-        "leverageFactor": 0.9806036596128578,
-        "avgVolume": 208521,
-        "marketCap": 216076400
+        "avgVolume": 17233195,
+        "marketCap": 45016952832
       },
       {
         "ticker": "FLS",
@@ -2965,8 +3195,8 @@
         "effectiveGrowth": 0.035,
         "debtToEquity": 78.084,
         "leverageFactor": 0.719207146042203,
-        "avgVolume": 1575655,
-        "marketCap": 9354906624
+        "avgVolume": 1609005,
+        "marketCap": 10715319296
       },
       {
         "ticker": "SITE",
@@ -2976,8 +3206,8 @@
         "effectiveGrowth": 0.032,
         "debtToEquity": 58.222,
         "leverageFactor": 0.7745273446879042,
-        "avgVolume": 676693,
-        "marketCap": 5908756992
+        "avgVolume": 684730,
+        "marketCap": 6032239616
       },
       {
         "ticker": "DNN",
@@ -2987,8 +3217,8 @@
         "effectiveGrowth": 0.044,
         "debtToEquity": 166.799,
         "leverageFactor": 0.5452577569731651,
-        "avgVolume": 48875465,
-        "marketCap": 3187462656
+        "avgVolume": 47526298,
+        "marketCap": 3206515456
       },
       {
         "ticker": "REGN",
@@ -2998,8 +3228,8 @@
         "effectiveGrowth": 0.025,
         "debtToEquity": 9.511,
         "leverageFactor": 0.9546038155514508,
-        "avgVolume": 756391,
-        "marketCap": 81683357696
+        "avgVolume": 743571,
+        "marketCap": 80768876544
       },
       {
         "ticker": "TXRH",
@@ -3009,8 +3239,8 @@
         "effectiveGrowth": 0.031,
         "debtToEquity": 65.922,
         "leverageFactor": 0.7521002399199765,
-        "avgVolume": 995296,
-        "marketCap": 10923363328
+        "avgVolume": 999068,
+        "marketCap": 10908480512
       },
       {
         "ticker": "LYFT",
@@ -3020,8 +3250,8 @@
         "effectiveGrowth": 0.027,
         "debtToEquity": 40.211,
         "leverageFactor": 0.8326013379903502,
-        "avgVolume": 17525945,
-        "marketCap": 5311400448
+        "avgVolume": 17689865,
+        "marketCap": 5345345536
       },
       {
         "ticker": "GMAB",
@@ -3031,8 +3261,8 @@
         "effectiveGrowth": 0.03,
         "debtToEquity": 92.8,
         "leverageFactor": 0.6830601092896175,
-        "avgVolume": 1774315,
-        "marketCap": 16471221248
+        "avgVolume": 1719760,
+        "marketCap": 17577533440
       },
       {
         "ticker": "HOLX",
@@ -3042,30 +3272,19 @@
         "effectiveGrowth": 0.025,
         "debtToEquity": 48.051,
         "leverageFactor": 0.8062858041289896,
-        "avgVolume": 2801881,
-        "marketCap": 16875081728
+        "avgVolume": 4486440,
+        "marketCap": 16968846336
       },
       {
-        "ticker": "HOLX",
-        "score": 0.020157145103224743,
-        "revenueGrowth": 0.025,
+        "ticker": "URI",
+        "score": 0.014944013321520448,
+        "revenueGrowth": 0.028,
         "equityGrowth": 0,
-        "effectiveGrowth": 0.025,
-        "debtToEquity": 48.051,
-        "leverageFactor": 0.8062858041289896,
-        "avgVolume": 2801881,
-        "marketCap": 16875081728
-      },
-      {
-        "ticker": "LHX",
-        "score": 0.017650828245929756,
-        "revenueGrowth": 0.023,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0.023,
-        "debtToEquity": 60.611,
-        "leverageFactor": 0.7674273150404242,
-        "avgVolume": 1564615,
-        "marketCap": 64561291264
+        "effectiveGrowth": 0.028,
+        "debtToEquity": 174.732,
+        "leverageFactor": 0.5337147614828731,
+        "avgVolume": 678256,
+        "marketCap": 48134520832
       },
       {
         "ticker": "FOXF",
@@ -3075,8 +3294,19 @@
         "effectiveGrowth": 0.023,
         "debtToEquity": 116.464,
         "leverageFactor": 0.6319834167551444,
-        "avgVolume": 692586,
-        "marketCap": 690210432
+        "avgVolume": 679853,
+        "marketCap": 707193152
+      },
+      {
+        "ticker": "FND",
+        "score": 0.014150576282219093,
+        "revenueGrowth": 0.02,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.02,
+        "debtToEquity": 82.674,
+        "leverageFactor": 0.7075288141109547,
+        "avgVolume": 2696088,
+        "marketCap": 5643595776
       },
       {
         "ticker": "CCJ",
@@ -3086,8 +3316,19 @@
         "effectiveGrowth": 0.015,
         "debtToEquity": 14.673,
         "leverageFactor": 0.9316495320790226,
-        "avgVolume": 4271995,
-        "marketCap": 47338110976
+        "avgVolume": 4163985,
+        "marketCap": 50500050944
+      },
+      {
+        "ticker": "BDX",
+        "score": 0.011540514418430202,
+        "revenueGrowth": 0.016,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.016,
+        "debtToEquity": 77.284,
+        "leverageFactor": 0.7212821511518877,
+        "avgVolume": 2777392,
+        "marketCap": 56739037184
       },
       {
         "ticker": "ONTO",
@@ -3097,8 +3338,8 @@
         "effectiveGrowth": 0.011,
         "debtToEquity": 0.832,
         "leverageFactor": 0.9958572339069471,
-        "avgVolume": 918755,
-        "marketCap": 10192462848
+        "avgVolume": 902750,
+        "marketCap": 12275240960
       },
       {
         "ticker": "PHG",
@@ -3108,8 +3349,8 @@
         "effectiveGrowth": 0.011,
         "debtToEquity": 73.574,
         "leverageFactor": 0.7310636244672374,
-        "avgVolume": 1000605,
-        "marketCap": 26266724352
+        "avgVolume": 1022225,
+        "marketCap": 27139084288
       },
       {
         "ticker": "LULU",
@@ -3119,8 +3360,8 @@
         "effectiveGrowth": 0.008,
         "debtToEquity": 36.245,
         "leverageFactor": 0.8465787635717158,
-        "avgVolume": 2775425,
-        "marketCap": 17960333312
+        "avgVolume": 2741958,
+        "marketCap": 19191513088
       },
       {
         "ticker": "DORM",
@@ -3130,8 +3371,19 @@
         "effectiveGrowth": 0.008,
         "debtToEquity": 37.978,
         "leverageFactor": 0.8404138197648522,
-        "avgVolume": 242143,
-        "marketCap": 3189517568
+        "avgVolume": 247121,
+        "marketCap": 3232630016
+      },
+      {
+        "ticker": "ICLR",
+        "score": 0.005036514731805591,
+        "revenueGrowth": 0.006,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.006,
+        "debtToEquity": 38.26,
+        "leverageFactor": 0.8394191219675984,
+        "avgVolume": 1867980,
+        "marketCap": 8179294720
       },
       {
         "ticker": "WMS",
@@ -3141,8 +3393,8 @@
         "effectiveGrowth": 0.004,
         "debtToEquity": 74.108,
         "leverageFactor": 0.7296394122024895,
-        "avgVolume": 805616,
-        "marketCap": 10681822208
+        "avgVolume": 818023,
+        "marketCap": 11642274816
       },
       {
         "ticker": "ATI",
@@ -3152,8 +3404,8 @@
         "effectiveGrowth": 0.004,
         "debtToEquity": 95.915,
         "leverageFactor": 0.6758697598972677,
-        "avgVolume": 2054716,
-        "marketCap": 19918755840
+        "avgVolume": 2118015,
+        "marketCap": 22209013760
       },
       {
         "ticker": "SAIA",
@@ -3163,8 +3415,19 @@
         "effectiveGrowth": 0.001,
         "debtToEquity": 11.832,
         "leverageFactor": 0.9441444163299217,
-        "avgVolume": 569378,
-        "marketCap": 9368469504
+        "avgVolume": 562095,
+        "marketCap": 10656340992
+      },
+      {
+        "ticker": "NKE",
+        "score": 0.0007159913078655225,
+        "revenueGrowth": 0.001,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.001,
+        "debtToEquity": 79.333,
+        "leverageFactor": 0.7159913078655225,
+        "avgVolume": 18290435,
+        "marketCap": 64670486528
       },
       {
         "ticker": "LUNR",
@@ -3174,8 +3437,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 182.698,
         "leverageFactor": 0.5226052919011858,
-        "avgVolume": 11627115,
-        "marketCap": 2957954560
+        "avgVolume": 12295498,
+        "marketCap": 3622538240
       },
       {
         "ticker": "RCAT",
@@ -3185,19 +3448,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 7.499,
         "leverageFactor": 0.9638600667955026,
-        "avgVolume": 16702798,
-        "marketCap": 1585706496
-      },
-      {
-        "ticker": "BBAI",
-        "score": 0,
-        "revenueGrowth": 0,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0,
-        "debtToEquity": 18.764,
-        "leverageFactor": 0.9142272037446746,
-        "avgVolume": 56400265,
-        "marketCap": 1675719168
+        "avgVolume": 16744551,
+        "marketCap": 1499697920
       },
       {
         "ticker": "IONS",
@@ -3207,8 +3459,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 534.844,
         "leverageFactor": 0.27216660951167865,
-        "avgVolume": 2355063,
-        "marketCap": 12404268032
+        "avgVolume": 2311056,
+        "marketCap": 12569459712
       },
       {
         "ticker": "PCVX",
@@ -3218,8 +3470,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 4.375,
         "leverageFactor": 0.9785932721712537,
-        "avgVolume": 1392145,
-        "marketCap": 8437935616
+        "avgVolume": 1412985,
+        "marketCap": 8899691520
       },
       {
         "ticker": "VKTX",
@@ -3229,8 +3481,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 0.021,
         "leverageFactor": 0.9998950110238425,
-        "avgVolume": 3034130,
-        "marketCap": 3760136960
+        "avgVolume": 2922403,
+        "marketCap": 3980377600
       },
       {
         "ticker": "SRPT",
@@ -3240,8 +3492,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 91.139,
         "leverageFactor": 0.6869570892254215,
-        "avgVolume": 3036731,
-        "marketCap": 2284577536
+        "avgVolume": 3000563,
+        "marketCap": 2332872704
       },
       {
         "ticker": "XENE",
@@ -3251,8 +3503,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 1.366,
         "leverageFactor": 0.9932163324493709,
-        "avgVolume": 1420901,
-        "marketCap": 5549089280
+        "avgVolume": 1421030,
+        "marketCap": 5586306048
       },
       {
         "ticker": "ENPH",
@@ -3262,30 +3514,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 114.421,
         "leverageFactor": 0.6360898286055956,
-        "avgVolume": 6870625,
-        "marketCap": 4956846592
-      },
-      {
-        "ticker": "QS",
-        "score": 0,
-        "revenueGrowth": 0,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0,
-        "debtToEquity": 6.074,
-        "leverageFactor": 0.9705251511592923,
-        "avgVolume": 13687868,
-        "marketCap": 3908272640
-      },
-      {
-        "ticker": "ARRY",
-        "score": 0,
-        "revenueGrowth": 0,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0,
-        "debtToEquity": 294.251,
-        "leverageFactor": 0.404652696706734,
-        "avgVolume": 6288270,
-        "marketCap": 1105098240
+        "avgVolume": 6821548,
+        "marketCap": 4221039616
       },
       {
         "ticker": "AI",
@@ -3295,19 +3525,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 8.374,
         "leverageFactor": 0.9598126445717795,
-        "avgVolume": 6982771,
-        "marketCap": 1223352064
-      },
-      {
-        "ticker": "MAPS",
-        "score": 0,
-        "revenueGrowth": 0,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0,
-        "debtToEquity": 20.146,
-        "leverageFactor": 0.908488003415915,
-        "avgVolume": 895431,
-        "marketCap": 114766280
+        "avgVolume": 6862785,
+        "marketCap": 1234248832
       },
       {
         "ticker": "RVMD",
@@ -3317,8 +3536,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 26.185,
         "leverageFactor": 0.8842319340362977,
-        "avgVolume": 3310145,
-        "marketCap": 19272361984
+        "avgVolume": 3089606,
+        "marketCap": 19117787136
       },
       {
         "ticker": "GDRX",
@@ -3328,8 +3547,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 88.08,
         "leverageFactor": 0.6942515967786727,
-        "avgVolume": 3106678,
-        "marketCap": 671446016
+        "avgVolume": 3039266,
+        "marketCap": 739960960
       },
       {
         "ticker": "AEHR",
@@ -3337,10 +3556,10 @@
         "revenueGrowth": 0,
         "equityGrowth": 0,
         "effectiveGrowth": 0,
-        "debtToEquity": 7.771,
-        "leverageFactor": 0.962598245183399,
-        "avgVolume": 1525191,
-        "marketCap": 1135661952
+        "debtToEquity": 7.223,
+        "leverageFactor": 0.9651438305593492,
+        "avgVolume": 1778093,
+        "marketCap": 2062000640
       },
       {
         "ticker": "SWKS",
@@ -3350,8 +3569,19 @@
         "effectiveGrowth": 0,
         "debtToEquity": 20.714,
         "leverageFactor": 0.9061500403236769,
-        "avgVolume": 3829345,
-        "marketCap": 8052507136
+        "avgVolume": 3750058,
+        "marketCap": 8485904384
+      },
+      {
+        "ticker": "PSTG",
+        "score": 0,
+        "revenueGrowth": 0,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0,
+        "debtToEquity": 127.364,
+        "leverageFactor": 0.610940726530712,
+        "avgVolume": 3452603,
+        "marketCap": 19900356608
       },
       {
         "ticker": "ACLS",
@@ -3361,19 +3591,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 6.939,
         "leverageFactor": 0.9664683795707915,
-        "avgVolume": 817588,
-        "marketCap": 2859307520
-      },
-      {
-        "ticker": "UCTT",
-        "score": 0,
-        "revenueGrowth": 0,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0,
-        "debtToEquity": 83.369,
-        "leverageFactor": 0.7057935059939514,
-        "avgVolume": 1443838,
-        "marketCap": 2828570624
+        "avgVolume": 810843,
+        "marketCap": 3249540864
       },
       {
         "ticker": "TREX",
@@ -3383,8 +3602,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 18.113,
         "leverageFactor": 0.9169558898369193,
-        "avgVolume": 2027891,
-        "marketCap": 3783638272
+        "avgVolume": 1979853,
+        "marketCap": 4028297472
       },
       {
         "ticker": "GNRC",
@@ -3394,41 +3613,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 52.479,
         "leverageFactor": 0.7921450892945552,
-        "avgVolume": 1210361,
-        "marketCap": 11462759424
-      },
-      {
-        "ticker": "TMC",
-        "score": 0,
-        "revenueGrowth": 0,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0,
-        "debtToEquity": 0,
-        "leverageFactor": 1,
-        "avgVolume": 8075551,
-        "marketCap": 2541925376
-      },
-      {
-        "ticker": "WTTR",
-        "score": 0,
-        "revenueGrowth": 0,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0,
-        "debtToEquity": 38.241,
-        "leverageFactor": 0.839486066630009,
-        "avgVolume": 1414875,
-        "marketCap": 2112388224
-      },
-      {
-        "ticker": "SG",
-        "score": 0,
-        "revenueGrowth": 0,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0,
-        "debtToEquity": 99.542,
-        "leverageFactor": 0.6676860006276248,
-        "avgVolume": 4313998,
-        "marketCap": 616551168
+        "avgVolume": 1193370,
+        "marketCap": 12208632832
       },
       {
         "ticker": "LDOS",
@@ -3438,8 +3624,19 @@
         "effectiveGrowth": 0,
         "debtToEquity": 107.658,
         "leverageFactor": 0.6500724830818636,
-        "avgVolume": 1145760,
-        "marketCap": 19656591360
+        "avgVolume": 1136403,
+        "marketCap": 20005435392
+      },
+      {
+        "ticker": "BAH",
+        "score": 0,
+        "revenueGrowth": 0,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0,
+        "debtToEquity": 403.61,
+        "leverageFactor": 0.33133977236957635,
+        "avgVolume": 2479160,
+        "marketCap": 9829083136
       },
       {
         "ticker": "TECH",
@@ -3449,8 +3646,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 17.449,
         "leverageFactor": 0.9197558967849933,
-        "avgVolume": 2436865,
-        "marketCap": 8176248832
+        "avgVolume": 2448263,
+        "marketCap": 8684722176
       },
       {
         "ticker": "MRNA",
@@ -3460,8 +3657,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 15.087,
         "leverageFactor": 0.9298562907102708,
-        "avgVolume": 11226833,
-        "marketCap": 20146612224
+        "avgVolume": 10721501,
+        "marketCap": 20602687488
       },
       {
         "ticker": "BIIB",
@@ -3471,19 +3668,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 36.466,
         "leverageFactor": 0.8457875550819146,
-        "avgVolume": 1300475,
-        "marketCap": 26905241600
-      },
-      {
-        "ticker": "PCVX",
-        "score": 0,
-        "revenueGrowth": 0,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0,
-        "debtToEquity": 4.375,
-        "leverageFactor": 0.9785932721712537,
-        "avgVolume": 1392145,
-        "marketCap": 8437935616
+        "avgVolume": 1310493,
+        "marketCap": 26037164032
       },
       {
         "ticker": "ACLX",
@@ -3493,8 +3679,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 12.904,
         "leverageFactor": 0.9393905234283997,
-        "avgVolume": 2264088,
-        "marketCap": 6714652160
+        "avgVolume": 2266950,
+        "marketCap": 6713774592
       },
       {
         "ticker": "BEPC",
@@ -3504,30 +3690,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 168.588,
         "leverageFactor": 0.5426112624393632,
-        "avgVolume": 1190185,
-        "marketCap": 7178960896
-      },
-      {
-        "ticker": "STEM",
-        "score": 0,
-        "revenueGrowth": 0,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0,
-        "debtToEquity": 0,
-        "leverageFactor": 1,
-        "avgVolume": 218911,
-        "marketCap": 75307728
-      },
-      {
-        "ticker": "LDOS",
-        "score": 0,
-        "revenueGrowth": 0,
-        "equityGrowth": 0,
-        "effectiveGrowth": 0,
-        "debtToEquity": 107.658,
-        "leverageFactor": 0.6500724830818636,
-        "avgVolume": 1145760,
-        "marketCap": 19656591360
+        "avgVolume": 1211186,
+        "marketCap": 7708866048
       },
       {
         "ticker": "GPN",
@@ -3537,8 +3701,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 93.316,
         "leverageFactor": 0.6818584734552496,
-        "avgVolume": 3829641,
-        "marketCap": 18837358592
+        "avgVolume": 3792015,
+        "marketCap": 18364325888
       },
       {
         "ticker": "FISV",
@@ -3548,8 +3712,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 0,
         "leverageFactor": 1,
-        "avgVolume": 8525573,
-        "marketCap": 30012135424
+        "avgVolume": 8422878,
+        "marketCap": 30182842368
       },
       {
         "ticker": "COIN",
@@ -3559,8 +3723,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 53.119,
         "leverageFactor": 0.7901421860863862,
-        "avgVolume": 12568378,
-        "marketCap": 47084912640
+        "avgVolume": 12548976,
+        "marketCap": 47403106304
       },
       {
         "ticker": "TFX",
@@ -3570,8 +3734,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 90.324,
         "leverageFactor": 0.6888855210041196,
-        "avgVolume": 990506,
-        "marketCap": 5286829056
+        "avgVolume": 984035,
+        "marketCap": 5248374272
       },
       {
         "ticker": "AMAT",
@@ -3581,8 +3745,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 33.108,
         "leverageFactor": 0.857971412392539,
-        "avgVolume": 7807968,
-        "marketCap": 271247917056
+        "avgVolume": 7637071,
+        "marketCap": 313844924416
       },
       {
         "ticker": "ON",
@@ -3592,8 +3756,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 42.294,
         "leverageFactor": 0.825443469503991,
-        "avgVolume": 8764790,
-        "marketCap": 24915269632
+        "avgVolume": 8468823,
+        "marketCap": 27100733440
       },
       {
         "ticker": "ENTG",
@@ -3603,8 +3767,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 96.423,
         "leverageFactor": 0.6747114765048596,
-        "avgVolume": 2967491,
-        "marketCap": 17849659392
+        "avgVolume": 2891526,
+        "marketCap": 20072493056
       },
       {
         "ticker": "WOLF",
@@ -3614,8 +3778,19 @@
         "effectiveGrowth": 0,
         "debtToEquity": 330.379,
         "leverageFactor": 0.3770888364735406,
-        "avgVolume": 1659296,
-        "marketCap": 788886592
+        "avgVolume": 1663573,
+        "marketCap": 1142725376
+      },
+      {
+        "ticker": "GFS",
+        "score": 0,
+        "revenueGrowth": 0,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0,
+        "debtToEquity": 14.245,
+        "leverageFactor": 0.9335107003664028,
+        "avgVolume": 4037788,
+        "marketCap": 26953965568
       },
       {
         "ticker": "ATKR",
@@ -3625,8 +3800,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 65.896,
         "leverageFactor": 0.7521737822306466,
-        "avgVolume": 342260,
-        "marketCap": 1988239872
+        "avgVolume": 337636,
+        "marketCap": 2251155968
       },
       {
         "ticker": "MATX",
@@ -3636,8 +3811,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 26.354,
         "leverageFactor": 0.8835717504439948,
-        "avgVolume": 315201,
-        "marketCap": 5111655424
+        "avgVolume": 313218,
+        "marketCap": 5362810368
       },
       {
         "ticker": "AOS",
@@ -3647,8 +3822,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 10.974,
         "leverageFactor": 0.9479841117862865,
-        "avgVolume": 1435966,
-        "marketCap": 9118837760
+        "avgVolume": 1432701,
+        "marketCap": 9313825792
       },
       {
         "ticker": "TRMB",
@@ -3658,8 +3833,52 @@
         "effectiveGrowth": 0,
         "debtToEquity": 26.749,
         "leverageFactor": 0.8820325558216354,
-        "avgVolume": 2114191,
-        "marketCap": 15519585280
+        "avgVolume": 2105795,
+        "marketCap": 15505308672
+      },
+      {
+        "ticker": "HON",
+        "score": 0,
+        "revenueGrowth": 0,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0,
+        "debtToEquity": 236.613,
+        "leverageFactor": 0.45807156452052505,
+        "avgVolume": 4357903,
+        "marketCap": 149008744448
+      },
+      {
+        "ticker": "DE",
+        "score": 0,
+        "revenueGrowth": 0,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0,
+        "debtToEquity": 376.022,
+        "leverageFactor": 0.3472089607688595,
+        "avgVolume": 1622545,
+        "marketCap": 166048464896
+      },
+      {
+        "ticker": "ODFL",
+        "score": 0,
+        "revenueGrowth": 0,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0,
+        "debtToEquity": 3.28,
+        "leverageFactor": 0.9838646202282566,
+        "avgVolume": 2377736,
+        "marketCap": 43666026496
+      },
+      {
+        "ticker": "TTEK",
+        "score": 0,
+        "revenueGrowth": 0,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0,
+        "debtToEquity": 57.314,
+        "leverageFactor": 0.7772604677553495,
+        "avgVolume": 2947651,
+        "marketCap": 7993752064
       },
       {
         "ticker": "UUUU",
@@ -3669,8 +3888,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 98.992,
         "leverageFactor": 0.6689142184406272,
-        "avgVolume": 13665363,
-        "marketCap": 4409309696
+        "avgVolume": 13336005,
+        "marketCap": 4446758400
       },
       {
         "ticker": "LEU",
@@ -3680,8 +3899,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 158.96,
         "leverageFactor": 0.5571651437486072,
-        "avgVolume": 1105028,
-        "marketCap": 3413571584
+        "avgVolume": 1062345,
+        "marketCap": 3715029504
       },
       {
         "ticker": "WFRD",
@@ -3691,8 +3910,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 96.816,
         "leverageFactor": 0.6738181230122365,
-        "avgVolume": 1377513,
-        "marketCap": 6784226304
+        "avgVolume": 1354900,
+        "marketCap": 7347665408
       },
       {
         "ticker": "TDW",
@@ -3700,10 +3919,10 @@
         "revenueGrowth": 0,
         "equityGrowth": 0,
         "effectiveGrowth": 0,
-        "debtToEquity": 50.412,
-        "leverageFactor": 0.7986837691484434,
-        "avgVolume": 825828,
-        "marketCap": 4141867776
+        "debtToEquity": 45.454,
+        "leverageFactor": 0.814816625518427,
+        "avgVolume": 846021,
+        "marketCap": 4346606080
       },
       {
         "ticker": "NE",
@@ -3713,8 +3932,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 46.936,
         "leverageFactor": 0.8099264586775521,
-        "avgVolume": 2146390,
-        "marketCap": 7825361408
+        "avgVolume": 2133175,
+        "marketCap": 8052212736
       },
       {
         "ticker": "UEC",
@@ -3724,8 +3943,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 0.131,
         "leverageFactor": 0.9993454287441725,
-        "avgVolume": 10865698,
-        "marketCap": 6617980416
+        "avgVolume": 10702891,
+        "marketCap": 6814068736
       },
       {
         "ticker": "NXE",
@@ -3735,8 +3954,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 32.406,
         "leverageFactor": 0.8605629803017133,
-        "avgVolume": 9234186,
-        "marketCap": 7668407296
+        "avgVolume": 8974705,
+        "marketCap": 7618826752
       },
       {
         "ticker": "DINO",
@@ -3746,8 +3965,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 35.961,
         "leverageFactor": 0.8475976962294617,
-        "avgVolume": 3066608,
-        "marketCap": 11449250816
+        "avgVolume": 3024128,
+        "marketCap": 10359413760
       },
       {
         "ticker": "SM",
@@ -3757,8 +3976,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 59.314,
         "leverageFactor": 0.7712657241799518,
-        "avgVolume": 7060388,
-        "marketCap": 7432038912
+        "avgVolume": 7272308,
+        "marketCap": 6789661184
       },
       {
         "ticker": "PR",
@@ -3768,8 +3987,30 @@
         "effectiveGrowth": 0,
         "debtToEquity": 32.049,
         "leverageFactor": 0.8618869290537775,
-        "avgVolume": 12957316,
-        "marketCap": 18068162560
+        "avgVolume": 13220075,
+        "marketCap": 17298657280
+      },
+      {
+        "ticker": "XOM",
+        "score": 0,
+        "revenueGrowth": 0,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0,
+        "debtToEquity": 18.936,
+        "leverageFactor": 0.9135089706580918,
+        "avgVolume": 22741603,
+        "marketCap": 647556759552
+      },
+      {
+        "ticker": "EOG",
+        "score": 0,
+        "revenueGrowth": 0,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0,
+        "debtToEquity": 30.62,
+        "leverageFactor": 0.8672274737663689,
+        "avgVolume": 5417100,
+        "marketCap": 73349120000
       },
       {
         "ticker": "SMPL",
@@ -3779,8 +4020,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 26.012,
         "leverageFactor": 0.884908765906235,
-        "avgVolume": 2208593,
-        "marketCap": 1363238272
+        "avgVolume": 2192383,
+        "marketCap": 1112440320
       },
       {
         "ticker": "CROX",
@@ -3790,8 +4031,8 @@
         "effectiveGrowth": 0,
         "debtToEquity": 124.787,
         "leverageFactor": 0.6157881934929662,
-        "avgVolume": 1281193,
-        "marketCap": 4310037504
+        "avgVolume": 1272813,
+        "marketCap": 5255681536
       },
       {
         "ticker": "WOOF",
@@ -3801,11 +4042,33 @@
         "effectiveGrowth": 0,
         "debtToEquity": 247.899,
         "leverageFactor": 0.44652923985094856,
-        "avgVolume": 2669786,
-        "marketCap": 790508672
+        "avgVolume": 2631030,
+        "marketCap": 811835392
+      },
+      {
+        "ticker": "POOL",
+        "score": 0,
+        "revenueGrowth": 0,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0,
+        "debtToEquity": 129.513,
+        "leverageFactor": 0.6069563264575297,
+        "avgVolume": 833346,
+        "marketCap": 7854199808
       }
     ],
     "highLeverage": [
+      {
+        "ticker": "DKNG",
+        "score": 0.17144757029150096,
+        "revenueGrowth": 0.428,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.428,
+        "debtToEquity": 299.278,
+        "leverageFactor": 0.40057843526051623,
+        "avgVolume": 15974246,
+        "marketCap": 11263276032
+      },
       {
         "ticker": "UPST",
         "score": 0.15727296002340807,
@@ -3814,8 +4077,8 @@
         "effectiveGrowth": 0.344,
         "debtToEquity": 237.456,
         "leverageFactor": 0.45718883727734905,
-        "avgVolume": 5195938,
-        "marketCap": 2515271680
+        "avgVolume": 5085381,
+        "marketCap": 2705510656
       },
       {
         "ticker": "FOUR",
@@ -3825,8 +4088,8 @@
         "effectiveGrowth": 0.339,
         "debtToEquity": 235.871,
         "leverageFactor": 0.458851357397028,
-        "avgVolume": 2542153,
-        "marketCap": 4467616256
+        "avgVolume": 2536230,
+        "marketCap": 4221401856
       },
       {
         "ticker": "NET",
@@ -3836,8 +4099,8 @@
         "effectiveGrowth": 0.336,
         "debtToEquity": 241.126,
         "leverageFactor": 0.453385200600282,
-        "avgVolume": 4675603,
-        "marketCap": 72627609600
+        "avgVolume": 4708525,
+        "marketCap": 66221572096
       },
       {
         "ticker": "HIMS",
@@ -3847,8 +4110,8 @@
         "effectiveGrowth": 0.284,
         "debtToEquity": 207.161,
         "leverageFactor": 0.491206181338586,
-        "avgVolume": 34227795,
-        "marketCap": 4732008960
+        "avgVolume": 35072516,
+        "marketCap": 4424314368
       },
       {
         "ticker": "AFRM",
@@ -3858,8 +4121,8 @@
         "effectiveGrowth": 0.296,
         "debtToEquity": 258.872,
         "leverageFactor": 0.43585139210934637,
-        "avgVolume": 6595175,
-        "marketCap": 15263130624
+        "avgVolume": 6560520,
+        "marketCap": 16272454656
       },
       {
         "ticker": "BE",
@@ -3869,8 +4132,30 @@
         "effectiveGrowth": 0.359,
         "debtToEquity": 377.798,
         "leverageFactor": 0.3461417311932544,
-        "avgVolume": 11638688,
-        "marketCap": 38011482112
+        "avgVolume": 11392458,
+        "marketCap": 45580668928
+      },
+      {
+        "ticker": "CPAY",
+        "score": 0.09338036937123884,
+        "revenueGrowth": 0.207,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.207,
+        "debtToEquity": 243.348,
+        "leverageFactor": 0.4511128955132311,
+        "avgVolume": 693530,
+        "marketCap": 21440045056
+      },
+      {
+        "ticker": "CAT",
+        "score": 0.08852386455848722,
+        "revenueGrowth": 0.18,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.18,
+        "debtToEquity": 206.67,
+        "leverageFactor": 0.49179924754715126,
+        "avgVolume": 2809021,
+        "marketCap": 369549443072
       },
       {
         "ticker": "IRTC",
@@ -3880,8 +4165,30 @@
         "effectiveGrowth": 0.271,
         "debtToEquity": 478.693,
         "leverageFactor": 0.2946840471317665,
-        "avgVolume": 701503,
-        "marketCap": 3814023936
+        "avgVolume": 711711,
+        "marketCap": 3820810752
+      },
+      {
+        "ticker": "MA",
+        "score": 0.07718587323097434,
+        "revenueGrowth": 0.176,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.176,
+        "debtToEquity": 256.042,
+        "leverageFactor": 0.43855609790326333,
+        "avgVolume": 3941218,
+        "marketCap": 448971997184
+      },
+      {
+        "ticker": "ORCL",
+        "score": 0.07053871096194324,
+        "revenueGrowth": 0.217,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.217,
+        "debtToEquity": 415.265,
+        "leverageFactor": 0.32506318415642044,
+        "avgVolume": 27539711,
+        "marketCap": 402258198528
       },
       {
         "ticker": "VRRM",
@@ -3891,8 +4198,8 @@
         "effectiveGrowth": 0.164,
         "debtToEquity": 363.918,
         "leverageFactor": 0.3546614933376839,
-        "avgVolume": 1640605,
-        "marketCap": 2280175872
+        "avgVolume": 1724108,
+        "marketCap": 2347193088
       },
       {
         "ticker": "IQV",
@@ -3902,8 +4209,8 @@
         "effectiveGrowth": 0.103,
         "debtToEquity": 245.928,
         "leverageFactor": 0.4485028973287168,
-        "avgVolume": 2109235,
-        "marketCap": 28940636160
+        "avgVolume": 2079553,
+        "marketCap": 28446812160
       },
       {
         "ticker": "VST",
@@ -3913,8 +4220,8 @@
         "effectiveGrowth": 0.136,
         "debtToEquity": 399.55,
         "leverageFactor": 0.3335835209740639,
-        "avgVolume": 5594365,
-        "marketCap": 50894114816
+        "avgVolume": 5431198,
+        "marketCap": 54844985344
       },
       {
         "ticker": "BURL",
@@ -3924,8 +4231,8 @@
         "effectiveGrowth": 0.113,
         "debtToEquity": 332.461,
         "leverageFactor": 0.37561436424451744,
-        "avgVolume": 854131,
-        "marketCap": 20397234176
+        "avgVolume": 830423,
+        "marketCap": 21324279808
       },
       {
         "ticker": "BL",
@@ -3935,8 +4242,19 @@
         "effectiveGrowth": 0.081,
         "debtToEquity": 247.79,
         "leverageFactor": 0.44663793295964627,
-        "avgVolume": 1286690,
-        "marketCap": 2203778816
+        "avgVolume": 1312308,
+        "marketCap": 1914607360
+      },
+      {
+        "ticker": "PEP",
+        "score": 0.024449824376038303,
+        "revenueGrowth": 0.056,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.056,
+        "debtToEquity": 258.081,
+        "leverageFactor": 0.4366040067149697,
+        "avgVolume": 7883096,
+        "marketCap": 214397845504
       },
       {
         "ticker": "HALO",
@@ -3946,8 +4264,19 @@
         "effectiveGrowth": 0.516,
         "debtToEquity": 4460.194,
         "leverageFactor": 0.04291666827604172,
-        "avgVolume": 1882550,
-        "marketCap": 7656993792
+        "avgVolume": 1796065,
+        "marketCap": 7872616960
+      },
+      {
+        "ticker": "AMGN",
+        "score": 0.020469489155336047,
+        "revenueGrowth": 0.086,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.086,
+        "debtToEquity": 640.275,
+        "leverageFactor": 0.2380173157597215,
+        "avgVolume": 2812490,
+        "marketCap": 192236912640
       },
       {
         "ticker": "AES",
@@ -3957,8 +4286,8 @@
         "effectiveGrowth": 0.047,
         "debtToEquity": 259.393,
         "leverageFactor": 0.43535709076977663,
-        "avgVolume": 13443215,
-        "marketCap": 10047178752
+        "avgVolume": 13510448,
+        "marketCap": 10293188608
       },
       {
         "ticker": "WEX",
@@ -3968,19 +4297,30 @@
         "effectiveGrowth": 0.057,
         "debtToEquity": 398.696,
         "leverageFactor": 0.3340593556663148,
-        "avgVolume": 463218,
-        "marketCap": 5250896384
+        "avgVolume": 469720,
+        "marketCap": 5369783296
       },
       {
-        "ticker": "CHPT",
-        "score": 0.009899385627854973,
-        "revenueGrowth": 0.073,
+        "ticker": "ZTS",
+        "score": 0.012510790556855287,
+        "revenueGrowth": 0.03,
         "equityGrowth": 0,
-        "effectiveGrowth": 0.073,
-        "debtToEquity": 1274.839,
-        "leverageFactor": 0.1356080222993832,
-        "avgVolume": 495731,
-        "marketCap": 114954008
+        "effectiveGrowth": 0.03,
+        "debtToEquity": 279.586,
+        "leverageFactor": 0.41702635189517623,
+        "avgVolume": 4384241,
+        "marketCap": 52420456448
+      },
+      {
+        "ticker": "GDDY",
+        "score": 0.006814572964284122,
+        "revenueGrowth": 0.068,
+        "equityGrowth": 0,
+        "effectiveGrowth": 0.068,
+        "debtToEquity": 1795.723,
+        "leverageFactor": 0.1002143082982959,
+        "avgVolume": 2241606,
+        "marketCap": 10703214592
       },
       {
         "ticker": "RPD",
@@ -3990,72 +4330,20 @@
         "effectiveGrowth": 0.005,
         "debtToEquity": 625.844,
         "leverageFactor": 0.24217648853778678,
-        "avgVolume": 1877760,
-        "marketCap": 363071072
+        "avgVolume": 1917673,
+        "marketCap": 336384352
       }
     ]
   },
   "errors": [
     {
-      "ticker": "BIGC",
-      "error": "Quote not found for symbol: BIGC"
+      "ticker": "JAMF",
+      "error": "Quote not found for symbol: JAMF"
     },
     {
-      "ticker": "AXT",
-      "error": "No fundamentals data found for symbol: AXT"
-    },
-    {
-      "ticker": "AZEK",
-      "error": "No fundamentals data found for symbol: AZEK"
-    },
-    {
-      "ticker": "MOG.A",
-      "error": "Failed Yahoo Schema validation"
-    },
-    {
-      "ticker": "KBRA",
-      "error": "Quote not found for symbol: KBRA"
-    },
-    {
-      "ticker": "ROCKETLAB",
-      "error": "Quote not found for symbol: ROCKETLAB"
-    },
-    {
-      "ticker": "SGEN",
-      "error": "No fundamentals data found for symbol: SGEN"
-    },
-    {
-      "ticker": "BGNE",
-      "error": "No fundamentals data found for symbol: BGNE"
-    },
-    {
-      "ticker": "NOVA",
-      "error": "No fundamentals data found for symbol: NOVA"
-    },
-    {
-      "ticker": "ANSS",
-      "error": "Quote not found for symbol: ANSS"
-    },
-    {
-      "ticker": "SMAR",
-      "error": "No fundamentals data found for symbol: SMAR"
-    },
-    {
-      "ticker": "ZI",
-      "error": "No fundamentals data found for symbol: ZI"
-    },
-    {
-      "ticker": "SQ",
-      "error": "No fundamentals data found for symbol: SQ"
-    },
-    {
-      "ticker": "CYBR",
-      "error": "Failed Yahoo Schema validation"
-    },
-    {
-      "ticker": "GPS",
-      "error": "No fundamentals data found for symbol: GPS"
+      "ticker": "ITCI",
+      "error": "No fundamentals data found for symbol: ITCI"
     }
   ],
-  "totalScored": 347
+  "totalScored": 384
 }
