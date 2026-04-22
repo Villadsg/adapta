@@ -37,55 +37,11 @@
     <div class="action-controls">
       <button id="btn-screen" class="action-btn btn-analyze-events">🔍 Screen</button>
       <button id="btn-glm" class="action-btn btn-analyze-events">GLM</button>
-      <button id="btn-diversify" class="action-btn btn-analyze-events">📋 Diversify</button>
       <button id="btn-settings" class="action-btn btn-settings">⚙️ Settings</button>
     </div>
   </div>
 
   <!-- The browser view will be positioned here by Electron -->
-
-  <!-- Diversification Modal -->
-  <div id="diversification-modal" class="modal" style="display: none;">
-    <div class="modal-content" style="max-width: 680px;">
-      <h3>Portfolio Diversification</h3>
-      <p>Find the best stock to add for diversification benefit.</p>
-      <div class="modal-form">
-        <div class="form-row">
-          <label>Current Holdings</label>
-          <div id="div-holdings-list" style="margin-bottom: 8px;"></div>
-          <div style="display: flex; gap: 6px; align-items: center;">
-            <input type="text" id="div-add-ticker" placeholder="Ticker" style="width: 100px;" />
-            <input type="number" id="div-add-shares" placeholder="Shares" value="1" min="0.01" step="any" style="width: 100px;" />
-            <button id="div-add-btn" class="btn-modal btn-primary" style="padding: 6px 12px;">Add</button>
-          </div>
-        </div>
-        <div class="form-row">
-          <label for="div-candidates">Candidate Tickers (comma-separated)</label>
-          <div style="display: flex; gap: 6px; align-items: center;">
-            <input type="text" id="div-candidates" placeholder="e.g., GLD, TLT, XOM, MSFT" style="flex: 1;" />
-            <button id="div-discover-btn" class="btn-modal btn-primary" style="padding: 6px 12px; white-space: nowrap;">Discover</button>
-          </div>
-          <div id="div-discover-status" style="font-size: 0.85em; color: #888; margin-top: 4px;"></div>
-        </div>
-        <div class="form-row">
-          <label for="div-days">Lookback Days</label>
-          <input type="number" id="div-days" value="200" min="30" max="2000" />
-        </div>
-        <div class="form-row">
-          <label for="div-api-select">Data Source</label>
-          <select id="div-api-select">
-            <option value="auto">Auto (Twelve Data → EODHD fallback)</option>
-            <option value="twelvedata">Twelve Data (US markets)</option>
-            <option value="eodhd">EODHD (International markets)</option>
-          </select>
-        </div>
-      </div>
-      <div class="modal-buttons">
-        <button id="div-cancel" class="btn-modal btn-cancel">Cancel</button>
-        <button id="div-analyze" class="btn-modal btn-primary">Analyze</button>
-      </div>
-    </div>
-  </div>
 
   <!-- Screening Modal -->
   <div id="screening-modal" class="modal" style="display: none;">
@@ -126,7 +82,9 @@
       </div>
       <div class="modal-buttons">
         <button id="screen-cancel" class="btn-modal btn-cancel">Cancel</button>
-        <button id="screen-view-screening" class="btn-modal btn-cancel" style="flex: 0 0 auto;">Latest Run Results</button>
+        <select id="screen-view-screening" class="btn-modal btn-cancel" style="flex: 0 0 auto;">
+          <option value="" disabled selected>Latest Run Results ▾</option>
+        </select>
         <button id="screen-run" class="btn-modal btn-primary">Run Screening</button>
       </div>
       <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; display: flex; gap: 8px;">

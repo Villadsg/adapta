@@ -18,6 +18,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Text extraction
   downloadText: () => ipcRenderer.invoke('download-text'),
 
+  // Backend readiness
+  waitBackendReady: () => ipcRenderer.invoke('wait-backend-ready'),
+
   // Database operations
   analyzePage: () => ipcRenderer.invoke('analyze-page'),
   saveArticle: (category, manualTickers) => ipcRenderer.invoke('save-article', category, manualTickers),
@@ -53,13 +56,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   showModal: () => ipcRenderer.invoke('show-modal'),
   hideModal: () => ipcRenderer.invoke('hide-modal'),
 
-  // Portfolio diversification
-  portfolioGetHoldings: () => ipcRenderer.invoke('portfolio-get-holdings'),
-  portfolioSaveHolding: (ticker, shares) => ipcRenderer.invoke('portfolio-save-holding', ticker, shares),
-  portfolioRemoveHolding: (ticker) => ipcRenderer.invoke('portfolio-remove-holding', ticker),
-  analyzeDiversification: (params) => ipcRenderer.invoke('analyze-diversification', params),
-  discoverCandidates: (holdingTickers) => ipcRenderer.invoke('discover-candidates', holdingTickers),
-
   // GLM analysis
   runGlmAnalysis: (options) => ipcRenderer.invoke('run-glm-analysis', options),
 
@@ -67,7 +63,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   screenTickers: (options) => ipcRenderer.invoke('screen-tickers', options),
   reviseTickers: () => ipcRenderer.invoke('revise-tickers'),
   loadReviseResults: () => ipcRenderer.invoke('load-revise-results'),
-  loadScreeningResults: () => ipcRenderer.invoke('load-screening-results'),
+  loadScreeningResults: (filePath) => ipcRenderer.invoke('load-screening-results', filePath),
+  listScreeningRuns: () => ipcRenderer.invoke('list-screening-runs'),
   toggleFavorite: (ticker) => ipcRenderer.invoke('toggle-favorite', ticker),
   getFavorites: () => ipcRenderer.invoke('get-favorites'),
   onReviseProgress: (callback) => ipcRenderer.on('revise-progress', (event, data) => callback(data)),

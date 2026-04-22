@@ -21,10 +21,8 @@ const PriceTrackingService = require('./src/services/priceTracking');
 const StockAnalysisService = require('./src/services/stockAnalysis');
 const OptionsAnalysisService = require('./src/services/optionsAnalysis');
 const IBOptionsProvider = require('./src/services/ibOptionsProvider');
-const PortfolioAnalysisService = require('./src/services/portfolioAnalysis');
 const articleExtractor = require('./src/services/articleExtractor');
 const newsScraper = require('./src/services/newsScraper');
-const TickerDiscoveryService = require('./src/services/tickerDiscovery');
 const ChronosHoldPeriodService = require('./src/services/chronosHoldPeriod');
 const GLMAnalysisService = require('./src/services/glmAnalysis');
 const { screenTickers, reviseTickers } = require('./ci/ticker-screen');
@@ -36,8 +34,6 @@ let database;
 let priceTracker;
 let stockAnalyzer;
 let optionsAnalyzer;
-let portfolioAnalyzer;
-let tickerDiscovery;
 let chronosHoldService;
 let glmAnalyzer;
 
@@ -1460,87 +1456,64 @@ ipcMain.handle('get-analyzed-tickers', async () => {
   }
 });
 
-// Portfolio diversification handlers
-ipcMain.handle('portfolio-get-holdings', async () => {
-  try {
-    const holdings = await portfolioAnalyzer.getHoldings();
-    return { success: true, holdings };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('portfolio-save-holding', async (event, ticker, shares) => {
-  try {
-    const result = await portfolioAnalyzer.saveHolding(ticker, shares);
-    return { success: true, ...result };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('portfolio-remove-holding', async (event, ticker) => {
-  try {
-    const result = await portfolioAnalyzer.removeHolding(ticker);
-    return { success: true, ...result };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('analyze-diversification', async (event, params) => {
-  try {
-    console.log('\nRunning diversification analysis...');
-    const result = await portfolioAnalyzer.analyzeDiversification(params);
-    const html = portfolioAnalyzer.generateDiversificationHTML(result);
-    return { success: true, html, result };
-  } catch (error) {
-    console.error('Diversification analysis error:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('discover-candidates', async (event, holdingTickers) => {
-  try {
-    console.log('\nDiscovering candidate tickers from Finviz...');
-    const browserView = getExtractionBrowserView();
-    const result = await tickerDiscovery.discoverCandidates(browserView, holdingTickers);
-    console.log(`Discovered ${result.stats.total} candidates (${result.stats.screenerTickers} from screener, ${result.stats.holdingRelatedTickers} from holdings)`);
-    return { success: true, ...result };
-  } catch (error) {
-    console.error('Ticker discovery error:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-// Combine IV from a saved history record (exp1/exp2/exp3 format).
-// Uses dv field for weighting if available, otherwise equal weights.
+// Combine IV from a saved history record (exp1/exp2/exp3 format) using the
+// single-pool scheme: each quantity is weighted across expirations by its own DV.
+//
+// New records (post-flip) have per-side DVs: callDV / putDV for OTM, and
+// atmCallDV / atmPutDV + atmBandCallIV / atmBandPutIV for the band-based ATM.
+// Older records only carry a combined `dv` (call+put) and a single-strike
+// `atmCallIV` / `atmPutIV`; we fall back to that for historical continuity.
 function combineHistRecord(record) {
   const exps = [];
   for (const key of ['exp1', 'exp2', 'exp3']) {
     const e = record[key];
     if (!e || (e.callIV <= 0 && e.putIV <= 0)) continue;
-    exps.push({ e, dv: e.dv || 0 });
+    exps.push(e);
   }
   if (exps.length === 0) return null;
-  const totalDV = exps.reduce((s, x) => s + x.dv, 0);
-  const useEqualWeights = totalDV === 0;
-  const weights = useEqualWeights
-    ? exps.map(() => 1 / exps.length)
-    : exps.map(x => x.dv / totalDV);
-  let callIV = 0, putIV = 0, atmCallIV = 0, atmPutIV = 0;
-  let hasAtmCall = false, hasAtmPut = false;
-  for (let i = 0; i < exps.length; i++) {
-    const e = exps[i].e;
-    callIV += (e.callIV || 0) * weights[i];
-    putIV += (e.putIV || 0) * weights[i];
-    if (e.atmCallIV != null) { atmCallIV += e.atmCallIV * weights[i]; hasAtmCall = true; }
-    if (e.atmPutIV != null) { atmPutIV += e.atmPutIV * weights[i]; hasAtmPut = true; }
-  }
+
+  // If no expiration has a usable DV, fall back to equal weights across the
+  // expirations that do carry a value — matches the legacy behavior and keeps
+  // pre-flip history records (which have no dv/callDV/putDV) contributing.
+  const poolWeighted = (valueFn, weightFn) => {
+    const vals = [];
+    for (const e of exps) {
+      const v = valueFn(e);
+      if (v == null) continue;
+      const w = weightFn(e);
+      vals.push({ v, w: w > 0 ? w : 0 });
+    }
+    if (vals.length === 0) return null;
+    const sumW = vals.reduce((s, x) => s + x.w, 0);
+    if (sumW > 0) return vals.reduce((s, x) => s + x.v * x.w, 0) / sumW;
+    return vals.reduce((s, x) => s + x.v, 0) / vals.length;
+  };
+
+  // Fallback weight when new per-side DV is missing on older records.
+  const fallbackDV = (e) => (e.dv || 0);
+
+  const callIV = poolWeighted(
+    (e) => (e.callIV > 0 ? e.callIV : null),
+    (e) => (e.callDV != null ? e.callDV : fallbackDV(e)),
+  ) ?? 0;
+  const putIV = poolWeighted(
+    (e) => (e.putIV > 0 ? e.putIV : null),
+    (e) => (e.putDV != null ? e.putDV : fallbackDV(e)),
+  ) ?? 0;
+
+  const atmCallIV = poolWeighted(
+    (e) => (e.atmBandCallIV != null && e.atmBandCallIV > 0 ? e.atmBandCallIV : (e.atmCallIV != null ? e.atmCallIV : null)),
+    (e) => (e.atmCallDV != null ? e.atmCallDV : fallbackDV(e)),
+  );
+  const atmPutIV = poolWeighted(
+    (e) => (e.atmBandPutIV != null && e.atmBandPutIV > 0 ? e.atmBandPutIV : (e.atmPutIV != null ? e.atmPutIV : null)),
+    (e) => (e.atmPutDV != null ? e.atmPutDV : fallbackDV(e)),
+  );
+
   return {
     callIV, putIV,
-    atmCallIV: hasAtmCall ? atmCallIV : null,
-    atmPutIV: hasAtmPut ? atmPutIV : null,
+    atmCallIV,
+    atmPutIV,
   };
 }
 
@@ -1587,7 +1560,7 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
         if (!entry.ticker || entry.skipped || entry.error) continue;
         try {
           const headlines = await fetchFinvizNews(entry.ticker);
-          entry.news = (headlines || []).slice(0, 5);
+          entry.news = headlines || [];
         } catch (_) { entry.news = []; }
       }
       finvizBusy = false;
@@ -1632,15 +1605,41 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       if (!od || od.length === 0) continue;
       if (!ivHistory[entry.ticker]) ivHistory[entry.ticker] = [];
       const record = { date: today, sector: entry.sector || '' };
-      const expDV = (exp) => {
+      const expCallDV = (exp) => {
         let dv = 0;
         for (const c of (exp.calls || [])) dv += c.dollarVol || 0;
+        return dv;
+      };
+      const expPutDV = (exp) => {
+        let dv = 0;
         for (const p of (exp.puts || [])) dv += p.dollarVol || 0;
         return dv;
       };
-      if (od[0]) { record.exp1 = { label: od[0].label, callIV: od[0].wCallIV, putIV: od[0].wPutIV, atmCallIV: od[0].atmCallIV, atmPutIV: od[0].atmPutIV, deepOTMCallPct: od[0].deepOTMCallPct, deepOTMPutPct: od[0].deepOTMPutPct, dv: expDV(od[0]) }; }
-      if (od[1]) { record.exp2 = { label: od[1].label, callIV: od[1].wCallIV, putIV: od[1].wPutIV, atmCallIV: od[1].atmCallIV, atmPutIV: od[1].atmPutIV, deepOTMCallPct: od[1].deepOTMCallPct, deepOTMPutPct: od[1].deepOTMPutPct, dv: expDV(od[1]) }; }
-      if (od[2]) { record.exp3 = { label: od[2].label, callIV: od[2].wCallIV, putIV: od[2].wPutIV, atmCallIV: od[2].atmCallIV, atmPutIV: od[2].atmPutIV, deepOTMCallPct: od[2].deepOTMCallPct, deepOTMPutPct: od[2].deepOTMPutPct, dv: expDV(od[2]) }; }
+      const buildExpRecord = (e) => {
+        const callDV = expCallDV(e);
+        const putDV = expPutDV(e);
+        return {
+          label: e.label,
+          callIV: e.wCallIV,
+          putIV: e.wPutIV,
+          atmCallIV: e.atmCallIV,
+          atmPutIV: e.atmPutIV,
+          // Band-definition ATM (complement of the OTM filter) — stored now so a future
+          // switch to band-based ATM can re-derive single-pool spreads from history.
+          atmBandCallIV: e.atmBandCallIV ?? null,
+          atmBandPutIV: e.atmBandPutIV ?? null,
+          atmCallDV: e.atmCallDV ?? 0,
+          atmPutDV: e.atmPutDV ?? 0,
+          deepOTMCallPct: e.deepOTMCallPct,
+          deepOTMPutPct: e.deepOTMPutPct,
+          callDV,
+          putDV,
+          dv: callDV + putDV, // retained for back-compat with older readers
+        };
+      };
+      if (od[0]) record.exp1 = buildExpRecord(od[0]);
+      if (od[1]) record.exp2 = buildExpRecord(od[1]);
+      if (od[2]) record.exp3 = buildExpRecord(od[2]);
       // Replace if same date exists, otherwise append
       const existing = ivHistory[entry.ticker].findIndex(r => r.date === today);
       if (existing >= 0) ivHistory[entry.ticker][existing] = record;
@@ -1770,12 +1769,33 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
 
     // Generate HTML results page
     const currentFavorites = loadFavorites();
-    const html = generateScreeningHTML(result.allTickers, tickers.length, config, ivHistoryForHTML, currentFavorites, preEventStats);
+    const currentNotes = loadNotes();
+    const html = generateScreeningHTML(result.allTickers, tickers.length, config, ivHistoryForHTML, currentFavorites, preEventStats, currentNotes);
 
-    // Save HTML for "Latest Run Results"
+    // Save HTML for "Latest Run Results" (alias) and a timestamped snapshot in ci/screening-runs/
     const screenResultsPath = path.join(__dirname, 'ci', 'screening-results.html');
     fs.writeFileSync(screenResultsPath, html, 'utf-8');
-    console.log('[Screen] Results saved to ci/screening-results.html');
+
+    const runsDir = path.join(__dirname, 'ci', 'screening-runs');
+    fs.mkdirSync(runsDir, { recursive: true });
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const snapshotPath = path.join(runsDir, `run-${ts}.html`);
+    fs.writeFileSync(snapshotPath, html, 'utf-8');
+
+    // Prune to 3 most recent snapshots
+    try {
+      const entries = fs.readdirSync(runsDir)
+        .filter((f) => f.startsWith('run-') && f.endsWith('.html'))
+        .map((f) => ({ f, mtime: fs.statSync(path.join(runsDir, f)).mtimeMs }))
+        .sort((a, b) => b.mtime - a.mtime);
+      for (const old of entries.slice(3)) {
+        fs.unlinkSync(path.join(runsDir, old.f));
+      }
+    } catch (pruneErr) {
+      console.warn('[Screen] Failed to prune old run snapshots:', pruneErr.message);
+    }
+
+    console.log(`[Screen] Results saved to ci/screening-results.html (snapshot: ${path.basename(snapshotPath)})`);
 
     return { success: true, filePath: screenResultsPath, hitCount: result.hits.length };
   } catch (error) {
@@ -1842,15 +1862,57 @@ ipcMain.handle('load-revise-results', async () => {
   }
 });
 
-// Load last screening results from disk
-ipcMain.handle('load-screening-results', async () => {
+// Load a screening run from disk — either the latest alias, or a specific snapshot path.
+ipcMain.handle('load-screening-results', async (event, requestedPath) => {
   try {
     const fs = require('fs');
-    const resultsPath = path.join(__dirname, 'ci', 'screening-results.html');
-    if (!fs.existsSync(resultsPath)) {
+    const runsDir = path.join(__dirname, 'ci', 'screening-runs');
+    const latestAlias = path.join(__dirname, 'ci', 'screening-results.html');
+
+    let targetPath = requestedPath || latestAlias;
+
+    // Safety: if a path is provided, require it to live inside ci/screening-runs or equal the alias.
+    if (requestedPath) {
+      const resolved = path.resolve(requestedPath);
+      const allowedDir = path.resolve(runsDir);
+      if (!resolved.startsWith(allowedDir + path.sep) && resolved !== path.resolve(latestAlias)) {
+        return { success: false, error: 'Invalid screening results path.' };
+      }
+      targetPath = resolved;
+    }
+
+    if (!fs.existsSync(targetPath)) {
       return { success: false, error: 'No previous screening results found. Run screening first.' };
     }
-    return { success: true, filePath: resultsPath };
+    return { success: true, filePath: targetPath };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// List the most recent screening run snapshots (newest first, up to 3).
+ipcMain.handle('list-screening-runs', async () => {
+  try {
+    const fs = require('fs');
+    const runsDir = path.join(__dirname, 'ci', 'screening-runs');
+    if (!fs.existsSync(runsDir)) {
+      return { success: true, runs: [] };
+    }
+    const runs = fs.readdirSync(runsDir)
+      .filter((f) => f.startsWith('run-') && f.endsWith('.html'))
+      .map((f) => {
+        const full = path.join(runsDir, f);
+        const mtime = fs.statSync(full).mtimeMs;
+        return { filename: f, filePath: full, mtime };
+      })
+      .sort((a, b) => b.mtime - a.mtime)
+      .slice(0, 3)
+      .map((r) => ({
+        filePath: r.filePath,
+        label: new Date(r.mtime).toLocaleString(),
+        timestamp: r.mtime,
+      }));
+    return { success: true, runs };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -1893,7 +1955,33 @@ ipcMain.handle('get-favorites', async () => {
   return { favorites: loadFavorites() };
 });
 
-function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData = {}, favorites = [], preEventStats = {}) {
+const NOTES_PATH = path.join(__dirname, 'ci', 'screening-notes.json');
+
+function loadNotes() {
+  try { return JSON.parse(require('fs').readFileSync(NOTES_PATH, 'utf-8')); } catch (_) { return {}; }
+}
+
+function saveNotes(notes) {
+  require('fs').writeFileSync(NOTES_PATH, JSON.stringify(notes, null, 2) + '\n', 'utf-8');
+}
+
+ipcMain.handle('get-notes', async () => {
+  return { notes: loadNotes() };
+});
+
+ipcMain.handle('save-note', async (event, ticker, note) => {
+  const notes = loadNotes();
+  const trimmed = (note || '').trim();
+  if (trimmed) {
+    notes[ticker] = trimmed;
+  } else {
+    delete notes[ticker];
+  }
+  saveNotes(notes);
+  return { ok: true, notes };
+});
+
+function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData = {}, favorites = [], preEventStats = {}, notes = {}) {
   const classColors = {
     surprising_positive: '#4caf50',
     positive_anticipated: '#8bc34a',
@@ -1912,29 +2000,46 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
   const favSet = new Set(favorites);
 
   // Combine IV from up to 3 expirations, weighted by dollar volume per expiration.
+  // Single-pool combination across up to 3 nearest expirations.
+  // Each side (OTM call / OTM put / ATM-band call / ATM-band put) is weighted
+  // by its own DV, independently. The ATM side uses the band-definition IV
+  // (complement of the OTM filter) now that it's available on each expiration.
   function combineExpirations(os) {
-    const exps = [];
-    for (const exp of os) {
-      if (!exp || (exp.wCallIV <= 0 && exp.wPutIV <= 0)) continue;
-      let dv = 0;
-      for (const c of (exp.calls || [])) dv += c.dollarVol || 0;
-      for (const p of (exp.puts || [])) dv += p.dollarVol || 0;
-      exps.push({ exp, dv });
-    }
+    const exps = os.filter(exp => exp && (exp.wCallIV > 0 || exp.wPutIV > 0));
     if (exps.length === 0) return null;
-    const totalDV = exps.reduce((s, e) => s + e.dv, 0);
-    const useEqualWeights = totalDV === 0;
-    const weights = useEqualWeights
-      ? exps.map(() => 1 / exps.length)
-      : exps.map(e => e.dv / totalDV);
-    let callIV = 0, putIV = 0, atmCallIV = 0, atmPutIV = 0;
-    for (let i = 0; i < exps.length; i++) {
-      const e = exps[i].exp;
-      callIV += (e.wCallIV || 0) * weights[i];
-      putIV += (e.wPutIV || 0) * weights[i];
-      atmCallIV += (e.atmCallIV || 0) * weights[i];
-      atmPutIV += (e.atmPutIV || 0) * weights[i];
-    }
+
+    const sumDV = (arr) => arr.reduce((s, c) => s + (c.dollarVol || 0), 0);
+    const poolWeighted = (valueFn, weightFn) => {
+      let sumVW = 0, sumW = 0;
+      for (const e of exps) {
+        const v = valueFn(e);
+        const w = weightFn(e);
+        if (v == null || !(w > 0)) continue;
+        sumVW += v * w;
+        sumW += w;
+      }
+      return sumW > 0 ? sumVW / sumW : 0;
+    };
+
+    const callIV = poolWeighted(
+      (e) => (e.wCallIV > 0 ? e.wCallIV : null),
+      (e) => sumDV(e.calls || []),
+    );
+    const putIV = poolWeighted(
+      (e) => (e.wPutIV > 0 ? e.wPutIV : null),
+      (e) => sumDV(e.puts || []),
+    );
+    const atmCallIV = poolWeighted(
+      (e) => (e.atmBandCallIV != null && e.atmBandCallIV > 0 ? e.atmBandCallIV : (e.atmCallIV > 0 ? e.atmCallIV : null)),
+      (e) => (e.atmCallDV != null ? e.atmCallDV : sumDV(e.calls || [])),
+    );
+    const atmPutIV = poolWeighted(
+      (e) => (e.atmBandPutIV != null && e.atmBandPutIV > 0 ? e.atmBandPutIV : (e.atmPutIV > 0 ? e.atmPutIV : null)),
+      (e) => (e.atmPutDV != null ? e.atmPutDV : sumDV(e.puts || [])),
+    );
+
+    const totalDV = exps.reduce((s, e) => s + sumDV(e.calls || []) + sumDV(e.puts || []), 0);
+
     return {
       callIV: Math.round(callIV * 10) / 10,
       putIV: Math.round(putIV * 10) / 10,
@@ -2168,10 +2273,13 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     const putSpreadVal = putSpread != null ? putSpread : -9999;
 
     const isFav = favSet.has(h.ticker);
+    const noteText = (notes && notes[h.ticker]) ? notes[h.ticker] : '';
+    const hasNote = !!noteText;
+    const noteIndicator = hasNote ? ' <span title="Has note" style="font-size:0.75em;">📝</span>' : '';
 
     return `<tr ${hasChart ? `class="data-row" data-ticker="${h.ticker}"` : ''} style="${inlineStyle}">
       <td style="text-align:center; width:28px; padding:4px;" data-v="${isFav ? 1 : 0}"><span class="fav-star" data-ticker="${h.ticker}" style="cursor:pointer; font-size:1.1em; color:${isFav ? '#f5c518' : '#ccc'};" title="Toggle favorite">${isFav ? '\u2605' : '\u2606'}</span></td>
-      <td data-v="${h.ticker}" style="font-weight:bold;">${h.ticker}${hasChart ? ' <span style="font-size:0.7em;color:#aaa;">▶</span>' : ''}</td>
+      <td data-v="${h.ticker}" style="font-weight:bold;">${h.ticker}${hasChart ? ' <span style="font-size:0.7em;color:#aaa;">▶</span>' : ''}${noteIndicator}</td>
       <td data-v="${sec || 'zzz'}" style="font-size:0.82em; color:#888;">${sec || ''}</td>
       <td data-v="${dateStr || 'zzz'}">${dateStr}</td>
       <td data-v="${h.gap || 0}">${h.gap ? h.gap.toFixed(2) + '%' : ''}</td>
@@ -2189,6 +2297,11 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     <tr class="chart-row" data-chart-for="${h.ticker}" style="display:none;">
       <td colspan="15" style="padding:0; background:#1a1a2e;">
         <div id="summary-${h.ticker}" style="padding:10px 20px 6px; color:#999; font-size:0.92em; line-height:1.5; max-height:140px; overflow-y:auto;"></div>
+        <div style="padding:6px 20px 8px; display:flex; gap:8px; align-items:flex-start;">
+          <label style="color:#aaa; font-size:0.82em; padding-top:6px; min-width:48px;">Notes</label>
+          <textarea class="ticker-note" data-ticker="${h.ticker}" placeholder="Add a note about ${h.ticker}..." style="flex:1; min-height:42px; padding:6px 8px; border:1px solid #333; border-radius:4px; background:#0f1020; color:#ddd; font-size:0.88em; font-family:inherit; resize:vertical;">${noteText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
+          <span class="note-status" data-ticker="${h.ticker}" style="color:#888; font-size:0.78em; padding-top:8px; min-width:54px;"></span>
+        </div>
         <div style="padding:12px 16px; height:480px;">
           <canvas id="chart-${h.ticker}"></canvas>
         </div>
@@ -2343,26 +2456,53 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
   const newsMap = ${JSON.stringify(newsMap)};
   const ivHistoryMap = ${JSON.stringify(ivHistoryData)};
   // Combine IV from a saved history record (exp1/exp2/exp3), weighted by dv if available.
+  // Single-pool combine of a history record across expirations;
+  // old records fall back to legacy combined DV + single-strike ATM.
   function combineHist(record) {
     const exps = [];
     for (const key of ['exp1', 'exp2', 'exp3']) {
       const e = record[key];
       if (!e || (e.callIV <= 0 && e.putIV <= 0)) continue;
-      exps.push({ e: e, dv: e.dv || 0 });
+      exps.push(e);
     }
     if (exps.length === 0) return null;
-    const totalDV = exps.reduce((s, x) => s + x.dv, 0);
-    const useEq = totalDV === 0;
-    const w = useEq ? exps.map(() => 1 / exps.length) : exps.map(x => x.dv / totalDV);
-    let cIV = 0, pIV = 0, acIV = 0, apIV = 0, hasAC = false, hasAP = false;
-    for (let i = 0; i < exps.length; i++) {
-      const e = exps[i].e;
-      cIV += (e.callIV || 0) * w[i];
-      pIV += (e.putIV || 0) * w[i];
-      if (e.atmCallIV != null) { acIV += e.atmCallIV * w[i]; hasAC = true; }
-      if (e.atmPutIV != null) { apIV += e.atmPutIV * w[i]; hasAP = true; }
+
+    function pool(valueFn, weightFn) {
+      var vals = [];
+      for (var i = 0; i < exps.length; i++) {
+        var v = valueFn(exps[i]);
+        if (v == null) continue;
+        var w = weightFn(exps[i]);
+        vals.push({ v: v, w: w > 0 ? w : 0 });
+      }
+      if (vals.length === 0) return null;
+      var sumW = 0, sumVW = 0;
+      for (var j = 0; j < vals.length; j++) { sumW += vals[j].w; sumVW += vals[j].v * vals[j].w; }
+      if (sumW > 0) return sumVW / sumW;
+      var sumV = 0;
+      for (var k = 0; k < vals.length; k++) sumV += vals[k].v;
+      return sumV / vals.length;
     }
-    return { callIV: cIV, putIV: pIV, atmCallIV: hasAC ? acIV : null, atmPutIV: hasAP ? apIV : null };
+    function legacyDV(e) { return e.dv || 0; }
+
+    var callIV = pool(
+      function(e) { return e.callIV > 0 ? e.callIV : null; },
+      function(e) { return e.callDV != null ? e.callDV : legacyDV(e); }
+    ) || 0;
+    var putIV = pool(
+      function(e) { return e.putIV > 0 ? e.putIV : null; },
+      function(e) { return e.putDV != null ? e.putDV : legacyDV(e); }
+    ) || 0;
+    var atmCallIV = pool(
+      function(e) { return (e.atmBandCallIV != null && e.atmBandCallIV > 0) ? e.atmBandCallIV : (e.atmCallIV != null ? e.atmCallIV : null); },
+      function(e) { return e.atmCallDV != null ? e.atmCallDV : legacyDV(e); }
+    );
+    var atmPutIV = pool(
+      function(e) { return (e.atmBandPutIV != null && e.atmBandPutIV > 0) ? e.atmBandPutIV : (e.atmPutIV != null ? e.atmPutIV : null); },
+      function(e) { return e.atmPutDV != null ? e.atmPutDV : legacyDV(e); }
+    );
+
+    return { callIV: callIV, putIV: putIV, atmCallIV: atmCallIV, atmPutIV: atmPutIV };
   }
   // Favorite star click handler
   let favToastTimer = null;
@@ -2374,6 +2514,53 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
     clearTimeout(favToastTimer);
     favToastTimer = setTimeout(() => el.classList.remove('show'), 1500);
   }
+
+  // Ticker notes: debounced autosave
+  const noteTimers = {};
+  document.querySelectorAll('.ticker-note').forEach(ta => {
+    const ticker = ta.getAttribute('data-ticker');
+    const statusEl = document.querySelector('.note-status[data-ticker="' + ticker + '"]');
+    const save = async () => {
+      if (!window.electronAPI || !window.electronAPI.saveNote) return;
+      if (statusEl) statusEl.textContent = 'saving…';
+      try {
+        await window.electronAPI.saveNote(ticker, ta.value);
+        if (statusEl) {
+          statusEl.textContent = 'saved';
+          setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 1200);
+        }
+        // Update note indicator next to ticker
+        const row = document.querySelector('tr.data-row[data-ticker="' + ticker + '"]');
+        if (row) {
+          const cell = row.children[1];
+          if (cell) {
+            const existing = cell.querySelector('span[title="Has note"]');
+            const hasText = ta.value.trim().length > 0;
+            if (hasText && !existing) {
+              const span = document.createElement('span');
+              span.setAttribute('title', 'Has note');
+              span.style.fontSize = '0.75em';
+              span.textContent = ' \u{1F4DD}';
+              cell.appendChild(span);
+            } else if (!hasText && existing) {
+              existing.remove();
+            }
+          }
+        }
+      } catch (err) {
+        if (statusEl) statusEl.textContent = 'failed';
+      }
+    };
+    ta.addEventListener('input', () => {
+      clearTimeout(noteTimers[ticker]);
+      noteTimers[ticker] = setTimeout(save, 700);
+    });
+    ta.addEventListener('blur', () => {
+      clearTimeout(noteTimers[ticker]);
+      save();
+    });
+    ta.addEventListener('click', (e) => e.stopPropagation());
+  });
 
   document.querySelectorAll('.fav-star').forEach(star => {
     star.addEventListener('click', async (e) => {
@@ -2660,16 +2847,36 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
         const newsEl = document.getElementById('news-' + ticker);
         const news = newsMap[ticker];
         if (newsEl && news && news.length > 0) {
-          newsEl.innerHTML = news.map(n => {
-            const catColors = { technical: '#5b9bd5', fear: '#c0392b', win: '#27ae60', macro_fear: '#e07c4f', macro_win: '#2ecc71', mixed: '#999' };
-            const catLabels = { technical: 'Technical', fear: 'Fear', win: 'Win', macro_fear: 'Macro Fear', macro_win: 'Macro Win', mixed: 'Mixed' };
+          const catColors = { technical: '#5b9bd5', fear: '#c0392b', win: '#27ae60', macro_fear: '#e07c4f', macro_win: '#2ecc71', mixed: '#999' };
+          const catLabels = { technical: 'Technical', fear: 'Fear', win: 'Win', macro_fear: 'Macro Fear', macro_win: 'Macro Win', mixed: 'Mixed' };
+          const renderHeadline = (n) => {
             const badge = n.category ? '<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.75em;font-weight:600;color:#fff;background:' + (catColors[n.category] || '#999') + ';margin-right:6px;vertical-align:middle;">' + (catLabels[n.category] || '') + '</span>' : '';
             return '<div style="margin-bottom:6px; font-size:0.95em; line-height:1.5;">' +
               '<span style="color:#666; font-size:0.85em; margin-right:6px;">' + (n.date ? n.date + ' ' : '') + (n.time || '') + '</span>' +
               badge +
               '<a href="' + n.url + '" style="color:#7aa2c7; text-decoration:none;">' + n.headline + '</a>' +
             '</div>';
-          }).join('');
+          };
+          const DEFAULT_SHOW = 10;
+          const shown = news.slice(0, DEFAULT_SHOW).map(renderHeadline).join('');
+          const hidden = news.slice(DEFAULT_SHOW).map(renderHeadline).join('');
+          let html = '<div>' + shown + '</div>';
+          if (hidden) {
+            const hiddenId = 'news-hidden-' + ticker;
+            const btnId = 'news-toggle-' + ticker;
+            html += '<div id="' + hiddenId + '" style="display:none;">' + hidden + '</div>';
+            html += '<button id="' + btnId + '" type="button" style="margin-top:6px; background:transparent; color:#7aa2c7; border:1px solid #445; border-radius:3px; padding:3px 10px; font-size:0.85em; cursor:pointer;">Show ' + (news.length - DEFAULT_SHOW) + ' more</button>';
+            newsEl.innerHTML = html;
+            const btn = document.getElementById(btnId);
+            const hiddenEl = document.getElementById(hiddenId);
+            btn.addEventListener('click', () => {
+              const isHidden = hiddenEl.style.display === 'none';
+              hiddenEl.style.display = isHidden ? 'block' : 'none';
+              btn.textContent = isHidden ? 'Show less' : ('Show ' + (news.length - DEFAULT_SHOW) + ' more');
+            });
+          } else {
+            newsEl.innerHTML = html;
+          }
         }
 
         // Render options strike charts (nearest 2 expirations side by side)
@@ -2778,41 +2985,28 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
 
               const labels = hist.map(r => r.date);
               const combined = hist.map(r => combineHist(r));
-              const datasets = [];
-              if (combined.some(c => c != null)) {
-                datasets.push({ label: 'Call IV', type: 'bar', data: combined.map(c => c ? c.callIV : null), backgroundColor: 'rgba(72,187,120,0.7)', borderColor: 'rgba(72,187,120,0.9)', borderWidth: 1, yAxisID: 'y' });
-                datasets.push({ label: 'Put IV', type: 'bar', data: combined.map(c => c ? c.putIV : null), backgroundColor: 'rgba(245,101,101,0.7)', borderColor: 'rgba(245,101,101,0.9)', borderWidth: 1, yAxisID: 'y' });
-                // ATM IV lines (if available in history)
-                const hasAtmData = combined.some(c => c && (c.atmCallIV > 0 || c.atmPutIV > 0));
-                if (hasAtmData) {
-                  datasets.push({ label: 'ATM Call IV', type: 'line', data: combined.map(c => c && c.atmCallIV > 0 ? c.atmCallIV : null), borderColor: 'rgba(72,187,120,0.5)', borderWidth: 2, borderDash: [4, 3], pointRadius: 2, fill: false, spanGaps: true, yAxisID: 'y' });
-                  datasets.push({ label: 'ATM Put IV', type: 'line', data: combined.map(c => c && c.atmPutIV > 0 ? c.atmPutIV : null), borderColor: 'rgba(245,101,101,0.5)', borderWidth: 2, borderDash: [4, 3], pointRadius: 2, fill: false, spanGaps: true, yAxisID: 'y' });
-                }
-              }
 
-              // Compute stock returns aligned to IV history dates
-              const cd = chartDataMap[ticker];
-              if (cd && cd.dates && cd.closes) {
-                const closeByDate = {};
-                for (let di = 0; di < cd.dates.length; di++) closeByDate[cd.dates[di]] = cd.closes[di];
-                const allDates = cd.dates.slice().sort();
-                const returns = labels.map(date => {
-                  const idx = allDates.indexOf(date);
-                  if (idx > 0 && closeByDate[allDates[idx]] != null && closeByDate[allDates[idx - 1]] != null) {
-                    return ((closeByDate[allDates[idx]] - closeByDate[allDates[idx - 1]]) / closeByDate[allDates[idx - 1]] * 100);
-                  }
-                  return null;
-                });
-                datasets.push({ label: 'Daily Return', type: 'line', data: returns, borderColor: 'rgba(100,149,237,0.9)', borderWidth: 2, pointRadius: 3, pointBackgroundColor: 'rgba(100,149,237,0.9)', fill: false, spanGaps: true, yAxisID: 'y1' });
-              }
+              const callIVSeries = combined.map(c => c && c.callIV > 0 ? c.callIV : null);
+              const putIVSeries = combined.map(c => c && c.putIV > 0 ? c.putIV : null);
+              const callSpreadSeries = combined.map(c => c && c.callIV > 0 && c.atmCallIV != null ? c.callIV - c.atmCallIV : null);
+              const putSpreadSeries = combined.map(c => c && c.putIV > 0 && c.atmPutIV != null ? c.putIV - c.atmPutIV : null);
+
+              const lineBase = { type: 'line', borderWidth: 2, pointRadius: 2, fill: false, spanGaps: true, tension: 0.2 };
+              const datasets = [
+                { ...lineBase, label: 'Call IV', data: callIVSeries, borderColor: 'rgba(72,187,120,0.95)', backgroundColor: 'rgba(72,187,120,0.95)', yAxisID: 'y' },
+                { ...lineBase, label: 'Put IV', data: putIVSeries, borderColor: 'rgba(245,101,101,0.95)', backgroundColor: 'rgba(245,101,101,0.95)', yAxisID: 'y' },
+                { ...lineBase, label: 'Call Spread (vs ATM)', data: callSpreadSeries, borderColor: 'rgba(72,187,120,0.6)', backgroundColor: 'rgba(72,187,120,0.6)', borderDash: [4, 3], yAxisID: 'y1' },
+                { ...lineBase, label: 'Put Spread (vs ATM)', data: putSpreadSeries, borderColor: 'rgba(245,101,101,0.6)', backgroundColor: 'rgba(245,101,101,0.6)', borderDash: [4, 3], yAxisID: 'y1' },
+              ];
 
               ivHistChart = new Chart(histCanvas, {
-                type: 'bar',
+                type: 'line',
                 data: { labels, datasets },
                 options: {
                   responsive: true,
                   maintainAspectRatio: false,
                   animation: { duration: 200 },
+                  interaction: { mode: 'index', intersect: false },
                   plugins: {
                     title: { display: true, text: 'Weighted IV History — ' + ticker, color: '#b0b0b0', font: { size: 11 } },
                     legend: { labels: { color: '#909090', boxWidth: 10, font: { size: 9 } } },
@@ -2821,7 +3015,7 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
                   scales: {
                     x: { ticks: { color: '#909090', font: { size: 9 } }, grid: { color: '#2a2a4a' } },
                     y: { position: 'left', title: { display: true, text: 'IV %', color: '#909090', font: { size: 10 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } }, grid: { color: '#2a2a4a' } },
-                    y1: { position: 'right', title: { display: true, text: 'Return %', color: 'rgba(100,149,237,0.9)', font: { size: 10 } }, ticks: { color: 'rgba(100,149,237,0.9)', font: { size: 9 }, callback: function(v) { return v.toFixed(1) + '%'; } }, grid: { drawOnChartArea: false } },
+                    y1: { position: 'right', title: { display: true, text: 'Spread %', color: '#909090', font: { size: 10 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(1) + '%'; } }, grid: { drawOnChartArea: false } },
                   },
                 },
               });
@@ -2948,48 +3142,48 @@ ipcMain.handle('get-embedding-stats', async (event) => {
 });
 
 // App lifecycle
-app.whenReady().then(async () => {
-  // Initialize database
+let backendReadyResolve;
+const backendReadyPromise = new Promise((r) => { backendReadyResolve = r; });
+ipcMain.handle('wait-backend-ready', () => backendReadyPromise);
+
+async function initBackend() {
   database = new ArticleDatabase('articles.db');
   try {
     await database.initialize();
     console.log('✓ Database initialized');
   } catch (error) {
     console.error('Failed to initialize database:', error);
+    return;
   }
 
-  // Initialize price tracker
   priceTracker = new PriceTrackingService(database);
-
-  // Initialize stock analyzer
   stockAnalyzer = new StockAnalysisService(database);
 
-  // Initialize IB Gateway provider (connects lazily — no error if Gateway not running)
-  const ibProvider = new IBOptionsProvider({ port: 4002 }); // 4002=paper, 4001=live
-
-  // Initialize options analyzer with IB fallback for international tickers
+  const ibProvider = new IBOptionsProvider({ port: 4002 });
   optionsAnalyzer = new OptionsAnalysisService(database, ibProvider);
-  portfolioAnalyzer = new PortfolioAnalysisService(database, stockAnalyzer, optionsAnalyzer);
-  tickerDiscovery = new TickerDiscoveryService();
   chronosHoldService = new ChronosHoldPeriodService(database);
   glmAnalyzer = new GLMAnalysisService(database);
 
-  // Inject options analyzer into price tracker for daily snapshot collection
   priceTracker.setOptionsAnalyzer(optionsAnalyzer);
 
-  // Inject browser-based extractor into articleExtractor for JavaScript-rendered pages
   articleExtractor.setBrowserExtractor(extractArticleViaBrowser);
   console.log('✓ Browser-based article extraction enabled');
 
-  // Check if auto-polling is enabled in settings
   const autoPolling = await database.getSetting('price_auto_polling', 'false');
   const pollingInterval = await database.getSetting('price_polling_interval', '15');
-
   if (autoPolling === 'true') {
     priceTracker.startPolling(parseInt(pollingInterval));
   }
 
+  backendReadyResolve();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('backend-ready');
+  }
+}
+
+app.whenReady().then(() => {
   createWindow();
+  initBackend();
 });
 
 app.on('window-all-closed', async () => {

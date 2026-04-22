@@ -382,55 +382,80 @@ class PriceTrackingService {
   }
 
   /**
-   * Fetch JSON data from URL
-   * Uses Bun worker if available, falls back to Node.js https
+   * Fetch JSON data from URL with retry + exponential backoff.
+   * Tries Bun worker first, then Node.js https on each attempt.
    * @param {string} url - URL to fetch
+   * @param {Object} [opts]
+   * @param {number} [opts.maxAttempts=3]
+   * @param {number} [opts.timeoutMs=15000]
    * @returns {Promise<Object>} Parsed JSON response
    */
-  async fetchJSON(url) {
-    // Try Bun worker first if available
-    if (this.useBun && await this.checkBunAvailable()) {
+  async fetchJSON(url, opts = {}) {
+    const { maxAttempts = 3, timeoutMs = 15000 } = opts;
+    let lastError;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        return await bunBridge.fetchJSON(url);
+        if (this.useBun && await this.checkBunAvailable()) {
+          try {
+            return await bunBridge.fetchJSON(url);
+          } catch (error) {
+            const msg = error?.message || String(error) || 'unknown Bun worker error';
+            console.warn(`[PriceTracking] Bun worker failed (attempt ${attempt}/${maxAttempts}), falling back to Node.js: ${msg}`);
+          }
+        }
+        return await this.fetchJSONNode(url, timeoutMs);
       } catch (error) {
-        console.warn(`[PriceTracking] Bun worker failed, falling back to Node.js: ${error.message}`);
-        // Fall through to Node.js implementation
+        lastError = error;
+        const msg = error?.message || String(error) || 'unknown network error';
+        if (attempt < maxAttempts) {
+          const backoff = 500 * Math.pow(2, attempt - 1); // 500, 1000, 2000...
+          console.warn(`[PriceTracking] fetch failed (attempt ${attempt}/${maxAttempts}): ${msg} — retrying in ${backoff}ms`);
+          await this.sleep(backoff);
+        }
       }
     }
 
-    // Node.js fallback
-    return this.fetchJSONNode(url);
+    const finalMsg = lastError?.message || String(lastError) || 'fetch failed';
+    throw new Error(finalMsg);
   }
 
   /**
-   * Fetch JSON data from URL using Node.js https (fallback)
+   * Fetch JSON data from URL using Node.js https (fallback).
    * @param {string} url - URL to fetch
+   * @param {number} [timeoutMs=15000] - Request timeout
    * @returns {Promise<Object>} Parsed JSON response
    */
-  fetchJSONNode(url) {
+  fetchJSONNode(url, timeoutMs = 15000) {
     return new Promise((resolve, reject) => {
       const opts = {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-        }
+        },
+        timeout: timeoutMs
       };
-      https.get(url, opts, (res) => {
+      const req = https.get(url, opts, (res) => {
+        if (res.statusCode && (res.statusCode < 200 || res.statusCode >= 300)) {
+          res.resume(); // drain
+          reject(new Error(`HTTP ${res.statusCode} ${res.statusMessage || ''}`.trim()));
+          return;
+        }
+
         let data = '';
-
-        res.on('data', (chunk) => {
-          data += chunk;
-        });
-
+        res.on('data', (chunk) => { data += chunk; });
         res.on('end', () => {
           try {
-            const parsed = JSON.parse(data);
-            resolve(parsed);
+            resolve(JSON.parse(data));
           } catch (error) {
             reject(new Error(`Failed to parse JSON: ${error.message}`));
           }
         });
-      }).on('error', (error) => {
-        reject(error);
+      });
+      req.on('timeout', () => {
+        req.destroy(new Error(`Request timed out after ${timeoutMs}ms`));
+      });
+      req.on('error', (error) => {
+        reject(new Error(error?.message || error?.code || 'network error'));
       });
     });
   }

@@ -362,12 +362,29 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
               const wPutIV = Math.round(weightedIV(metrics.putContracts) * 10) / 10;
               const atmCallIVPct = Math.round((metrics.atmCallIV || 0) * 1000) / 10;
               const atmPutIVPct = Math.round((metrics.atmPutIV || 0) * 1000) / 10;
+
+              // Complement (ATM-band) = the strikes NOT captured by the OTM filter.
+              // Calls: strike < 1.015 × spot.  Puts: strike > 0.985 × spot.
+              const atmCallContracts = (metrics.allCallContracts || []).filter(c => c.strike < currentPrice * 1.015);
+              const atmPutContracts = (metrics.allPutContracts || []).filter(c => c.strike > currentPrice * 0.985);
+              const atmBandCallIV = Math.round(weightedIV(atmCallContracts) * 10) / 10;
+              const atmBandPutIV = Math.round(weightedIV(atmPutContracts) * 10) / 10;
+              const atmCallDV = atmCallContracts.reduce((s, c) => s + (c.dollarVolume || 0), 0);
+              const atmPutDV = atmPutContracts.reduce((s, c) => s + (c.dollarVolume || 0), 0);
+
               return {
                 label: optSvc.formatDate(expDate),
                 calls, puts,
                 wCallIV, wPutIV,
                 atmCallIV: atmCallIVPct,
                 atmPutIV: atmPutIVPct,
+                // Band-definition ATM IVs + DVs — stored alongside the single-strike atm*IV
+                // so that a future switch to the band-based definition can use them directly
+                // (and can be combined across expirations by their own DV).
+                atmBandCallIV,
+                atmBandPutIV,
+                atmCallDV,
+                atmPutDV,
                 ivSpreadCall: Math.round((wCallIV - atmCallIVPct) * 10) / 10,
                 ivSpreadPut: Math.round((wPutIV - atmPutIVPct) * 10) / 10,
                 deepOTMCallPct: deepOTMPct(metrics.callContracts, currentPrice, 'call'),

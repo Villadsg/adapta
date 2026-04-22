@@ -424,7 +424,13 @@ class ArticleDatabase {
    * Run database migrations to handle schema changes
    */
   async runMigrations() {
+    const CURRENT_SCHEMA_VERSION = 12;
     try {
+      const storedVersion = parseInt(await this.getSetting('schema_version', '0'), 10) || 0;
+      if (storedVersion >= CURRENT_SCHEMA_VERSION) {
+        return;
+      }
+
       // Migration 1: Add embedding column to articles table if it doesn't exist
       await this.addColumnIfNotExists('articles', 'embedding', 'FLOAT[]');
 
@@ -552,7 +558,8 @@ class ArticleDatabase {
         });
       });
 
-      console.log('✓ Database migrations completed');
+      await this.setSetting('schema_version', String(CURRENT_SCHEMA_VERSION));
+      console.log(`✓ Database migrations completed (schema v${CURRENT_SCHEMA_VERSION})`);
     } catch (error) {
       console.error('Error running migrations:', error);
       throw error;

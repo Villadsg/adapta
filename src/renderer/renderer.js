@@ -636,198 +636,6 @@ btnClose.addEventListener('click', async () => {
   await window.electronAPI.windowClose();
 });
 
-// ===== Portfolio Diversification =====
-
-const btnDiversify = document.getElementById('btn-diversify');
-const divModal = document.getElementById('diversification-modal');
-const divHoldingsList = document.getElementById('div-holdings-list');
-const divAddTicker = document.getElementById('div-add-ticker');
-const divAddShares = document.getElementById('div-add-shares');
-const divAddBtn = document.getElementById('div-add-btn');
-const divCandidates = document.getElementById('div-candidates');
-const divDays = document.getElementById('div-days');
-const divApiSelect = document.getElementById('div-api-select');
-const divCancel = document.getElementById('div-cancel');
-const divAnalyze = document.getElementById('div-analyze');
-const divDiscoverBtn = document.getElementById('div-discover-btn');
-const divDiscoverStatus = document.getElementById('div-discover-status');
-
-// Render holdings list in modal
-async function renderDivHoldings() {
-  const result = await window.electronAPI.portfolioGetHoldings();
-  const holdings = result.success ? result.holdings : [];
-
-  if (holdings.length === 0) {
-    divHoldingsList.innerHTML = '<span style="color:#888; font-size:0.9em;">No holdings added yet.</span>';
-    return;
-  }
-
-  divHoldingsList.innerHTML = holdings.map(h => `
-    <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
-      <span style="font-weight:bold; width:70px;">${h.ticker}</span>
-      <span style="width:80px;">${h.shares} shares</span>
-      <button class="div-remove-btn" data-ticker="${h.ticker}" style="background:none; border:none; color:#f44336; cursor:pointer; font-size:1.1em;">×</button>
-    </div>
-  `).join('');
-
-  // Attach remove handlers
-  divHoldingsList.querySelectorAll('.div-remove-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      await window.electronAPI.portfolioRemoveHolding(btn.dataset.ticker);
-      await renderDivHoldings();
-    });
-  });
-}
-
-// Open diversification modal
-btnDiversify.addEventListener('click', async () => {
-  await window.electronAPI.showModal();
-  divModal.style.display = 'flex';
-  await renderDivHoldings();
-  divCandidates.value = '';
-  divDays.value = '200';
-  divAddTicker.value = '';
-  divAddShares.value = '1';
-  divDiscoverStatus.textContent = '';
-  divDiscoverStatus.style.color = '#888';
-  divAddTicker.focus();
-});
-
-// Add holding
-divAddBtn.addEventListener('click', async () => {
-  const ticker = divAddTicker.value.trim().toUpperCase();
-  const shares = parseFloat(divAddShares.value);
-  if (!ticker || isNaN(shares) || shares <= 0) return;
-  await window.electronAPI.portfolioSaveHolding(ticker, shares);
-  divAddTicker.value = '';
-  await renderDivHoldings();
-});
-
-divAddTicker.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') divAddBtn.click();
-});
-
-// Discover candidates from Finviz
-divDiscoverBtn.addEventListener('click', async () => {
-  const holdingsResult = await window.electronAPI.portfolioGetHoldings();
-  const holdings = holdingsResult.success ? holdingsResult.holdings : [];
-
-  if (holdings.length === 0) {
-    showToast('Error', 'Add at least 1 holding first so discovery can find related tickers.', 'error');
-    return;
-  }
-
-  const holdingTickers = holdings.map(h => h.ticker);
-  const estSeconds = 10 + holdingTickers.length * 4;
-
-  divDiscoverBtn.disabled = true;
-  divDiscoverBtn.textContent = 'Discovering...';
-  divDiscoverStatus.textContent = `Scraping Finviz screener + ${holdingTickers.length} holding pages (~${estSeconds}s)...`;
-
-  try {
-    const result = await window.electronAPI.discoverCandidates(holdingTickers);
-
-    if (!result.success) {
-      divDiscoverStatus.textContent = `Error: ${result.error}`;
-      divDiscoverStatus.style.color = '#f44336';
-      return;
-    }
-
-    if (result.candidates.length === 0) {
-      divDiscoverStatus.textContent = 'No candidates found.';
-      divDiscoverStatus.style.color = '#ff9800';
-      return;
-    }
-
-    // Append discovered tickers to existing ones
-    const discovered = result.candidates.map(c => c.ticker);
-    const existing = divCandidates.value.trim();
-    const existingSet = new Set(
-      existing ? existing.split(/[\s,]+/).map(t => t.toUpperCase()).filter(t => t) : []
-    );
-    const newTickers = discovered.filter(t => !existingSet.has(t));
-
-    if (newTickers.length > 0) {
-      divCandidates.value = existing
-        ? existing + ', ' + newTickers.join(', ')
-        : newTickers.join(', ');
-    }
-
-    divDiscoverStatus.textContent = `Found ${result.stats.total} candidates (${result.stats.screenerTickers} from screener, ${result.stats.holdingRelatedTickers} related to holdings). Added ${newTickers.length} new.`;
-    divDiscoverStatus.style.color = '#4caf50';
-  } catch (error) {
-    console.error('Discovery error:', error);
-    divDiscoverStatus.textContent = `Error: ${error.message}`;
-    divDiscoverStatus.style.color = '#f44336';
-  } finally {
-    divDiscoverBtn.disabled = false;
-    divDiscoverBtn.textContent = 'Discover';
-  }
-});
-
-// Cancel
-divCancel.addEventListener('click', async () => {
-  divModal.style.display = 'none';
-  await window.electronAPI.hideModal();
-});
-
-divModal.addEventListener('click', async (e) => {
-  if (e.target === divModal) {
-    divModal.style.display = 'none';
-    await window.electronAPI.hideModal();
-  }
-});
-
-// Run diversification analysis
-divAnalyze.addEventListener('click', async () => {
-  const holdingsResult = await window.electronAPI.portfolioGetHoldings();
-  const holdings = holdingsResult.success ? holdingsResult.holdings : [];
-
-  if (holdings.length < 2) {
-    showToast('Error', 'Add at least 2 portfolio holdings first.', 'error');
-    return;
-  }
-
-  const candidateStr = divCandidates.value.trim();
-  if (!candidateStr) {
-    showToast('Error', 'Enter at least one candidate ticker.', 'error');
-    divCandidates.focus();
-    return;
-  }
-
-  const candidates = candidateStr.split(/[\s,]+/).map(t => t.toUpperCase()).filter(t => t.length > 0);
-  const days = parseInt(divDays.value, 10) || 200;
-  const dataSource = divApiSelect.value;
-
-  divModal.style.display = 'none';
-  await window.electronAPI.hideModal();
-
-  const totalTickers = holdings.length + candidates.length;
-  const estTime = Math.ceil(totalTickers * 4 + holdings.length * 1.5);
-  showToast('Analyzing...', `Fetching prices & running diversification for ${totalTickers} tickers. ~${estTime}s...`, 'info', estTime * 1000);
-
-  try {
-    const result = await window.electronAPI.analyzeDiversification({
-      holdings: holdings.map(h => ({ ticker: h.ticker, shares: h.shares })),
-      candidates,
-      days,
-      dataSource,
-    });
-
-    if (!result.success) {
-      showToast('Error', result.error, 'error');
-      return;
-    }
-
-    const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(result.html);
-    await createTab(dataUrl);
-    showToast('Analysis Complete', `Scored ${candidates.length} candidates for diversification.`, 'success');
-  } catch (error) {
-    console.error('Diversification error:', error);
-    showToast('Error', error.message, 'error');
-  }
-});
-
 // ===== Ticker Screening =====
 
 const btnScreen = document.getElementById('btn-screen');
@@ -845,6 +653,7 @@ btnScreen.addEventListener('click', async () => {
   screenLookbackDays.value = '5';
   screenPercentile.value = '95';
   screenPeriod.focus();
+  populateScreeningRuns();
 });
 
 screenCancel.addEventListener('click', async () => {
@@ -1099,13 +908,40 @@ function generateReviseHTML(result) {
 </body></html>`;
 }
 
-// View latest screening results
-document.getElementById('screen-view-screening').addEventListener('click', async () => {
+// View a screening run — the dropdown lists the 3 most recent runs, newest first.
+const screenViewSelect = document.getElementById('screen-view-screening');
+
+async function populateScreeningRuns() {
+  try {
+    const result = await window.electronAPI.listScreeningRuns();
+    // Remove all options except the placeholder
+    for (let i = screenViewSelect.options.length - 1; i >= 1; i--) {
+      screenViewSelect.remove(i);
+    }
+    screenViewSelect.selectedIndex = 0;
+
+    if (!result.success || !result.runs || result.runs.length === 0) return;
+
+    result.runs.forEach((run, idx) => {
+      const opt = document.createElement('option');
+      opt.value = run.filePath;
+      opt.textContent = idx === 0 ? `Latest — ${run.label}` : run.label;
+      screenViewSelect.appendChild(opt);
+    });
+  } catch (err) {
+    console.error('Failed to list screening runs:', err);
+  }
+}
+
+screenViewSelect.addEventListener('change', async () => {
+  const filePath = screenViewSelect.value;
+  if (!filePath) return;
+
   screenModal.style.display = 'none';
   await window.electronAPI.hideModal();
 
   try {
-    const result = await window.electronAPI.loadScreeningResults();
+    const result = await window.electronAPI.loadScreeningResults(filePath);
     if (!result.success) {
       showToast('Error', result.error, 'error');
       return;
@@ -1113,6 +949,8 @@ document.getElementById('screen-view-screening').addEventListener('click', async
     await createTab('file://' + result.filePath);
   } catch (error) {
     showToast('Error', error.message, 'error');
+  } finally {
+    screenViewSelect.selectedIndex = 0; // reset so reselecting same option re-fires
   }
 });
 
@@ -1261,9 +1099,11 @@ function renderGlmResults(result) {
 
 // Initialize
 (async () => {
-  // Create one tab with zerohedge.com
-  await createTab('https://simplywall.st/dashboard');
+  // Tab creation doesn't require DB — start it immediately
+  const tabPromise = createTab('https://simplywall.st/dashboard');
 
-  // Load initial stats
+  // Stats require DB — wait for backend readiness
+  await window.electronAPI.waitBackendReady();
+  await tabPromise;
   await updateStats();
 })();
