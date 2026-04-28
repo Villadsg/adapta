@@ -1550,11 +1550,9 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
     // If news is enabled, fetch Finviz headlines per ticker as stock data completes
     // Finviz fetch is serial (shared BrowserView), queued via onTickerDone callback
     const finvizQueue = [];
-    let finvizBusy = false;
+    let finvizActive = null;
 
-    async function processFinvizQueue() {
-      if (finvizBusy) return;
-      finvizBusy = true;
+    async function drainFinvizQueue() {
       while (finvizQueue.length > 0) {
         const entry = finvizQueue.shift();
         if (!entry.ticker || entry.skipped || entry.error) continue;
@@ -1563,18 +1561,25 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
           entry.news = headlines || [];
         } catch (_) { entry.news = []; }
       }
-      finvizBusy = false;
+    }
+
+    function kickFinvizQueue() {
+      if (finvizActive) return;
+      finvizActive = drainFinvizQueue().finally(() => { finvizActive = null; });
     }
 
     const onTickerDone = options.fetchNews ? (entry) => {
       finvizQueue.push(entry);
-      processFinvizQueue();
+      kickFinvizQueue();
     } : null;
     const result = await screenTickers(priceTracker, config, createYF, onTickerDone, database);
 
     // Wait for remaining Finviz fetches to finish
     if (options.fetchNews) {
-      await processFinvizQueue();
+      while (finvizActive || finvizQueue.length > 0) {
+        if (finvizActive) await finvizActive;
+        else kickFinvizQueue();
+      }
     }
 
     // Sort allTickers: hits first (by percentile desc), then non-hits alphabetically
@@ -1605,6 +1610,14 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       if (!od || od.length === 0) continue;
       if (!ivHistory[entry.ticker]) ivHistory[entry.ticker] = [];
       const record = { date: today, sector: entry.sector || '' };
+      // Store today's close-to-previous-close return (%) for any-day return-bucket analysis.
+      const closes = entry.chartData?.closes;
+      if (Array.isArray(closes) && closes.length >= 2) {
+        const c1 = closes[closes.length - 1], c0 = closes[closes.length - 2];
+        if (typeof c0 === 'number' && typeof c1 === 'number' && c0 > 0) {
+          record.dailyReturn = ((c1 - c0) / c0) * 100;
+        }
+      }
       const expCallDV = (exp) => {
         let dv = 0;
         for (const c of (exp.calls || [])) dv += c.dollarVol || 0;
@@ -1767,10 +1780,61 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       };
     }
 
+    // IV Profile by Daily Return Bucket: for every (ticker, day T) in IV history, rank that
+    // day's IV/spread against the ticker's full history and pair with day T+1's return.
+    // Tests whether high rank on T precedes high vs low next-day returns. No event gating.
+    const perDay = [];
+    for (const [ticker, history] of Object.entries(ivHistory)) {
+      if (!Array.isArray(history) || history.length < PRE_EVENT_MIN_HIST) continue;
+      const sorted = history.slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+      const callIVs = [], putIVs = [], callSpreads = [], putSpreads = [];
+      for (const r of sorted) {
+        const e = combineHistRecord(r);
+        if (!e) continue;
+        if (e.callIV > 0) callIVs.push(e.callIV);
+        if (e.putIV > 0) putIVs.push(e.putIV);
+        if (e.callIV != null && e.atmCallIV != null) callSpreads.push(e.callIV - e.atmCallIV);
+        if (e.putIV != null && e.atmPutIV != null) putSpreads.push(e.putIV - e.atmPutIV);
+      }
+      for (let i = 0; i < sorted.length - 1; i++) {
+        const rec = sorted[i];
+        const next = sorted[i + 1];
+        if (!next || typeof next.dailyReturn !== 'number') continue;
+        const today = combineHistRecord(rec);
+        if (!today) continue;
+        const cR = today.callIV > 0 ? rankIn(callIVs, today.callIV) : null;
+        const pR = today.putIV > 0 ? rankIn(putIVs, today.putIV) : null;
+        const cSR = (today.callIV != null && today.atmCallIV != null) ? rankIn(callSpreads, today.callIV - today.atmCallIV) : null;
+        const pSR = (today.putIV != null && today.atmPutIV != null) ? rankIn(putSpreads, today.putIV - today.atmPutIV) : null;
+        if (cR == null && pR == null && cSR == null && pSR == null) continue;
+        perDay.push({ signedReturn: next.dailyReturn, cR, pR, cSR, pSR });
+      }
+    }
+    let preEventByReturnBucket = null;
+    if (perDay.length >= 4) {
+      perDay.sort((a, b) => a.signedReturn - b.signedReturn);
+      const mid = Math.floor(perDay.length / 2);
+      const makeBucket = (slice) => {
+        const cR = slice.map(e => e.cR).filter(v => v != null);
+        const pR = slice.map(e => e.pR).filter(v => v != null);
+        const cSR = slice.map(e => e.cSR).filter(v => v != null);
+        const pSR = slice.map(e => e.pSR).filter(v => v != null);
+        return {
+          n: slice.length,
+          minReturn: slice[0].signedReturn,
+          maxReturn: slice[slice.length - 1].signedReturn,
+          callIVRank: meanOf(cR), putIVRank: meanOf(pR),
+          callSpreadRank: meanOf(cSR), putSpreadRank: meanOf(pSR),
+          nCallIV: cR.length, nPutIV: pR.length, nCallSpread: cSR.length, nPutSpread: pSR.length,
+        };
+      };
+      preEventByReturnBucket = { low: makeBucket(perDay.slice(0, mid)), high: makeBucket(perDay.slice(mid)) };
+    }
+
     // Generate HTML results page
     const currentFavorites = loadFavorites();
     const currentNotes = loadNotes();
-    const html = generateScreeningHTML(result.allTickers, tickers.length, config, ivHistoryForHTML, currentFavorites, preEventStats, currentNotes);
+    const html = generateScreeningHTML(result.allTickers, tickers.length, config, ivHistoryForHTML, currentFavorites, preEventStats, currentNotes, preEventByReturnBucket);
 
     // Save HTML for "Latest Run Results" (alias) and a timestamped snapshot in ci/screening-runs/
     const screenResultsPath = path.join(__dirname, 'ci', 'screening-results.html');
@@ -1782,13 +1846,13 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
     const snapshotPath = path.join(runsDir, `run-${ts}.html`);
     fs.writeFileSync(snapshotPath, html, 'utf-8');
 
-    // Prune to 3 most recent snapshots
+    // Prune to 6 most recent snapshots
     try {
       const entries = fs.readdirSync(runsDir)
         .filter((f) => f.startsWith('run-') && f.endsWith('.html'))
         .map((f) => ({ f, mtime: fs.statSync(path.join(runsDir, f)).mtimeMs }))
         .sort((a, b) => b.mtime - a.mtime);
-      for (const old of entries.slice(3)) {
+      for (const old of entries.slice(6)) {
         fs.unlinkSync(path.join(runsDir, old.f));
       }
     } catch (pruneErr) {
@@ -1906,7 +1970,7 @@ ipcMain.handle('list-screening-runs', async () => {
         return { filename: f, filePath: full, mtime };
       })
       .sort((a, b) => b.mtime - a.mtime)
-      .slice(0, 3)
+      .slice(0, 6)
       .map((r) => ({
         filePath: r.filePath,
         label: new Date(r.mtime).toLocaleString(),
@@ -1981,7 +2045,7 @@ ipcMain.handle('save-note', async (event, ticker, note) => {
   return { ok: true, notes };
 });
 
-function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData = {}, favorites = [], preEventStats = {}, notes = {}) {
+function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData = {}, favorites = [], preEventStats = {}, notes = {}, preEventByReturnBucket = null) {
   const classColors = {
     surprising_positive: '#4caf50',
     positive_anticipated: '#8bc34a',
@@ -2263,8 +2327,8 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     const secData = sec ? sectorSpreads[sec] : null;
     const callSectorRank = secData && callSpread != null && secData.callSpreads.length >= MIN_HIST_RECORDS ? pctRank(secData.callSpreads, callSpread) : null;
     const putSectorRank = secData && putSpread != null && secData.putSpreads.length >= MIN_HIST_RECORDS ? pctRank(secData.putSpreads, putSpread) : null;
-    const callIVStr = tiv ? tiv.callIV.toFixed(1) + '%' : '';
-    const putIVStr = tiv ? tiv.putIV.toFixed(1) + '%' : '';
+    const callIVStr = tiv ? tiv.callIV.toFixed(1) + '%' + rankTag(callIVRank) : '';
+    const putIVStr = tiv ? tiv.putIV.toFixed(1) + '%' + rankTag(putIVRank) : '';
     const callIVVal = tiv ? tiv.callIV : -1;
     const putIVVal = tiv ? tiv.putIV : -1;
     const callSpreadStr = callSpread != null ? (callSpread >= 0 ? '+' : '') + callSpread.toFixed(1) + rankTag(callSpreadRank) + sectorRankTag(callSectorRank) : '';
@@ -2295,11 +2359,11 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
       <td data-v="${putSpreadVal}" style="text-align:right; color:rgba(245,101,101,0.7); font-size:0.88em;">${putSpreadStr}</td>
     </tr>
     <tr class="chart-row" data-chart-for="${h.ticker}" style="display:none;">
-      <td colspan="15" style="padding:0; background:#1a1a2e;">
-        <div id="summary-${h.ticker}" style="padding:10px 20px 6px; color:#999; font-size:0.92em; line-height:1.5; max-height:140px; overflow-y:auto;"></div>
+      <td colspan="15" style="padding:0; background:#1a1d23;">
+        <div id="summary-${h.ticker}" style="margin:12px 20px 8px; padding:14px 18px; background:#262a33; border-left:3px solid #4a5a8a; border-radius:6px; color:#cdd5e0; font-size:0.98em; line-height:1.65; max-width:78ch; max-height:200px; overflow-y:auto;"></div>
         <div style="padding:6px 20px 8px; display:flex; gap:8px; align-items:flex-start;">
           <label style="color:#aaa; font-size:0.82em; padding-top:6px; min-width:48px;">Notes</label>
-          <textarea class="ticker-note" data-ticker="${h.ticker}" placeholder="Add a note about ${h.ticker}..." style="flex:1; min-height:42px; padding:6px 8px; border:1px solid #333; border-radius:4px; background:#0f1020; color:#ddd; font-size:0.88em; font-family:inherit; resize:vertical;">${noteText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
+          <textarea class="ticker-note" data-ticker="${h.ticker}" placeholder="Add a note about ${h.ticker}..." style="flex:1; min-height:42px; padding:6px 8px; border:1px solid #333; border-radius:4px; background:#15171c; color:#ddd; font-size:0.88em; font-family:inherit; resize:vertical;">${noteText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
           <span class="note-status" data-ticker="${h.ticker}" style="color:#888; font-size:0.78em; padding-top:8px; min-width:54px;"></span>
         </div>
         <div style="padding:12px 16px; height:480px;">
@@ -2330,18 +2394,33 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
 <title>Ticker Screening Results</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"><\/script>
 <style>
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 20px; background: #fafafa; color: #333; }
-  h1 { font-size: 1.4em; margin-bottom: 4px; }
-  .summary { color: #666; margin-bottom: 16px; font-size: 0.95em; }
-  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-  #screen-table th { background: #f5f5f5; padding: 10px 12px; text-align: left; font-size: 0.85em; color: #666; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; user-select: none; }
-  #screen-table th:hover { color: #333; background: #eee; }
-  #screen-table th .sort-arrow { font-size: 0.7em; margin-left: 3px; color: #bbb; }
-  #screen-table th.sorted-asc .sort-arrow, #screen-table th.sorted-desc .sort-arrow { color: #333; }
-  td { padding: 8px 12px; border-top: 1px solid #eee; font-size: 0.95em; }
-  tr.data-row:hover { background: #f0f4ff; }
-  tr:hover { background: #f9f9f9; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 20px; background: #1a1d23; color: #eaeaea; }
+  h1 { font-size: 1.4em; margin-bottom: 4px; color: #a8b5a2; }
+  .summary { color: #a0aec0; margin-bottom: 16px; font-size: 0.95em; }
+  table { width: 100%; border-collapse: collapse; background: #262a33; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.4); }
+  #screen-table th { background: #2f3540; padding: 10px 12px; text-align: left; font-size: 0.85em; color: #a0aec0; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; user-select: none; }
+  #screen-table th:hover { color: #fff; background: #3a414d; }
+  #screen-table th .sort-arrow { font-size: 0.7em; margin-left: 3px; color: #5a6a8a; }
+  #screen-table th.sorted-asc .sort-arrow, #screen-table th.sorted-desc .sort-arrow { color: #fff; }
+  td { padding: 8px 12px; border-top: 1px solid #2e333d; font-size: 0.95em; }
+  tr.data-row:hover { background: #2c303a; }
+  tr:hover { background: #22252c; }
   .chart-row td { border-top: none; }
+  input, textarea { background: #15171c; color: #ddd; border: 1px solid #333; }
+  input::placeholder, textarea::placeholder { color: #6a7590; }
+  /* Override inline light-theme colors used throughout the generated markup */
+  [style*="background:#fff"] { background: #262a33 !important; }
+  [style*="background: #fff"] { background: #262a33 !important; }
+  [style*="background:#f7f9fc"] { background: #22252c !important; }
+  [style*="background:#f9f9f9"] { background: #22252c !important; }
+  [style*="background:#f5f5f5"] { background: #2f3540 !important; }
+  [style*="color:#333"] { color: #eaeaea !important; }
+  [style*="color:#444"] { color: #eaeaea !important; }
+  [style*="color:#666"] { color: #a0aec0 !important; }
+  [style*="color:#888"] { color: #8a96b0 !important; }
+  [style*="color:#999"] { color: #7a8499 !important; }
+  [style*="color:#aaa"] { color: #6a7590 !important; }
+  [style*="color:#bbb"] { color: #5a6680 !important; }
   #fav-toast { position:fixed; bottom:20px; right:20px; padding:8px 16px; border-radius:6px; font-size:0.9em; color:#fff; opacity:0; transition:opacity 0.3s; pointer-events:none; z-index:9999; }
   #fav-toast.show { opacity:1; }
 </style></head><body>
@@ -2394,6 +2473,43 @@ ${(() => {
     <table style="border-collapse:collapse;">
       <thead><tr style="color:#888; font-size:0.8em; text-transform:uppercase;">
         <th style="padding:4px 10px; text-align:left;">Classification</th>
+        <th style="padding:4px 10px; text-align:right;">Call IV</th>
+        <th style="padding:4px 10px; text-align:right;">Put IV</th>
+        <th style="padding:4px 10px; text-align:right;">C Spr</th>
+        <th style="padding:4px 10px; text-align:right;">P Spr</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+})()}
+${(() => {
+  if (!preEventByReturnBucket) return '';
+  const fmtRank = (v, n) => {
+    if (v == null || !n) return '<span style="color:#bbb;">—</span>';
+    let color = '#666';
+    if (v >= 65) color = '#d32f2f';
+    else if (v >= 55) color = '#ef6c00';
+    else if (v <= 35) color = '#1565c0';
+    else if (v <= 45) color = '#0277bd';
+    return `<span style="color:${color}; font-weight:600;">p${v.toFixed(0)}</span> <span style="color:#aaa; font-size:0.85em;">(${n})</span>`;
+  };
+  const fmtRet = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
+  const buckets = [
+    ['low', 'Low Returns', '#1565c0', preEventByReturnBucket.low],
+    ['high', 'High Returns', '#d32f2f', preEventByReturnBucket.high],
+  ];
+  const rows = buckets.map(([, label, color, b]) => `<tr>
+    <td style="padding:6px 10px; font-weight:bold; color:${color};">${label} <span style="color:#999; font-weight:normal; font-size:0.85em;">[${fmtRet(b.minReturn)} … ${fmtRet(b.maxReturn)}]</span> <span style="color:#aaa; font-size:0.85em;">n=${b.n}</span></td>
+    <td style="padding:6px 10px; text-align:right;">${fmtRank(b.callIVRank, b.nCallIV)}</td>
+    <td style="padding:6px 10px; text-align:right;">${fmtRank(b.putIVRank, b.nPutIV)}</td>
+    <td style="padding:6px 10px; text-align:right;">${fmtRank(b.callSpreadRank, b.nCallSpread)}</td>
+    <td style="padding:6px 10px; text-align:right;">${fmtRank(b.putSpreadRank, b.nPutSpread)}</td>
+  </tr>`).join('');
+  return `<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.92em;">
+    <div style="color:#666; font-weight:600; margin-bottom:4px;">IV Profile by Daily Return Bucket <span style="color:#999; font-weight:normal; font-size:0.9em;">(median split on next-day return; average IV/spread ranks from the day before — tests if high rank precedes high vs low next-day return)</span></div>
+    <table style="border-collapse:collapse;">
+      <thead><tr style="color:#888; font-size:0.8em; text-transform:uppercase;">
+        <th style="padding:4px 10px; text-align:left;">Bucket</th>
         <th style="padding:4px 10px; text-align:right;">Call IV</th>
         <th style="padding:4px 10px; text-align:right;">Put IV</th>
         <th style="padding:4px 10px; text-align:right;">C Spr</th>
