@@ -1520,6 +1520,7 @@ function combineHistRecord(record) {
 // Ticker screening handler
 ipcMain.handle('screen-tickers', async (event, options = {}) => {
   try {
+    await backendReadyPromise;
     const fs = require('fs');
     const configPath = path.join(__dirname, 'ci', 'config.json');
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -1628,6 +1629,11 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
         for (const p of (exp.puts || [])) dv += p.dollarVol || 0;
         return dv;
       };
+      const slimContract = (c) => ({
+        strike: c.strike,
+        dv: Math.round(c.dollarVol || 0),
+        iv: c.iv > 0 ? Math.round(c.iv * 1000) / 10 : 0,
+      });
       const buildExpRecord = (e) => {
         const callDV = expCallDV(e);
         const putDV = expPutDV(e);
@@ -1648,6 +1654,10 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
           callDV,
           putDV,
           dv: callDV + putDV, // retained for back-compat with older readers
+          // Per-strike snapshot — enables historical strike×(DV, IV) drill-downs.
+          // IV stored as percent (one decimal) to keep the JSON compact.
+          calls: (e.allCallContracts || e.calls || []).map(slimContract),
+          puts: (e.allPutContracts || e.puts || []).map(slimContract),
         };
       };
       if (od[0]) record.exp1 = buildExpRecord(od[0]);
@@ -2360,7 +2370,19 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     </tr>
     <tr class="chart-row" data-chart-for="${h.ticker}" style="display:none;">
       <td colspan="15" style="padding:0; background:#1a1d23;">
-        <div id="summary-${h.ticker}" style="margin:12px 20px 8px; padding:14px 18px; background:#262a33; border-left:3px solid #4a5a8a; border-radius:6px; color:#cdd5e0; font-size:0.98em; line-height:1.65; max-width:78ch; max-height:200px; overflow-y:auto;"></div>
+        <div style="display:flex; gap:12px; align-items:stretch; margin:12px 20px 8px;">
+          <div id="summary-${h.ticker}" style="flex:0 1 78ch; padding:14px 18px; background:#262a33; border-left:3px solid #4a5a8a; border-radius:6px; color:#cdd5e0; font-size:0.98em; line-height:1.65; max-height:200px; overflow-y:auto;"></div>
+          <div style="flex:1 1 0; min-width:280px; height:200px; background:#262a33; border-radius:6px; padding:6px 10px;">
+            <canvas id="dv-iv-chart-${h.ticker}"></canvas>
+          </div>
+        </div>
+        <div id="dv-iv-strike-wrap-${h.ticker}" style="display:none; margin:0 20px 8px; padding:10px 14px; background:#262a33; border-left:3px solid #7aa2c7; border-radius:6px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span id="dv-iv-strike-title-${h.ticker}" style="color:#cdd5e0; font-size:0.92em;"></span>
+            <button type="button" data-strike-close="${h.ticker}" style="background:transparent; color:#888; border:1px solid #444; border-radius:3px; padding:2px 8px; font-size:0.8em; cursor:pointer;">close</button>
+          </div>
+          <div id="dv-iv-strike-body-${h.ticker}"></div>
+        </div>
         <div style="padding:6px 20px 8px; display:flex; gap:8px; align-items:flex-start;">
           <label style="color:#aaa; font-size:0.82em; padding-top:6px; min-width:48px;">Notes</label>
           <textarea class="ticker-note" data-ticker="${h.ticker}" placeholder="Add a note about ${h.ticker}..." style="flex:1; min-height:42px; padding:6px 8px; border:1px solid #333; border-radius:4px; background:#15171c; color:#ddd; font-size:0.88em; font-family:inherit; resize:vertical;">${noteText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
@@ -2957,6 +2979,174 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
         const sumEl = document.getElementById('summary-' + ticker);
         if (sumEl && summaryMap[ticker]) {
           sumEl.textContent = summaryMap[ticker];
+        }
+
+        // Render last-5-day DV (bars) + average IV (line) mini-chart next to summary
+        const dvIvCanvas = document.getElementById('dv-iv-chart-' + ticker);
+        const dvIvHist = ivHistoryMap[ticker];
+        if (dvIvCanvas && Array.isArray(dvIvHist) && dvIvHist.length > 0) {
+          const recent = dvIvHist.slice(-5);
+          const labels = recent.map(r => (r.date || '').slice(5));
+          const dvSeries = recent.map(r => {
+            let dv = 0;
+            for (const k of ['exp1', 'exp2', 'exp3']) {
+              const e = r[k];
+              if (!e) continue;
+              dv += (e.callDV || 0) + (e.putDV || 0);
+            }
+            return dv;
+          });
+          const ivSeries = recent.map(r => {
+            const c = combineHist(r);
+            if (!c) return null;
+            const vals = [];
+            if (c.callIV > 0) vals.push(c.callIV);
+            if (c.putIV > 0) vals.push(c.putIV);
+            if (!vals.length) return null;
+            return vals.reduce((s, v) => s + v, 0) / vals.length;
+          });
+
+          const dvIvDateMap = recent.map(r => r.date);
+          const renderStrikeBreakdown = (dateStr) => {
+            const rec = (ivHistoryMap[ticker] || []).find(r => r.date === dateStr);
+            const wrap = document.getElementById('dv-iv-strike-wrap-' + ticker);
+            const title = document.getElementById('dv-iv-strike-title-' + ticker);
+            const body = document.getElementById('dv-iv-strike-body-' + ticker);
+            if (!rec || !wrap || !body) return;
+            const exps = ['exp1', 'exp2', 'exp3'].map(k => rec[k]).filter(e => e && (e.calls || e.puts));
+            if (!exps.length) {
+              body.innerHTML = '<div style="color:#888; font-size:0.85em; padding:8px 0;">No per-strike data for ' + dateStr + ' (older snapshots stored aggregates only — newer dates will populate).</div>';
+              if (title) title.textContent = ticker + ' — ' + dateStr;
+              wrap.style.display = 'block';
+              return;
+            }
+            if (title) title.textContent = ticker + ' — ' + dateStr;
+            body.innerHTML = exps.map((_, i) => '<div style="display:inline-block; width:48%; margin-right:1%; vertical-align:top;"><div style="height:300px;"><canvas id="strike-hist-' + ticker + '-' + dateStr + '-' + i + '"></canvas></div></div>').join('');
+            wrap.style.display = 'block';
+            exps.forEach((e, i) => {
+              const cv = document.getElementById('strike-hist-' + ticker + '-' + dateStr + '-' + i);
+              if (!cv) return;
+              const strikeSet = new Set();
+              (e.calls || []).forEach(c => strikeSet.add(c.strike));
+              (e.puts || []).forEach(p => strikeSet.add(p.strike));
+              const strikes = Array.from(strikeSet).sort((a, b) => a - b);
+              const cMap = {}, pMap = {};
+              (e.calls || []).forEach(c => { cMap[c.strike] = c; });
+              (e.puts || []).forEach(p => { pMap[p.strike] = p; });
+              new Chart(cv, {
+                data: {
+                  labels: strikes.map(s => '$' + s.toFixed(s >= 100 ? 0 : s >= 1 ? 1 : 2)),
+                  datasets: [
+                    { type: 'bar', label: 'Call $Vol', data: strikes.map(s => cMap[s] ? cMap[s].dv : 0), backgroundColor: 'rgba(72,187,120,0.55)', yAxisID: 'y' },
+                    { type: 'bar', label: 'Put $Vol', data: strikes.map(s => pMap[s] ? pMap[s].dv : 0), backgroundColor: 'rgba(245,101,101,0.55)', yAxisID: 'y' },
+                    { type: 'line', label: 'Call IV', data: strikes.map(s => cMap[s] && cMap[s].iv > 0 ? cMap[s].iv : null), borderColor: 'rgba(72,187,120,0.95)', backgroundColor: 'rgba(72,187,120,0.95)', borderWidth: 2, pointRadius: 2, spanGaps: true, yAxisID: 'y1' },
+                    { type: 'line', label: 'Put IV', data: strikes.map(s => pMap[s] && pMap[s].iv > 0 ? pMap[s].iv : null), borderColor: 'rgba(245,101,101,0.95)', backgroundColor: 'rgba(245,101,101,0.95)', borderWidth: 2, pointRadius: 2, spanGaps: true, yAxisID: 'y1' },
+                  ],
+                },
+                options: {
+                  responsive: true, maintainAspectRatio: false, animation: { duration: 200 },
+                  interaction: { mode: 'index', intersect: false },
+                  plugins: {
+                    title: { display: true, text: e.label || ('Exp ' + (i + 1)), color: '#b0b0b0', font: { size: 11 } },
+                    legend: { labels: { color: '#909090', boxWidth: 10, font: { size: 9 } } },
+                  },
+                  scales: {
+                    x: { ticks: { color: '#909090', font: { size: 9 }, maxRotation: 60, minRotation: 0 }, grid: { color: '#2a2a4a' } },
+                    y: { position: 'left', beginAtZero: true, title: { display: true, text: '$Vol', color: '#909090', font: { size: 9 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : (v / 1e3).toFixed(0) + 'K'; } }, grid: { color: '#2a2a4a' } },
+                    y1: { position: 'right', title: { display: true, text: 'IV %', color: '#909090', font: { size: 9 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } }, grid: { drawOnChartArea: false } },
+                  },
+                },
+              });
+            });
+          };
+
+          const closeBtn = document.querySelector('button[data-strike-close="' + ticker + '"]');
+          if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+              const wrap = document.getElementById('dv-iv-strike-wrap-' + ticker);
+              if (wrap) wrap.style.display = 'none';
+            });
+          }
+
+          new Chart(dvIvCanvas, {
+            data: {
+              labels,
+              datasets: [
+                {
+                  type: 'bar',
+                  label: 'Option $Vol',
+                  data: dvSeries,
+                  backgroundColor: 'rgba(122,162,199,0.55)',
+                  borderColor: 'rgba(122,162,199,0.9)',
+                  borderWidth: 1,
+                  yAxisID: 'y',
+                  order: 1,
+                },
+                {
+                  type: 'line',
+                  label: 'Avg IV',
+                  data: ivSeries,
+                  borderColor: 'rgba(245,180,80,0.95)',
+                  backgroundColor: 'rgba(245,180,80,0.95)',
+                  borderWidth: 2,
+                  pointRadius: 3,
+                  spanGaps: true,
+                  tension: 0.2,
+                  yAxisID: 'y1',
+                  order: 0,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              animation: { duration: 200 },
+              interaction: { mode: 'index', intersect: false },
+              onClick: (evt, els, chart) => {
+                let idx = els && els.length ? els[0].index : null;
+                if (idx == null) {
+                  const pts = chart.getElementsAtEventForMode(evt, 'index', { intersect: false }, true);
+                  if (pts && pts.length) idx = pts[0].index;
+                }
+                if (idx == null) return;
+                const dateStr = dvIvDateMap[idx];
+                if (dateStr) renderStrikeBreakdown(dateStr);
+              },
+              plugins: {
+                title: { display: true, text: 'Last 5d Option $Vol & Avg IV (click a day for strikes)', color: '#b0b0b0', font: { size: 11 } },
+                legend: { labels: { color: '#909090', boxWidth: 10, font: { size: 9 } } },
+                tooltip: {
+                  callbacks: {
+                    label: function(ctx) {
+                      const v = ctx.raw;
+                      if (v == null) return ctx.dataset.label + ': N/A';
+                      if (ctx.dataset.yAxisID === 'y1') return ctx.dataset.label + ': ' + v.toFixed(1) + '%';
+                      return ctx.dataset.label + ': $' + (v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : (v / 1e3).toFixed(0) + 'K');
+                    },
+                  },
+                },
+              },
+              scales: {
+                x: { ticks: { color: '#909090', font: { size: 9 } }, grid: { color: '#2a2a4a' } },
+                y: {
+                  position: 'left',
+                  beginAtZero: true,
+                  title: { display: true, text: '$Vol', color: '#909090', font: { size: 9 } },
+                  ticks: {
+                    color: '#909090', font: { size: 9 },
+                    callback: function(v) { return v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : (v / 1e3).toFixed(0) + 'K'; },
+                  },
+                  grid: { color: '#2a2a4a' },
+                },
+                y1: {
+                  position: 'right',
+                  title: { display: true, text: 'Avg IV %', color: '#909090', font: { size: 9 } },
+                  ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } },
+                  grid: { drawOnChartArea: false },
+                },
+              },
+            },
+          });
         }
 
         // Populate news headlines

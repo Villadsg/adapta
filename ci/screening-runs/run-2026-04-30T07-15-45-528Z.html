@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<title>Ticker Screening Results</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 20px; background: #1a1d23; color: #eaeaea; }
+  h1 { font-size: 1.4em; margin-bottom: 4px; color: #a8b5a2; }
+  .summary { color: #a0aec0; margin-bottom: 16px; font-size: 0.95em; }
+  table { width: 100%; border-collapse: collapse; background: #262a33; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.4); }
+  #screen-table th { background: #2f3540; padding: 10px 12px; text-align: left; font-size: 0.85em; color: #a0aec0; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; user-select: none; }
+  #screen-table th:hover { color: #fff; background: #3a414d; }
+  #screen-table th .sort-arrow { font-size: 0.7em; margin-left: 3px; color: #5a6a8a; }
+  #screen-table th.sorted-asc .sort-arrow, #screen-table th.sorted-desc .sort-arrow { color: #fff; }
+  td { padding: 8px 12px; border-top: 1px solid #2e333d; font-size: 0.95em; }
+  tr.data-row:hover { background: #2c303a; }
+  tr:hover { background: #22252c; }
+  .chart-row td { border-top: none; }
+  input, textarea { background: #15171c; color: #ddd; border: 1px solid #333; }
+  input::placeholder, textarea::placeholder { color: #6a7590; }
+  /* Override inline light-theme colors used throughout the generated markup */
+  [style*="background:#fff"] { background: #262a33 !important; }
+  [style*="background: #fff"] { background: #262a33 !important; }
+  [style*="background:#f7f9fc"] { background: #22252c !important; }
+  [style*="background:#f9f9f9"] { background: #22252c !important; }
+  [style*="background:#f5f5f5"] { background: #2f3540 !important; }
+  [style*="color:#333"] { color: #eaeaea !important; }
+  [style*="color:#444"] { color: #eaeaea !important; }
+  [style*="color:#666"] { color: #a0aec0 !important; }
+  [style*="color:#888"] { color: #8a96b0 !important; }
+  [style*="color:#999"] { color: #7a8499 !important; }
+  [style*="color:#aaa"] { color: #6a7590 !important; }
+  [style*="color:#bbb"] { color: #5a6680 !important; }
+  #fav-toast { position:fixed; bottom:20px; right:20px; padding:8px 16px; border-radius:6px; font-size:0.9em; color:#fff; opacity:0; transition:opacity 0.3s; pointer-events:none; z-index:9999; }
+  #fav-toast.show { opacity:1; }
+</style></head><body>
+<div id="fav-toast"></div>
+<h1>Ticker Screening Results</h1>
+<p class="summary">1 hit out of 1 tickers screened &mdash; 5d lookback, p92 threshold</p>
+<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.95em;">
+  <span style="color:#666; font-weight:600;">Avg Weighted IV (1 tickers):</span>
+  <span style="color:rgba(72,187,120,0.9); font-weight:bold; margin-left:10px;">Call 13.0%</span>
+  <span style="color:rgba(245,101,101,0.9); font-weight:bold; margin-left:10px;">Put 14.9%</span>
+  <span style="color:#999; margin-left:16px;">|</span>
+  <span style="color:#666; font-weight:600; margin-left:16px;">Avg ATM IV:</span>
+  <span style="color:rgba(72,187,120,0.7); font-weight:bold; margin-left:10px;">Call 0.2%</span>
+  <span style="color:rgba(245,101,101,0.7); font-weight:bold; margin-left:10px;">Put 0.0%</span>
+</div>
+<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.92em;">
+    <div style="color:#666; font-weight:600; margin-bottom:4px;">Pre-Event IV Profile <span style="color:#999; font-weight:normal; font-size:0.9em;">(avg percentile rank of each pre-event snapshot within that ticker's own point-in-time history; 50 = neutral, &gt;60 = elevated, &lt;40 = suppressed)</span></div>
+    <div style="color:#aaa; font-size:0.78em; margin-bottom:6px;">Requires ≥10 history records before the event date. (n) = events contributing.</div>
+    <table style="border-collapse:collapse;">
+      <thead><tr style="color:#888; font-size:0.8em; text-transform:uppercase;">
+        <th style="padding:4px 10px; text-align:left;">Classification</th>
+        <th style="padding:4px 10px; text-align:right;">Call IV</th>
+        <th style="padding:4px 10px; text-align:right;">Put IV</th>
+        <th style="padding:4px 10px; text-align:right;">C Spr</th>
+        <th style="padding:4px 10px; text-align:right;">P Spr</th>
+      </tr></thead>
+      <tbody><tr>
+      <td style="padding:6px 10px; font-weight:bold; color:#4caf50;">Surprising +</td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p58</span> <span style="color:#aaa; font-size:0.85em;">(52)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p57</span> <span style="color:#aaa; font-size:0.85em;">(46)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p64</span> <span style="color:#aaa; font-size:0.85em;">(49)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p64</span> <span style="color:#aaa; font-size:0.85em;">(49)</span></td>
+    </tr><tr>
+      <td style="padding:6px 10px; font-weight:bold; color:#8bc34a;">Anticipated +</td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#d32f2f; font-weight:600;">p91</span> <span style="color:#aaa; font-size:0.85em;">(1)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p64</span> <span style="color:#aaa; font-size:0.85em;">(1)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#bbb;">—</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#bbb;">—</span></td>
+    </tr><tr>
+      <td style="padding:6px 10px; font-weight:bold; color:#ff9800;">Anticipated -</td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p54</span> <span style="color:#aaa; font-size:0.85em;">(7)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p54</span> <span style="color:#aaa; font-size:0.85em;">(6)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#1565c0; font-weight:600;">p28</span> <span style="color:#aaa; font-size:0.85em;">(6)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p57</span> <span style="color:#aaa; font-size:0.85em;">(6)</span></td>
+    </tr><tr>
+      <td style="padding:6px 10px; font-weight:bold; color:#f44336;">Surprising -</td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p52</span> <span style="color:#aaa; font-size:0.85em;">(41)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#0277bd; font-weight:600;">p44</span> <span style="color:#aaa; font-size:0.85em;">(38)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p47</span> <span style="color:#aaa; font-size:0.85em;">(25)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p53</span> <span style="color:#aaa; font-size:0.85em;">(25)</span></td>
+    </tr></tbody>
+    </table>
+  </div>
+<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.92em;">
+    <div style="color:#666; font-weight:600; margin-bottom:4px;">IV Profile by Daily Return Bucket <span style="color:#999; font-weight:normal; font-size:0.9em;">(median split on next-day return; average IV/spread ranks from the day before — tests if high rank precedes high vs low next-day return)</span></div>
+    <table style="border-collapse:collapse;">
+      <thead><tr style="color:#888; font-size:0.8em; text-transform:uppercase;">
+        <th style="padding:4px 10px; text-align:left;">Bucket</th>
+        <th style="padding:4px 10px; text-align:right;">Call IV</th>
+        <th style="padding:4px 10px; text-align:right;">Put IV</th>
+        <th style="padding:4px 10px; text-align:right;">C Spr</th>
+        <th style="padding:4px 10px; text-align:right;">P Spr</th>
+      </tr></thead>
+      <tbody><tr>
+    <td style="padding:6px 10px; font-weight:bold; color:#1565c0;">Low Returns <span style="color:#999; font-weight:normal; font-size:0.85em;">[-22.7% … -0.3%]</span> <span style="color:#aaa; font-size:0.85em;">n=297</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p61</span> <span style="color:#aaa; font-size:0.85em;">(292)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p61</span> <span style="color:#aaa; font-size:0.85em;">(272)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p49</span> <span style="color:#aaa; font-size:0.85em;">(297)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p49</span> <span style="color:#aaa; font-size:0.85em;">(297)</span></td>
+  </tr><tr>
+    <td style="padding:6px 10px; font-weight:bold; color:#d32f2f;">High Returns <span style="color:#999; font-weight:normal; font-size:0.85em;">[-0.2% … +14.8%]</span> <span style="color:#aaa; font-size:0.85em;">n=297</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#d32f2f; font-weight:600;">p65</span> <span style="color:#aaa; font-size:0.85em;">(291)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p64</span> <span style="color:#aaa; font-size:0.85em;">(278)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p47</span> <span style="color:#aaa; font-size:0.85em;">(297)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#0277bd; font-weight:600;">p43</span> <span style="color:#aaa; font-size:0.85em;">(297)</span></td>
+  </tr></tbody>
+    </table>
+  </div>
+<div id="portfolio-corr-box" style="margin-bottom:14px; padding:12px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.95em;">
+  <div style="color:#666; font-weight:600; margin-bottom:6px;">Portfolio Correlation Check</div>
+  <div style="display:flex; align-items:center; gap:10px;">
+    <input id="portfolio-corr-input" type="text" placeholder="e.g. AAPL, MSFT, NVDA" style="flex:1; padding:7px 10px; border:1px solid #ddd; border-radius:6px; font-size:0.95em; outline:none;" />
+    <button id="portfolio-corr-btn" style="padding:7px 16px; border:none; border-radius:6px; background:#5b8cb8; color:#fff; font-size:0.9em; cursor:pointer;">Check</button>
+  </div>
+  <div id="portfolio-corr-result" style="margin-top:8px;"></div>
+</div>
+
+<table id="screen-table">
+<thead><tr>
+  <th style="width:28px; text-align:center; padding:4px;"><span class="sort-arrow"></span></th>
+  <th>Ticker<span class="sort-arrow"></span></th>
+  <th>Sector<span class="sort-arrow"></span></th>
+  <th>Date<span class="sort-arrow"></span></th>
+  <th>Gap %<span class="sort-arrow"></span></th>
+  <th>Percentile<span class="sort-arrow"></span></th>
+  <th>Classification<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Volume<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">R&sup2; (SPY)<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Mkt Cap<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Opt $ Vol<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Call IV<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Weighted OTM IV minus ATM IV. (pN) = self-history rank, [sN] = sector rank">C Spr<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Put IV<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Weighted OTM IV minus ATM IV. (pN) = self-history rank, [sN] = sector rank">P Spr<span class="sort-arrow"></span></th>
+</tr></thead>
+<tbody><tr class="data-row" data-ticker="INTC" style=" cursor:pointer;">
+      <td style="text-align:center; width:28px; padding:4px;" data-v="0"><span class="fav-star" data-ticker="INTC" style="cursor:pointer; font-size:1.1em; color:#ccc;" title="Toggle favorite">☆</span></td>
+      <td data-v="INTC" style="font-weight:bold;">INTC <span style="font-size:0.7em;color:#aaa;">▶</span></td>
+      <td data-v="Technology" style="font-size:0.82em; color:#888;">Technology</td>
+      <td data-v="2026-04-24">2026-04-24</td>
+      <td data-v="20.672808696480264">20.67%</td>
+      <td data-v="100">100.0%</td>
+      <td data-v="surprising_positive" style="color:#4caf50; font-weight:bold;">Surprising +</td>
+      <td data-v="281405200" style="text-align:right;">281.4M</td>
+      <td data-v="0.17844943303329086" style="text-align:right;">0.178</td>
+      <td data-v="476213477376" style="text-align:right;">476.2B</td>
+      <td data-v="90797637" style="text-align:right;">$90.8M</td>
+      <td data-v="13" style="text-align:right; color:rgba(72,187,120,0.9);">13.0%</td>
+      <td data-v="12.9" style="text-align:right; color:rgba(72,187,120,0.7); font-size:0.88em;">+12.9</td>
+      <td data-v="14.9" style="text-align:right; color:rgba(245,101,101,0.9);">14.9%</td>
+      <td data-v="14.9" style="text-align:right; color:rgba(245,101,101,0.7); font-size:0.88em;">+14.9</td>
+    </tr>
+    <tr class="chart-row" data-chart-for="INTC" style="display:none;">
+      <td colspan="15" style="padding:0; background:#1a1d23;">
+        <div style="display:flex; gap:12px; align-items:stretch; margin:12px 20px 8px;">
+          <div id="summary-INTC" style="flex:0 1 78ch; padding:14px 18px; background:#262a33; border-left:3px solid #4a5a8a; border-radius:6px; color:#cdd5e0; font-size:0.98em; line-height:1.65; max-height:200px; overflow-y:auto;"></div>
+          <div style="flex:1 1 0; min-width:280px; height:200px; background:#262a33; border-radius:6px; padding:6px 10px;">
+            <canvas id="dv-iv-chart-INTC"></canvas>
+          </div>
+        </div>
+        <div id="dv-iv-strike-wrap-INTC" style="display:none; margin:0 20px 8px; padding:10px 14px; background:#262a33; border-left:3px solid #7aa2c7; border-radius:6px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span id="dv-iv-strike-title-INTC" style="color:#cdd5e0; font-size:0.92em;"></span>
+            <button type="button" data-strike-close="INTC" style="background:transparent; color:#888; border:1px solid #444; border-radius:3px; padding:2px 8px; font-size:0.8em; cursor:pointer;">close</button>
+          </div>
+          <div id="dv-iv-strike-body-INTC"></div>
+        </div>
+        <div style="padding:6px 20px 8px; display:flex; gap:8px; align-items:flex-start;">
+          <label style="color:#aaa; font-size:0.82em; padding-top:6px; min-width:48px;">Notes</label>
+          <textarea class="ticker-note" data-ticker="INTC" placeholder="Add a note about INTC..." style="flex:1; min-height:42px; padding:6px 8px; border:1px solid #333; border-radius:4px; background:#15171c; color:#ddd; font-size:0.88em; font-family:inherit; resize:vertical;"></textarea>
+          <span class="note-status" data-ticker="INTC" style="color:#888; font-size:0.78em; padding-top:8px; min-width:54px;"></span>
+        </div>
+        <div style="padding:12px 16px; height:480px;">
+          <canvas id="chart-INTC"></canvas>
+        </div>
+        <div id="opts-wrap-INTC" style="display:none; padding:8px 16px 4px;">
+          <div style="display:flex; gap:8px;">
+            <div style="flex:1; min-width:0;">
+              <div id="opts-iv-label-0-INTC" style="color:#aaa; font-size:0.82em; padding:2px 4px; cursor:pointer; user-select:none;" title="Click for historical weighted IV"></div>
+              <div style="height:360px;"><canvas id="opts-chart-0-INTC"></canvas></div>
+            </div>
+            <div style="flex:1; min-width:0;">
+              <div id="opts-iv-label-1-INTC" style="color:#aaa; font-size:0.82em; padding:2px 4px; cursor:pointer; user-select:none;" title="Click for historical weighted IV"></div>
+              <div style="height:360px;"><canvas id="opts-chart-1-INTC"></canvas></div>
+            </div>
+          </div>
+          <div id="iv-history-wrap-INTC" style="display:none; padding:8px 0; height:420px;">
+            <canvas id="iv-history-chart-INTC"></canvas>
+          </div>
+        </div>
+        <div id="news-INTC" style="padding:4px 20px 14px;"></div>
+      </td>
+    </tr></tbody>
+</table>
+
+<script>
+(function() {
+  const chartDataMap = {"INTC":{"dates":["2025-12-12","2025-12-15","2025-12-16","2025-12-17","2025-12-18","2025-12-19","2025-12-22","2025-12-23","2025-12-24","2025-12-26","2025-12-29","2025-12-30","2025-12-31","2026-01-02","2026-01-05","2026-01-06","2026-01-07","2026-01-08","2026-01-09","2026-01-12","2026-01-13","2026-01-14","2026-01-15","2026-01-16","2026-01-20","2026-01-21","2026-01-22","2026-01-23","2026-01-26","2026-01-27","2026-01-28","2026-01-29","2026-01-30","2026-02-02","2026-02-03","2026-02-04","2026-02-05","2026-02-06","2026-02-09","2026-02-10","2026-02-11","2026-02-12","2026-02-13","2026-02-17","2026-02-18","2026-02-19","2026-02-20","2026-02-23","2026-02-24","2026-02-25","2026-02-26","2026-02-27","2026-03-02","2026-03-03","2026-03-04","2026-03-05","2026-03-06","2026-03-09","2026-03-10","2026-03-11","2026-03-12","2026-03-13","2026-03-16","2026-03-17","2026-03-18","2026-03-19","2026-03-20","2026-03-23","2026-03-24","2026-03-25","2026-03-26","2026-03-27","2026-03-30","2026-03-31","2026-04-01","2026-04-02","2026-04-06","2026-04-07","2026-04-08","2026-04-09","2026-04-10","2026-04-13","2026-04-14","2026-04-15","2026-04-16","2026-04-17","2026-04-20","2026-04-21","2026-04-22","2026-04-23","2026-04-24","2026-04-27","2026-04-28","2026-04-29"],"closes":[37.810001373291016,37.5099983215332,37.310001373291016,36.04999923706055,36.279998779296875,36.81999969482422,36.369998931884766,36.349998474121094,36.15999984741211,36.20000076293945,36.68000030517578,37.29999923706055,36.900001525878906,39.380001068115234,39.369998931884766,40.040000915527344,42.630001068115234,41.11000061035156,45.54999923706055,44.060001373291016,47.290000915527344,48.720001220703125,48.31999969482422,46.959999084472656,48.560001373291016,54.25,54.31999969482422,45.06999969482422,42.4900016784668,43.93000030517578,48.779998779296875,48.65999984741211,46.470001220703125,48.810001373291016,49.25,48.599998474121094,48.2400016784668,50.59000015258789,50.2400016784668,47.130001068115234,48.290000915527344,46.47999954223633,46.790000915527344,46.18000030517578,45.459999084472656,44.619998931884766,44.11000061035156,43.630001068115234,46.119998931884766,46.880001068115234,45.459999084472656,45.61000061035156,45.5,43.099998474121094,45.58000183105469,45.95000076293945,43.41999816894531,45.58000183105469,46.779998779296875,47.97999954223633,45.25,45.77000045776367,45.7599983215332,44.060001373291016,45.029998779296875,46.18000030517578,43.869998931884766,44.0099983215332,44.060001373291016,47.18000030517578,44.099998474121094,43.130001068115234,41.189998626708984,44.130001068115234,48.029998779296875,50.380001068115234,50.779998779296875,52.90999984741211,58.95000076293945,61.720001220703125,62.380001068115234,65.18000030517578,63.810001373291016,64.94000244140625,68.5,68.5,65.69999694824219,66.26000213623047,65.2699966430664,66.77999877929688,82.54000091552734,84.98999786376953,84.5199966430664,94.75],"volumes":[87784500,60898500,50490300,54792000,69468400,163221300,51685400,35958000,37443800,28779400,38062300,61935300,51524700,95396400,96665400,66395100,166028400,88242000,186691400,101989100,168656400,148225800,132328900,127314700,150153000,220565300,190066400,294675400,149407800,121832200,201995100,124256600,114920100,101414600,122205100,128702300,114307800,115600200,94841400,99832900,107681200,88321200,69740400,65802200,65306100,72724900,90743600,57130900,98872300,75645300,71457500,79327200,60705100,83971000,96628100,78229400,74698300,82937400,85233300,72480600,85110200,68386200,114199400,89061600,78056200,74051500,162814200,80772200,65323500,97467900,82841400,70002200,84596000,95294900,129598500,117134200,79978800,129543800,184599900,155609900,98624400,112111000,112796100,92051500,108328300,118831500,96851100,91402300,90267300,155141800,281405200,178820200,147773500,229205400],"events":[{"idx":18,"y":45.54999923706055,"classification":"surprising_positive"},{"idx":20,"y":47.290000915527344,"classification":"surprising_positive"},{"idx":25,"y":54.25,"classification":"surprising_positive"},{"idx":27,"y":45.06999969482422,"classification":"surprising_negative"},{"idx":28,"y":42.4900016784668,"classification":"surprising_negative"},{"idx":30,"y":48.779998779296875,"classification":"surprising_positive"},{"idx":90,"y":82.54000091552734,"classification":"surprising_positive"},{"idx":93,"y":94.75,"classification":"surprising_positive"}],"optionsStrikes":[{"label":"2026-05-01","calls":[{"strike":100,"dollarVol":10562240,"dollarOI":0,"iv":25.00075},{"strike":105,"dollarVol":1288326,"dollarOI":0,"iv":25.00075}],"puts":[{"strike":30,"dollarVol":1,"dollarOI":0,"iv":50.0005},{"strike":37,"dollarVol":10,"dollarOI":0,"iv":50.0005},{"strike":38,"dollarVol":3,"dollarOI":0,"iv":50.0005},{"strike":40,"dollarVol":57.00000000000001,"dollarOI":0,"iv":50.0005},{"strike":42,"dollarVol":2,"dollarOI":0,"iv":50.0005},{"strike":43,"dollarVol":2,"dollarOI":0,"iv":50.0005},{"strike":45,"dollarVol":1,"dollarOI":0,"iv":50.0005},{"strike":46,"dollarVol":1,"dollarOI":0,"iv":50.0005},{"strike":47,"dollarVol":2,"dollarOI":0,"iv":50.0005},{"strike":49,"dollarVol":101,"dollarOI":0,"iv":50.0005},{"strike":49.5,"dollarVol":42,"dollarOI":0,"iv":50.0005},{"strike":50,"dollarVol":13,"dollarOI":0,"iv":50.0005},{"strike":51,"dollarVol":6,"dollarOI":0,"iv":50.0005},{"strike":53,"dollarVol":4,"dollarOI":0,"iv":50.0005},{"strike":54,"dollarVol":2,"dollarOI":0,"iv":50.0005},{"strike":55,"dollarVol":27,"dollarOI":0,"iv":50.0005},{"strike":56,"dollarVol":8,"dollarOI":0,"iv":50.0005},{"strike":57,"dollarVol":20,"dollarOI":0,"iv":50.0005},{"strike":58,"dollarVol":105,"dollarOI":0,"iv":50.0005},{"strike":59,"dollarVol":8,"dollarOI":0,"iv":50.0005},{"strike":60,"dollarVol":166,"dollarOI":0,"iv":50.0005},{"strike":61,"dollarVol":78,"dollarOI":0,"iv":50.0005},{"strike":62,"dollarVol":219,"dollarOI":0,"iv":50.0005},{"strike":63,"dollarVol":110.00000000000001,"dollarOI":0,"iv":50.0005},{"strike":64,"dollarVol":935,"dollarOI":0,"iv":50.0005},{"strike":65,"dollarVol":1294,"dollarOI":0,"iv":50.0005},{"strike":66,"dollarVol":788,"dollarOI":0,"iv":50.0005},{"strike":67,"dollarVol":794,"dollarOI":0,"iv":50.0005},{"strike":68,"dollarVol":1506,"dollarOI":0,"iv":50.0005},{"strike":69,"dollarVol":10674,"dollarOI":0,"iv":50.0005},{"strike":70,"dollarVol":19092,"dollarOI":0,"iv":50.0005},{"strike":71,"dollarVol":7016,"dollarOI":0,"iv":50.0005},{"strike":72,"dollarVol":14865,"dollarOI":0,"iv":50.0005},{"strike":73,"dollarVol":15032.999999999998,"dollarOI":0,"iv":50.0005},{"strike":74,"dollarVol":8345,"dollarOI":0,"iv":50.0005},{"strike":75,"dollarVol":45760,"dollarOI":0,"iv":50.0005},{"strike":76,"dollarVol":26765.999999999996,"dollarOI":0,"iv":50.0005},{"strike":77,"dollarVol":26112,"dollarOI":0,"iv":50.0005},{"strike":78,"dollarVol":20079,"dollarOI":0,"iv":50.0005},{"strike":79,"dollarVol":55935,"dollarOI":0,"iv":50.0005},{"strike":80,"dollarVol":279422,"dollarOI":0,"iv":50.0005},{"strike":81,"dollarVol":74252,"dollarOI":0,"iv":50.0005},{"strike":82,"dollarVol":152526,"dollarOI":0,"iv":50.0005},{"strike":83,"dollarVol":126063.00000000001,"dollarOI":0,"iv":50.0005},{"strike":84,"dollarVol":300089.99999999994,"dollarOI":0,"iv":50.0005},{"strike":85,"dollarVol":1150336,"dollarOI":0,"iv":25.00075},{"strike":86,"dollarVol":1018765.0000000001,"dollarOI":0,"iv":25.00075},{"strike":87,"dollarVol":1532765.9999999998,"dollarOI":0,"iv":25.00075},{"strike":88,"dollarVol":1459422,"dollarOI":0,"iv":25.00075},{"strike":89,"dollarVol":819500,"dollarOI":0,"iv":25.00075},{"strike":90,"dollarVol":5984089,"dollarOI":0,"iv":12.500875},{"strike":91,"dollarVol":3205395,"dollarOI":0,"iv":12.500875}],"wCallIV":25,"wPutIV":19.8,"atmCallIV":1.6,"atmPutIV":0,"atmBandCallIV":0.2,"atmBandPutIV":0,"atmCallDV":166721208,"atmPutDV":2087222,"ivSpreadCall":23.4,"ivSpreadPut":19.8,"deepOTMCallPct":10.9,"deepOTMPutPct":14.3},{"label":"2026-05-08","calls":[{"strike":100,"dollarVol":8875930,"dollarOI":0,"iv":6.250937500000001},{"strike":105,"dollarVol":3624192,"dollarOI":0,"iv":12.500875}],"puts":[{"strike":36,"dollarVol":7.000000000000001,"dollarOI":0,"iv":50.0005},{"strike":38,"dollarVol":2,"dollarOI":0,"iv":50.0005},{"strike":40,"dollarVol":386,"dollarOI":0,"iv":50.0005},{"strike":41,"dollarVol":349,"dollarOI":0,"iv":50.0005},{"strike":44,"dollarVol":20,"dollarOI":0,"iv":50.0005},{"strike":45,"dollarVol":2,"dollarOI":0,"iv":50.0005},{"strike":46,"dollarVol":108,"dollarOI":0,"iv":50.0005},{"strike":47,"dollarVol":175,"dollarOI":0,"iv":50.0005},{"strike":48,"dollarVol":148,"dollarOI":0,"iv":50.0005},{"strike":49,"dollarVol":230.00000000000003,"dollarOI":0,"iv":50.0005},{"strike":49.5,"dollarVol":20,"dollarOI":0,"iv":50.0005},{"strike":50,"dollarVol":492,"dollarOI":0,"iv":50.0005},{"strike":51,"dollarVol":4,"dollarOI":0,"iv":50.0005},{"strike":52,"dollarVol":18384,"dollarOI":0,"iv":50.0005},{"strike":53,"dollarVol":6,"dollarOI":0,"iv":50.0005},{"strike":54,"dollarVol":52,"dollarOI":0,"iv":50.0005},{"strike":55,"dollarVol":62,"dollarOI":0,"iv":50.0005},{"strike":56,"dollarVol":44.99999999999999,"dollarOI":0,"iv":50.0005},{"strike":57,"dollarVol":63,"dollarOI":0,"iv":50.0005},{"strike":58,"dollarVol":720,"dollarOI":0,"iv":50.0005},{"strike":59,"dollarVol":219,"dollarOI":0,"iv":50.0005},{"strike":60,"dollarVol":29232,"dollarOI":0,"iv":50.0005},{"strike":61,"dollarVol":775,"dollarOI":0,"iv":50.0005},{"strike":62,"dollarVol":12194.000000000002,"dollarOI":0,"iv":50.0005},{"strike":63,"dollarVol":609.0000000000001,"dollarOI":0,"iv":50.0005},{"strike":64,"dollarVol":648,"dollarOI":0,"iv":50.0005},{"strike":65,"dollarVol":10755,"dollarOI":0,"iv":50.0005},{"strike":66,"dollarVol":12432,"dollarOI":0,"iv":50.0005},{"strike":67,"dollarVol":4215,"dollarOI":0,"iv":50.0005},{"strike":68,"dollarVol":2160,"dollarOI":0,"iv":50.0005},{"strike":69,"dollarVol":874,"dollarOI":0,"iv":50.0005},{"strike":70,"dollarVol":39921,"dollarOI":0,"iv":50.0005},{"strike":71,"dollarVol":8225,"dollarOI":0,"iv":50.0005},{"strike":72,"dollarVol":86832,"dollarOI":0,"iv":50.0005},{"strike":73,"dollarVol":17732,"dollarOI":0,"iv":50.0005},{"strike":74,"dollarVol":13160,"dollarOI":0,"iv":25.00075},{"strike":75,"dollarVol":406006,"dollarOI":0,"iv":25.00075},{"strike":76,"dollarVol":35394,"dollarOI":0,"iv":25.00075},{"strike":77,"dollarVol":45540,"dollarOI":0,"iv":25.00075},{"strike":78,"dollarVol":82030,"dollarOI":0,"iv":25.00075},{"strike":79,"dollarVol":79500,"dollarOI":0,"iv":25.00075},{"strike":80,"dollarVol":680490,"dollarOI":0,"iv":25.00075},{"strike":81,"dollarVol":96621,"dollarOI":0,"iv":25.00075},{"strike":82,"dollarVol":601320,"dollarOI":0,"iv":25.00075},{"strike":83,"dollarVol":210295.00000000003,"dollarOI":0,"iv":25.00075},{"strike":84,"dollarVol":1379088,"dollarOI":0,"iv":12.500875},{"strike":85,"dollarVol":1981260.0000000002,"dollarOI":0,"iv":12.500875},{"strike":86,"dollarVol":179550,"dollarOI":0,"iv":12.500875},{"strike":87,"dollarVol":2627351.9999999995,"dollarOI":0,"iv":12.500875},{"strike":88,"dollarVol":1763941,"dollarOI":0,"iv":12.500875},{"strike":89,"dollarVol":1811100,"dollarOI":0,"iv":12.500875},{"strike":90,"dollarVol":2922348,"dollarOI":0,"iv":6.250937500000001},{"strike":91,"dollarVol":404415,"dollarOI":0,"iv":6.250937500000001}],"wCallIV":8.1,"wPutIV":13.6,"atmCallIV":0.8,"atmPutIV":0,"atmBandCallIV":0.1,"atmBandPutIV":0,"atmCallDV":38954302,"atmPutDV":1408335,"ivSpreadCall":7.3,"ivSpreadPut":13.6,"deepOTMCallPct":29,"deepOTMPutPct":37.6},{"label":"2026-05-15","calls":[{"strike":100,"dollarVol":11724912.000000002,"dollarOI":0,"iv":6.250937500000001},{"strike":105,"dollarVol":2076750,"dollarOI":0,"iv":12.500875}],"puts":[{"strike":18,"dollarVol":1,"dollarOI":0,"iv":50.0005},{"strike":22,"dollarVol":84,"dollarOI":0,"iv":50.0005},{"strike":23,"dollarVol":28.000000000000004,"dollarOI":0,"iv":50.0005},{"strike":24,"dollarVol":206.99999999999997,"dollarOI":0,"iv":50.0005},{"strike":25,"dollarVol":1503,"dollarOI":0,"iv":50.0005},{"strike":26,"dollarVol":32,"dollarOI":0,"iv":50.0005},{"strike":27,"dollarVol":6,"dollarOI":0,"iv":50.0005},{"strike":28,"dollarVol":22,"dollarOI":0,"iv":50.0005},{"strike":30,"dollarVol":82,"dollarOI":0,"iv":50.0005},{"strike":32,"dollarVol":1,"dollarOI":0,"iv":50.0005},{"strike":33,"dollarVol":12,"dollarOI":0,"iv":50.0005},{"strike":34,"dollarVol":384,"dollarOI":0,"iv":50.0005},{"strike":35,"dollarVol":84,"dollarOI":0,"iv":50.0005},{"strike":36,"dollarVol":288,"dollarOI":0,"iv":50.0005},{"strike":37,"dollarVol":1690.0000000000002,"dollarOI":0,"iv":50.0005},{"strike":38,"dollarVol":4775,"dollarOI":0,"iv":50.0005},{"strike":39,"dollarVol":2144,"dollarOI":0,"iv":50.0005},{"strike":40,"dollarVol":3683.9999999999995,"dollarOI":0,"iv":50.0005},{"strike":41,"dollarVol":1015,"dollarOI":0,"iv":50.0005},{"strike":42,"dollarVol":13254,"dollarOI":0,"iv":50.0005},{"strike":43,"dollarVol":1272,"dollarOI":0,"iv":50.0005},{"strike":44,"dollarVol":1631.0000000000002,"dollarOI":0,"iv":50.0005},{"strike":45,"dollarVol":116016.00000000001,"dollarOI":0,"iv":50.0005},{"strike":46,"dollarVol":81829,"dollarOI":0,"iv":50.0005},{"strike":47,"dollarVol":7328,"dollarOI":0,"iv":50.0005},{"strike":48,"dollarVol":2144,"dollarOI":0,"iv":50.0005},{"strike":49,"dollarVol":99022,"dollarOI":0,"iv":50.0005},{"strike":50,"dollarVol":70950,"dollarOI":0,"iv":50.0005},{"strike":52.5,"dollarVol":9702,"dollarOI":0,"iv":50.0005},{"strike":55,"dollarVol":116309.99999999999,"dollarOI":0,"iv":50.0005},{"strike":57.5,"dollarVol":41700,"dollarOI":0,"iv":50.0005},{"strike":58,"dollarVol":510.00000000000006,"dollarOI":0,"iv":50.0005},{"strike":59,"dollarVol":3568,"dollarOI":0,"iv":50.0005},{"strike":60,"dollarVol":128300,"dollarOI":0,"iv":50.0005},{"strike":61,"dollarVol":270,"dollarOI":0,"iv":50.0005},{"strike":62,"dollarVol":1140,"dollarOI":0,"iv":50.0005},{"strike":62.5,"dollarVol":1575,"dollarOI":0,"iv":50.0005},{"strike":63,"dollarVol":828.0000000000001,"dollarOI":0,"iv":50.0005},{"strike":64,"dollarVol":6775,"dollarOI":0,"iv":50.0005},{"strike":65,"dollarVol":35292.99999999999,"dollarOI":0,"iv":50.0005},{"strike":66,"dollarVol":2720,"dollarOI":0,"iv":50.0005},{"strike":67,"dollarVol":2448,"dollarOI":0,"iv":25.00075},{"strike":67.5,"dollarVol":8100,"dollarOI":0,"iv":25.00075},{"strike":68,"dollarVol":10602,"dollarOI":0,"iv":25.00075},{"strike":69,"dollarVol":9159,"dollarOI":0,"iv":25.00075},{"strike":70,"dollarVol":127938.99999999999,"dollarOI":0,"iv":25.00075},{"strike":71,"dollarVol":45198,"dollarOI":0,"iv":25.00075},{"strike":72,"dollarVol":22448,"dollarOI":0,"iv":25.00075},{"strike":72.5,"dollarVol":7744,"dollarOI":0,"iv":25.00075},{"strike":73,"dollarVol":37587,"dollarOI":0,"iv":25.00075},{"strike":74,"dollarVol":32340.000000000004,"dollarOI":0,"iv":25.00075},{"strike":75,"dollarVol":389666,"dollarOI":0,"iv":25.00075},{"strike":76,"dollarVol":93002,"dollarOI":0,"iv":25.00075},{"strike":77,"dollarVol":101310.00000000001,"dollarOI":0,"iv":25.00075},{"strike":78,"dollarVol":96555,"dollarOI":0,"iv":25.00075},{"strike":79,"dollarVol":197540,"dollarOI":0,"iv":25.00075},{"strike":80,"dollarVol":1005038.0000000001,"dollarOI":0,"iv":25.00075},{"strike":81,"dollarVol":87710,"dollarOI":0,"iv":12.500875},{"strike":82,"dollarVol":1896868,"dollarOI":0,"iv":12.500875},{"strike":83,"dollarVol":405888.00000000006,"dollarOI":0,"iv":12.500875},{"strike":84,"dollarVol":846971.9999999999,"dollarOI":0,"iv":12.500875},{"strike":85,"dollarVol":1420857.9999999998,"dollarOI":0,"iv":12.500875},{"strike":86,"dollarVol":499720,"dollarOI":0,"iv":12.500875},{"strike":87,"dollarVol":2383605.0000000005,"dollarOI":0,"iv":12.500875},{"strike":88,"dollarVol":2686875,"dollarOI":0,"iv":6.250937500000001},{"strike":89,"dollarVol":3337740,"dollarOI":0,"iv":6.250937500000001},{"strike":90,"dollarVol":4208080,"dollarOI":0,"iv":6.250937500000001}],"wCallIV":7.2,"wPutIV":12.1,"atmCallIV":0.4,"atmPutIV":0,"atmBandCallIV":0.1,"atmBandPutIV":0,"atmCallDV":61519207,"atmPutDV":1153200,"ivSpreadCall":6.8,"ivSpreadPut":12.1,"deepOTMCallPct":15,"deepOTMPutPct":36.7}]}};
+  const summaryMap = {"INTC":"Intel Corporation designs, develops, manufactures, markets, sells, and services computing and related end products and services in the United States, Ireland, Israel, and internationally. It operates through three segments: CCG, DCAI, and Intel Foundry. The company offers client computing group products, including client and commercial CPUs, discrete client GPUs, edge computing, and connectivity products; data center and AI products, such as server CPUs, discrete GPUs, and networking products; and semiconductors comprising wafer fabrication, substrates, and other related products and services. It also provides driving assistance and self-driving solutions; and develops and manufactures multi-beam mask writing tools. The company sells its products through sales organizations, distributors, resellers, retailers, and OEM partners. It serves original equipment manufacturers, original design manufacturers, cloud service providers, and other manufacturers and service providers. Intel Corporation has a strategic collaboration with Infosys Limited to develop a multi-layer AI fabric that unifies infrastructure, models, data, applications, and workflows into a composable and agent-ready ecosystem. The company was incorporated in 1968 and is headquartered in Santa Clara, California."};
+  const newsMap = {"INTC":[{"date":"Apr-29-26","time":"11:31PM","headline":"Samsung Electronics expects to win more customers for advanced logic chips","url":"https://finance.yahoo.com/sectors/technology/articles/samsung-electronics-expects-win-more-032331190.html","category":"mixed"},{"date":"Apr-29-26","time":"09:00PM","headline":"China's Rare Earth Leverage Explained in 3 Shocking Charts","url":"https://finance.yahoo.com/markets/commodities/articles/chinas-rare-earth-leverage-explained-010000854.html","category":"mixed"},{"date":"Apr-29-26","time":"06:16PM","headline":"Is the Intel stock hype overdone? How to make sense of the latest big move.","url":"https://www.marketwatch.com/story/is-the-intel-stock-hype-overdone-how-to-make-sense-of-the-latest-big-move-a88a6953?mod=mw_FV","category":"technical"},{"date":"Apr-29-26","time":"03:35PM","headline":"Intel Stock Is Soaring. Why Wall Street Is Turning Bullish Again","url":"https://finance.yahoo.com/markets/stocks/articles/intel-stock-soaring-why-wall-193550974.html","category":"technical"},{"date":"Apr-29-26","time":"12:57PM","headline":"Intel Is Up Another 10%. Its Struggling Foundry Business Is Lifting Shares.","url":"https://www.barrons.com/articles/intel-stock-price-alphabet-foundry-95153531?mod=bar_FV","category":"mixed"},{"date":"Apr-29-26","time":"10:30AM","headline":"BC-Most Active Stocks","url":"https://finance.yahoo.com/markets/stocks/articles/bc-most-active-stocks-143018483.html","category":"technical"},{"date":"Apr-29-26","time":"09:13AM","headline":"Intel Stock Is Up 92% in April. How to Play It With Options Now.","url":"https://www.barrons.com/articles/intel-stook-price-options-26e21458?mod=bar_FV","category":"technical"},{"date":"Apr-29-26","time":"01:00AM","headline":"Intel Stock Is Up 92% in April. How to Safeguard Your Gains.","url":"https://www.barrons.com/articles/intel-stock-up-92-in-april-safeguard-gains-26e21458?mod=bar_FV","category":"technical"},{"date":"Apr-28-26","time":"04:38PM","headline":"Nasdaq, S&P 500 Cool From Records Amid Tech Weakness","url":"https://finviz.com/news/348507/nasdaq-sp-500-cool-from-records-amid-tech-weakness","category":"technical"},{"date":"Apr-28-26","time":"03:58PM","headline":"How OpenAI reports are hitting Nvidia, Intel, & other semi stocks","url":"https://finance.yahoo.com/video/how-openai-reports-are-hitting-nvidia-intel--other-semi-stocks-195840629.html","category":"technical"},{"date":"Apr-28-26","time":"03:11PM","headline":"Nvidia Stock Drops. Why Chip Stocks Keep Getting Hit.","url":"https://www.barrons.com/articles/nvidia-stock-price-chip-selloff-openai-60e71726?mod=bar_FV","category":"technical"},{"date":"Apr-28-26","time":"02:18PM","headline":"Chip stocks' hottest winners are suddenly the weakest links","url":"https://finance.yahoo.com/markets/article/chip-stocks-hottest-winners-are-suddenly-the-weakest-links-181812082.html","category":"mixed"},{"date":"Apr-28-26","time":"01:29PM","headline":"Intel Stock Hits a Snag. What's Dragging It Down.","url":"https://www.barrons.com/articles/intel-openai-chip-stocks-7fa151db?mod=bar_FV","category":"technical"},{"date":"Apr-28-26","time":"12:10PM","headline":"Intel's CEO was once targeted by Trump over ties to China now its stock has hit record highs. How he pulled it off","url":"https://finance.yahoo.com/markets/stocks/articles/intels-ceo-once-targeted-trump-161000490.html","category":"mixed"},{"date":"Apr-28-26","time":"10:30AM","headline":"BC-Most Active Stocks","url":"https://finance.yahoo.com/markets/stocks/articles/bc-most-active-stocks-143019196.html","category":"technical"},{"date":"Apr-28-26","time":"10:06AM","headline":"Brace for eye-popping AI spending plans when 'Magnificent 7' earnings roll in","url":"https://finance.yahoo.com/news/brace-for-eye-popping-ai-spending-plans-when-magnificent-7-earnings-roll-in-140624177.html","category":"mixed"},{"date":"Apr-28-26","time":"09:42AM","headline":"Techs New Normal Trade Pair: Long Chip Stock, Short Software","url":"https://finance.yahoo.com/markets/stocks/articles/tech-normal-trade-pair-long-104626333.html","category":"technical"},{"date":"Apr-28-26","time":"08:34AM","headline":"Arm Holdings Stock Tanks as AI Rally Hits a Wall","url":"https://finance.yahoo.com/markets/stocks/articles/arm-holdings-stock-tanks-ai-123458631.html","category":"technical"},{"date":"Apr-28-26","time":"08:00AM","headline":"S&P 500 Nasdaq futures fall on OpenAI concerns, oil prices","url":"https://finance.yahoo.com/m/6e11ff16-98a2-3f46-ba9c-7c63ff692f27/s%26p-500-nasdaq-futures-fall.html","category":"mixed"},{"date":"Apr-28-26","time":"07:57AM","headline":"Nvidia Chief Accounting Officer to Retire","url":"https://finance.yahoo.com/markets/stocks/articles/nvidia-chief-accounting-officer-retire-115703555.html","category":"mixed"},{"date":"Apr-28-26","time":"07:49AM","headline":"Intel Launches Bond Sale To Fund $14.2 Billion Ireland Plant Buyback","url":"https://finance.yahoo.com/markets/stocks/articles/intel-launches-bond-sale-fund-114939927.html","category":"mixed"},{"date":"Apr-28-26","time":"06:00AM","headline":"Does Intels Big Rally Still Leave Its Stock Room to Rise? Some Experts Say Its Getting Stretched'","url":"https://finance.yahoo.com/m/5481afd8-3216-3ac6-b278-60359b93298b/does-intel%E2%80%99s-big-rally-still.html","category":"technical"},{"date":"Apr-27-26","time":"05:28PM","headline":"Intel $6.5 Billion Bond Sale Signals Investor Hope in Turnaround","url":"https://finance.yahoo.com/news/intel-draws-50-billion-investor-181948488.html","category":"mixed"},{"date":"Apr-27-26","time":"03:18PM","headline":"US stocks: Will Mag 7 earnings be make-or-break for market rally?","url":"https://finance.yahoo.com/video/us-stocks-will-mag-7-earnings-be-make-or-break-for-market-rally-191843442.html","category":"technical"},{"date":"Apr-27-26","time":"03:16PM","headline":"AMD Stock Slips After Cathie Wood's ARK Dumps Millions in Shares","url":"https://finance.yahoo.com/markets/stocks/articles/amd-stock-slips-cathie-woods-191647500.html","category":"technical"},{"date":"Apr-27-26","time":"02:19PM","headline":"Intel draws $50 billion of investor rrders for $6.5 billion bond","url":"https://finance.yahoo.com/markets/stocks/articles/intel-draws-50-billion-investor-181948488.html","category":"mixed"},{"date":"Apr-27-26","time":"02:14PM","headline":"Intel Chief Accounting Officer Resigns","url":"https://finance.yahoo.com/markets/stocks/articles/intel-chief-accounting-officer-resigns-181431097.html","category":"technical"},{"date":"Apr-27-26","time":"02:04PM","headline":"Nvidia Reclaims $5 Trillion as AI Boom Keeps Chip Stocks Red Hot","url":"https://finance.yahoo.com/sectors/technology/articles/nvidia-reclaims-5-trillion-ai-180405193.html","category":"mixed"},{"date":"Apr-27-26","time":"01:39PM","headline":"AMD pulls back after downgrade as rally cools","url":"https://finance.yahoo.com/markets/stocks/articles/amd-pulls-back-downgrade-rally-173947351.html","category":"mixed"},{"date":"Apr-27-26","time":"01:03PM","headline":"Can Intel Stock Hit $100 in May?","url":"https://finance.yahoo.com/m/e9d748dc-f748-3c1f-baad-41c1790e82f8/can-intel-stock-hit-%24100-in.html","category":"technical"},{"date":"Apr-27-26","time":"11:51AM","headline":"Intel's 26-year comeback is a warning for investors chasing today's AI winners: Chart of the Day","url":"https://finance.yahoo.com/markets/article/intels-26-year-comeback-is-a-warning-for-investors-chasing-todays-ai-winners-chart-of-the-day-155124778.html","category":"mixed"},{"date":"Apr-27-26","time":"11:12AM","headline":"Google, Meta, Microsoft, Amazon, Apple earnings: What to expect","url":"https://finance.yahoo.com/video/google-meta-microsoft-amazon-apple-earnings-what-to-expect-151248213.html","category":"technical"},{"date":"Apr-27-26","time":"10:30AM","headline":"BC-Most Active Stocks","url":"https://finance.yahoo.com/markets/stocks/articles/bc-most-active-stocks-143018557.html","category":"technical"},{"date":"Apr-27-26","time":"09:34AM","headline":"Will Nvidia's explosive rally end soon?","url":"https://finance.yahoo.com/news/will-nvidias-explosive-rally-end-soon-133429771.html","category":"mixed"},{"date":"Apr-27-26","time":"09:26AM","headline":"Intel Gets New Street-high Price Target After Blowout Earnings","url":"https://finance.yahoo.com/markets/stocks/articles/intel-gets-street-high-price-132610837.html","category":"technical"},{"date":"Apr-27-26","time":"09:25AM","headline":"Intel Stock Rally Rages On. What UBS Says It Underestimated.","url":"https://www.barrons.com/articles/intel-stock-price-ubs-analyst-target-increase-27f2dfb8?mod=bar_FV","category":"technical"},{"date":"Apr-27-26","time":"09:08AM","headline":"AMD gets a boost as analysts see bigger CPU opportunity","url":"https://finance.yahoo.com/markets/stocks/articles/amd-gets-boost-analysts-see-130841015.html","category":"technical"},{"date":"Apr-27-26","time":"09:07AM","headline":"After 11 years, Northland Capital downgrades AMD","url":"https://finance.yahoo.com/markets/stocks/articles/11-years-northland-capital-downgrades-130735610.html","category":"mixed"},{"date":"Apr-27-26","time":"09:05AM","headline":"Intel's rally keeps going as some investors stay bullish","url":"https://finance.yahoo.com/markets/stocks/articles/intels-rally-keeps-going-investors-130548578.html","category":"mixed"},{"date":"Apr-27-26","time":"08:58AM","headline":"Semiconductor Stocks Go for a 19th Straight Gain. Why It's Time to Cash In.","url":"https://www.barrons.com/articles/semiconductor-stocks-record-winning-streak-sell-28e9edb6?mod=bar_FV","category":"technical"},{"date":"Apr-27-26","time":"08:40AM","headline":"Cathie Wood's ARK Sells Red-Hot AMD Stock, Buys Amazon in Strategy Shift","url":"https://www.barrons.com/articles/amd-stock-amazon-cathie-wood-ark-b3a4d25e?mod=bar_FV","category":"mixed"},{"date":"Apr-27-26","time":"07:07AM","headline":"Global stocks steady; oil climbs on stalled peace talks","url":"https://finance.yahoo.com/video/global-stocks-steady-oil-climbs-110752303.html","category":"mixed"},{"date":"Apr-27-26","time":"06:15AM","headline":"These Stocks Are Today's Movers: Qualcomm, Apple, Intel, Adidas, and More","url":"https://www.barrons.com/articles/stock-movers-92bb19d8?mod=bar_FV","category":"technical"},{"date":"Apr-27-26","time":"05:50AM","headline":"Intel Stock Is on a Tear. Why Its Earnings Power Is a Worry.","url":"https://www.barrons.com/articles/intel-stock-price-rally-shares-trading-27f2dfb8?mod=bar_FV","category":"mixed"},{"date":"Apr-27-26","time":"04:38AM","headline":"Mobileye widens Q1 loss despite revenue rise","url":"https://finance.yahoo.com/m/4f5576a2-4293-34f1-8ba5-6597a1932a51/mobileye-widens-q1-loss.html","category":"mixed"},{"date":"Apr-27-26","time":"12:12AM","headline":"SK Hynix shares rally 7% to a record high, beating Samsung's 2.5% gain","url":"https://finance.yahoo.com/markets/stocks/articles/sk-hynix-shares-rally-7-041228895.html","category":"technical"},{"date":"Apr-26-26","time":"10:30AM","headline":"'A return to optimism': Wall Street strategists are bullish on the AI trade","url":"https://finance.yahoo.com/markets/article/a-return-to-optimism-wall-street-strategists-are-bullish-on-the-ai-trade-143000172.html","category":"mixed"},{"date":"Apr-26-26","time":"05:35AM","headline":"5 big analyst AI moves: Palo Alto and Reddit get fresh Buy calls, AMD upgraded","url":"https://finance.yahoo.com/markets/stocks/articles/5-big-analyst-ai-moves-093502052.html","category":"technical"},{"date":"Apr-25-26","time":"11:25AM","headline":"The Market Needed a Strong Earnings Season. It Got Chip Stocks Instead.","url":"https://www.barrons.com/articles/stock-market-earnings-season-intel-chips-72a4f947?mod=bar_FV","category":"technical"},{"date":"Apr-25-26","time":"08:30AM","headline":"How Intel's CEO brought the storied company back from the brink","url":"https://www.marketwatch.com/story/how-intels-ceo-brought-the-storied-company-back-from-the-brink-d2dff038?mod=mw_FV","category":"mixed"},{"date":"Apr-24-26","time":"07:55PM","headline":"Review & Preview: Dot-Com Glory Days","url":"https://www.barrons.com/articles/stocks-today-intel-record-earnings-calendar-79b5fb0e?mod=bar_FV","category":"mixed"},{"date":"Apr-24-26","time":"05:50PM","headline":"S&P 500, Nasdaq notch record closing highs on tech, Iran hopes","url":"https://finance.yahoo.com/video/p-500-nasdaq-notch-record-215040419.html","category":"technical"},{"date":"Apr-24-26","time":"04:50PM","headline":"An Intel Skeptic on Reasons to Doubt the Stock's Huge Rally","url":"https://www.barrons.com/articles/intel-stock-bear-case-a3e3def0?mod=bar_FV","category":"technical"},{"date":"Apr-24-26","time":"04:34PM","headline":"Trump wants to save Spirit Airlines. Republicans don't.","url":"https://finance.yahoo.com/video/trump-wants-to-save-spirit-airlines-republicans-dont-203426013.html","category":"mixed"},{"date":"Apr-24-26","time":"04:33PM","headline":"US Government Stake in Intel Has Jumped 300% to $36 Billion","url":"https://finance.yahoo.com/markets/stocks/articles/us-government-stake-intel-jumped-203343639.html","category":"mixed"},{"date":"Apr-24-26","time":"04:27PM","headline":"S&P 500, Nasdaq end at records as Intel shares surge","url":"https://finance.yahoo.com/markets/commodities/articles/oil-extends-gains-stocks-sink-025127756.html","category":"technical"},{"date":"Apr-24-26","time":"04:27PM","headline":"S&P 500, Nasdaq Close Choppy Week With Records","url":"https://finviz.com/news/347641/sp-500-nasdaq-close-choppy-week-with-records","category":"mixed"},{"date":"Apr-24-26","time":"04:11PM","headline":"Why Intel Stock Hit an All-Time High Today","url":"https://finance.yahoo.com/m/41d98ae6-0a0b-3d6e-b6ed-ec5cd9e02c23/why-intel-stock-hit-an.html","category":"technical"},{"date":"Apr-24-26","time":"04:10PM","headline":"Crypto Has Another Positive Week As Investor Sentiment Improves","url":"https://finance.yahoo.com/m/354561ca-3d9f-3a97-9d8b-d37f7824ffc2/crypto-has-another-positive.html","category":"mixed"},{"date":"Apr-24-26","time":"04:02PM","headline":"S&P 500, Nasdaq Mark Four-Week Streaks at Record High. Earnings Next Week Will Test the Rally.","url":"https://www.barrons.com/livecoverage/stock-market-news-today-042426/card/s-p-500-nasdaq-mark-four-week-streaks-at-record-high-earnings-next-week-will-test-the-rally--j5x5zkih2zSED2sq7PUr?mod=bar_FV","category":"technical"},{"date":"Apr-24-26","time":"03:45PM","headline":"Software, semis, & BofA's 'perfect portfolio': Charts of the Day","url":"https://finance.yahoo.com/video/software-semis--bofas-perfect-portfolio-charts-of-the-day-194520559.html","category":"technical"},{"date":"Apr-24-26","time":"03:26PM","headline":"The U.S. is up $26 billion on its Intel trade","url":"https://finance.yahoo.com/markets/stocks/articles/u-26-billion-intel-trade-192628392.html","category":"mixed"},{"date":"Apr-24-26","time":"03:06PM","headline":"Nvidia's stock heads for first record close in 6 months - thanks to Intel","url":"https://www.marketwatch.com/story/nvidias-stock-heads-for-first-record-close-in-6-months-thanks-to-intel-21af7d28?mod=mw_FV","category":"technical"},{"date":"Apr-24-26","time":"02:29PM","headline":"Investing.coms stocks of the week","url":"https://finance.yahoo.com/markets/stocks/articles/investing-com-stocks-week-182911348.html","category":"technical"},{"date":"Apr-24-26","time":"02:21PM","headline":"Intel Stock Surges 23% After Earnings, On Track for Record Close. Can AI Drive It Higher?","url":"https://www.barrons.com/articles/intel-earnings-stock-price-record-3e576dcd?mod=bar_FV","category":"technical"},{"date":"Apr-24-26","time":"02:09PM","headline":"Nvidia market cap back above $5T, Alphabet to invest $40B in Anthropic","url":"https://finance.yahoo.com/video/nvidia-market-cap-back-above-5t-alphabet-to-invest-40b-in-anthropic-180907948.html","category":"mixed"},{"date":"Apr-24-26","time":"02:08PM","headline":"Nvidia, Intel and AMD Lead Chip Stocks as AI Wave Lifts Sector","url":"https://finance.yahoo.com/sectors/technology/articles/nvidia-intel-amd-lead-chip-180837677.html","category":"mixed"},{"date":"Apr-24-26","time":"01:54PM","headline":"Nvidia Stock Is Racing for a Record High. Why It's Getting a Massive Boost From Intel.","url":"https://www.barrons.com/articles/nvidia-stock-price-record-high-intel-95f23d99?mod=bar_FV","category":"technical"},{"date":"Apr-24-26","time":"01:35PM","headline":"Nvidia stock on track for record close, pushing market cap over $5 trillion once again","url":"https://finance.yahoo.com/sectors/technology/article/nvidia-stock-on-track-for-record-close-pushing-market-cap-over-5-trillion-once-again-173529425.html","category":"mixed"},{"date":"Apr-24-26","time":"01:33PM","headline":"Tech, Earnings Fight For Wall Street's Attention","url":"https://finviz.com/news/347603/tech-earnings-fight-for-wall-streets-attention","category":"technical"},{"date":"Apr-24-26","time":"01:28PM","headline":"Tech propels S&P 500 higher Friday as Intel shares surge","url":"https://www.marketwatch.com/livecoverage/s-p-500-dow-jones-nasdaq-donald-trump-cease-fire-extended-israel-lebanon-3-weeks/card/tech-propels-s-p-500-higher-friday-as-intel-shares-surge-lSbpa6zPWZZy0RfPIzMA?mod=mw_FV","category":"technical"},{"date":"Apr-24-26","time":"01:22PM","headline":"Why Advanced Micro Devices Stock Is Soaring Today","url":"https://finance.yahoo.com/markets/stocks/articles/amd-shares-jump-12-upgrade-172225127.html","category":"technical"},{"date":"Apr-24-26","time":"01:19PM","headline":"AMD Gains After DA Davidson Upgrade","url":"https://finance.yahoo.com/markets/stocks/articles/amd-gains-da-davidson-upgrade-171904339.html","category":"technical"},{"date":"Apr-24-26","time":"01:13PM","headline":"Intel stock hits record high, Hut 8's Google-backed data center","url":"https://finance.yahoo.com/video/intel-stock-hits-record-high-hut-8s-google-backed-data-center-171312836.html","category":"technical"},{"date":"Apr-24-26","time":"12:57PM","headline":"Revisiting Our First 'Chart of the Week.' How Intel Looks After Earnings.","url":"https://www.barrons.com/articles/revisiting-first-chart-of-the-week-how-intel-looks-after-earnings-89c27698?mod=bar_FV","category":"technical"},{"date":"Apr-24-26","time":"12:52PM","headline":"Why the party for Intel and other chip stocks could last a long time","url":"https://www.marketwatch.com/story/why-the-party-for-intel-and-other-chip-stocks-could-last-a-long-time-dae55c89?mod=mw_FV","category":"technical"},{"date":"Apr-24-26","time":"12:45PM","headline":"Intel Jumps 31% As Revenue Forecast Tops Expectations, Signals AI Demand Surge","url":"https://finance.yahoo.com/markets/stocks/articles/intel-jumps-31-revenue-forecast-164534788.html","category":"technical"},{"date":"Apr-24-26","time":"12:26PM","headline":"It May Be Time to Take Some Chip Stocks Off the Table as Semis Surge","url":"https://www.barrons.com/articles/semiconductor-stocks-rally-take-profits-now-28e9edb6?mod=bar_FV","category":"technical"},{"date":"Apr-24-26","time":"12:13PM","headline":"Nvidia crashes Intels party: $5T giant surges as AI market pivots to CPUs","url":"https://finance.yahoo.com/sectors/technology/articles/nvidia-crashes-intel-party-5t-161333043.html","category":"mixed"},{"date":"Apr-24-26","time":"11:48AM","headline":"Nasdaq Eyes Weekly Win Streak After Another Record High","url":"https://finviz.com/news/347595/nasdaq-eyes-weekly-win-streak-after-another-record-high","category":"technical"},{"date":"Apr-24-26","time":"11:39AM","headline":"AMD stock rises 12% after Intel Q1 earnings signal CPU boom","url":"https://finance.yahoo.com/m/85472ad1-54cb-3970-b8df-808a6eb25caf/amd-stock-rises-12%25-after.html","category":"technical"},{"date":"Apr-24-26","time":"11:33AM","headline":"Intel earnings highlight server CPU strength, improving manufacturing visibility: analysts","url":"https://finance.yahoo.com/m/fde0b62b-d4e3-340d-bcf5-35e87489d3a3/intel-earnings-highlight.html","category":"mixed"},{"date":"Apr-24-26","time":"11:28AM","headline":"Intel stock surges to record highs. These 4 events have powered the company's turnaround.","url":"https://finance.yahoo.com/markets/stocks/article/intel-stock-surges-to-record-highs-these-4-events-have-powered-the-companys-turnaround-152804240.html","category":"mixed"},{"date":"Apr-24-26","time":"11:15AM","headline":"Intel 'starting to get their legs' in turnaround plan as stock surges","url":"https://finance.yahoo.com/video/intel-starting-legs-turnaround-plan-151500951.html","category":"mixed"},{"date":"Apr-24-26","time":"10:50AM","headline":"Amazon's chip business scores another major win","url":"https://www.marketwatch.com/story/amazons-chip-business-scores-another-major-win-6b65f2db?mod=mw_FV","category":"mixed"},{"date":"Apr-24-26","time":"10:45AM","headline":"Intel Soars to All-Time Highs","url":"https://finance.yahoo.com/m/185b1563-97b4-3373-942e-8765e832f659/intel-soars-to-all-time-highs.html","category":"technical"},{"date":"Apr-24-26","time":"10:42AM","headline":"What's next for Tesla","url":"https://finance.yahoo.com/video/whats-next-for-tesla-144249454.html","category":"mixed"},{"date":"Apr-24-26","time":"10:30AM","headline":"BC-Most Active Stocks","url":"https://finance.yahoo.com/markets/stocks/articles/bc-most-active-stocks-143018581.html","category":"technical"},{"date":"Apr-24-26","time":"10:22AM","headline":"Intel stock jumps after earnings and outlook top expectations on AI boom","url":"https://finance.yahoo.com/markets/stocks/articles/intel-stock-jumps-earnings-outlook-142235652.html","category":"technical"},{"date":"Apr-24-26","time":"10:21AM","headline":"Are Intel's impressive earnings a precursor to AMD's?","url":"https://finance.yahoo.com/video/are-intels-impressive-earnings-a-precursor-to-amds-142137304.html","category":"mixed"},{"date":"Apr-24-26","time":"10:13AM","headline":"Intel is Up 260% Since Getting Kicked Out of the Dow","url":"https://www.wsj.com/livecoverage/stock-market-today-dow-sp-500-nasdaq-04-24-2026/card/intel-is-up-260-since-getting-kicked-out-of-the-dow-gMPpdLSqlCUF0xYPzWWm?mod=wsj_FV","category":"technical"},{"date":"Apr-24-26","time":"10:11AM","headline":"US chipmakers hit record highs as Intel turbocharges AI rally","url":"https://finance.yahoo.com/markets/stocks/articles/us-chipmakers-hit-record-highs-141119439.html","category":"mixed"},{"date":"Apr-24-26","time":"10:06AM","headline":"Upbeat Intel Results Powering Up Semiconductor Sector","url":"https://finviz.com/news/347579/upbeat-intel-results-powering-up-semiconductor-sector","category":"mixed"},{"date":"Apr-24-26","time":"10:06AM","headline":"Intel Earnings Powering Up Semiconductor Sector","url":"https://finviz.com/news/347578/intel-earnings-powering-up-semiconductor-sector","category":"mixed"},{"date":"Apr-24-26","time":"10:04AM","headline":"Intel Earnings Propel Another Chip Stock to Record Highs","url":"https://finviz.com/news/347577/intel-earnings-propel-another-chip-stock-to-record-highs","category":"technical"},{"date":"Apr-24-26","time":"10:04AM","headline":"Chip Stock Surges to Record Highs Thanks to Intel Halo Lift","url":"https://finviz.com/news/347580/chip-stock-surges-to-record-highs-thanks-to-intel-halo-lift","category":"technical"},{"date":"Apr-24-26","time":"09:55AM","headline":"AMD's stock is red hot and on track to hit a major milestone","url":"https://www.marketwatch.com/story/amds-stock-is-red-hot-and-on-track-to-hit-a-major-milestone-0b3d9f9d?mod=mw_FV","category":"mixed"},{"date":"Apr-24-26","time":"09:44AM","headline":"Intel upgraded, DraftKings downgraded: Wall Street's top analyst calls","url":"https://finance.yahoo.com/markets/stocks/articles/intel-upgraded-draftkings-downgraded-wall-134404641.html","category":"technical"},{"date":"Apr-24-26","time":"09:34AM","headline":"DA Davidson lifts AMD rating, says CPU demand entering unprecedented phase","url":"https://finance.yahoo.com/markets/stocks/articles/da-davidson-lifts-amd-rating-133453425.html","category":"mixed"},{"date":"Apr-24-26","time":"09:33AM","headline":"Nasdaq Climbs Back Near Record as Chip Stocks Rally","url":"https://www.barrons.com/livecoverage/stock-market-news-today-042426/card/nasdaq-climbs-back-near-record-as-chip-stocks-rally-iMSaLcrh0vJL2wQJnbIk?mod=bar_FV","category":"technical"}]};
+  const ivHistoryMap = {"INTC":[{"date":"2026-04-24","sector":"Technology","dailyReturn":23.64480563665802,"exp1":{"label":"2026-04-24","callIV":47.8,"putIV":45.9,"atmCallIV":1.3,"atmPutIV":77.9,"atmBandCallIV":0,"atmBandPutIV":101.2,"atmCallDV":120888928,"atmPutDV":22409418,"deepOTMCallPct":15.7,"deepOTMPutPct":4.7,"callDV":183598,"putDV":1809249,"dv":1992847},"exp2":{"label":"2026-05-01","callIV":69.6,"putIV":87,"atmCallIV":63.7,"atmPutIV":90.6,"atmBandCallIV":22.4,"atmBandPutIV":95.6,"atmCallDV":57866859,"atmPutDV":4126785,"deepOTMCallPct":10.4,"deepOTMPutPct":21.1,"callDV":14040026,"putDV":11555913,"dv":25595939},"exp3":{"label":"2026-05-08","callIV":69.7,"putIV":81.5,"atmCallIV":63.9,"atmPutIV":85.8,"atmBandCallIV":27.4,"atmBandPutIV":111.5,"atmCallDV":10673113,"atmPutDV":114103.00000000001,"deepOTMCallPct":25.8,"deepOTMPutPct":27,"callDV":1888613,"putDV":3146831,"dv":5035444}},{"date":"2026-04-30","sector":"Technology","dailyReturn":12.103648560394035,"exp1":{"label":"2026-05-01","callIV":25,"putIV":19.8,"atmCallIV":1.6,"atmPutIV":0,"atmBandCallIV":0.2,"atmBandPutIV":0,"atmCallDV":166721208,"atmPutDV":2087222,"deepOTMCallPct":10.9,"deepOTMPutPct":14.3,"callDV":11850566,"putDV":16358608,"dv":28209174,"calls":[{"strike":100,"dv":10562240,"iv":2500.1},{"strike":105,"dv":1288326,"iv":2500.1}],"puts":[{"strike":30,"dv":1,"iv":5000.1},{"strike":37,"dv":10,"iv":5000.1},{"strike":38,"dv":3,"iv":5000.1},{"strike":40,"dv":57,"iv":5000.1},{"strike":42,"dv":2,"iv":5000.1},{"strike":43,"dv":2,"iv":5000.1},{"strike":45,"dv":1,"iv":5000.1},{"strike":46,"dv":1,"iv":5000.1},{"strike":47,"dv":2,"iv":5000.1},{"strike":49,"dv":101,"iv":5000.1},{"strike":49.5,"dv":42,"iv":5000.1},{"strike":50,"dv":13,"iv":5000.1},{"strike":51,"dv":6,"iv":5000.1},{"strike":53,"dv":4,"iv":5000.1},{"strike":54,"dv":2,"iv":5000.1},{"strike":55,"dv":27,"iv":5000.1},{"strike":56,"dv":8,"iv":5000.1},{"strike":57,"dv":20,"iv":5000.1},{"strike":58,"dv":105,"iv":5000.1},{"strike":59,"dv":8,"iv":5000.1},{"strike":60,"dv":166,"iv":5000.1},{"strike":61,"dv":78,"iv":5000.1},{"strike":62,"dv":219,"iv":5000.1},{"strike":63,"dv":110,"iv":5000.1},{"strike":64,"dv":935,"iv":5000.1},{"strike":65,"dv":1294,"iv":5000.1},{"strike":66,"dv":788,"iv":5000.1},{"strike":67,"dv":794,"iv":5000.1},{"strike":68,"dv":1506,"iv":5000.1},{"strike":69,"dv":10674,"iv":5000.1},{"strike":70,"dv":19092,"iv":5000.1},{"strike":71,"dv":7016,"iv":5000.1},{"strike":72,"dv":14865,"iv":5000.1},{"strike":73,"dv":15033,"iv":5000.1},{"strike":74,"dv":8345,"iv":5000.1},{"strike":75,"dv":45760,"iv":5000.1},{"strike":76,"dv":26766,"iv":5000.1},{"strike":77,"dv":26112,"iv":5000.1},{"strike":78,"dv":20079,"iv":5000.1},{"strike":79,"dv":55935,"iv":5000.1},{"strike":80,"dv":279422,"iv":5000.1},{"strike":81,"dv":74252,"iv":5000.1},{"strike":82,"dv":152526,"iv":5000.1},{"strike":83,"dv":126063,"iv":5000.1},{"strike":84,"dv":300090,"iv":5000.1},{"strike":85,"dv":1150336,"iv":2500.1},{"strike":86,"dv":1018765,"iv":2500.1},{"strike":87,"dv":1532766,"iv":2500.1},{"strike":88,"dv":1459422,"iv":2500.1},{"strike":89,"dv":819500,"iv":2500.1},{"strike":90,"dv":5984089,"iv":1250.1},{"strike":91,"dv":3205395,"iv":1250.1}]},"exp2":{"label":"2026-05-08","callIV":8.1,"putIV":13.6,"atmCallIV":0.8,"atmPutIV":0,"atmBandCallIV":0.1,"atmBandPutIV":0,"atmCallDV":38954302,"atmPutDV":1408335,"deepOTMCallPct":29,"deepOTMPutPct":37.6,"callDV":12500122,"putDV":15567508,"dv":28067630,"calls":[{"strike":100,"dv":8875930,"iv":625.1},{"strike":105,"dv":3624192,"iv":1250.1}],"puts":[{"strike":36,"dv":7,"iv":5000.1},{"strike":38,"dv":2,"iv":5000.1},{"strike":40,"dv":386,"iv":5000.1},{"strike":41,"dv":349,"iv":5000.1},{"strike":44,"dv":20,"iv":5000.1},{"strike":45,"dv":2,"iv":5000.1},{"strike":46,"dv":108,"iv":5000.1},{"strike":47,"dv":175,"iv":5000.1},{"strike":48,"dv":148,"iv":5000.1},{"strike":49,"dv":230,"iv":5000.1},{"strike":49.5,"dv":20,"iv":5000.1},{"strike":50,"dv":492,"iv":5000.1},{"strike":51,"dv":4,"iv":5000.1},{"strike":52,"dv":18384,"iv":5000.1},{"strike":53,"dv":6,"iv":5000.1},{"strike":54,"dv":52,"iv":5000.1},{"strike":55,"dv":62,"iv":5000.1},{"strike":56,"dv":45,"iv":5000.1},{"strike":57,"dv":63,"iv":5000.1},{"strike":58,"dv":720,"iv":5000.1},{"strike":59,"dv":219,"iv":5000.1},{"strike":60,"dv":29232,"iv":5000.1},{"strike":61,"dv":775,"iv":5000.1},{"strike":62,"dv":12194,"iv":5000.1},{"strike":63,"dv":609,"iv":5000.1},{"strike":64,"dv":648,"iv":5000.1},{"strike":65,"dv":10755,"iv":5000.1},{"strike":66,"dv":12432,"iv":5000.1},{"strike":67,"dv":4215,"iv":5000.1},{"strike":68,"dv":2160,"iv":5000.1},{"strike":69,"dv":874,"iv":5000.1},{"strike":70,"dv":39921,"iv":5000.1},{"strike":71,"dv":8225,"iv":5000.1},{"strike":72,"dv":86832,"iv":5000.1},{"strike":73,"dv":17732,"iv":5000.1},{"strike":74,"dv":13160,"iv":2500.1},{"strike":75,"dv":406006,"iv":2500.1},{"strike":76,"dv":35394,"iv":2500.1},{"strike":77,"dv":45540,"iv":2500.1},{"strike":78,"dv":82030,"iv":2500.1},{"strike":79,"dv":79500,"iv":2500.1},{"strike":80,"dv":680490,"iv":2500.1},{"strike":81,"dv":96621,"iv":2500.1},{"strike":82,"dv":601320,"iv":2500.1},{"strike":83,"dv":210295,"iv":2500.1},{"strike":84,"dv":1379088,"iv":1250.1},{"strike":85,"dv":1981260,"iv":1250.1},{"strike":86,"dv":179550,"iv":1250.1},{"strike":87,"dv":2627352,"iv":1250.1},{"strike":88,"dv":1763941,"iv":1250.1},{"strike":89,"dv":1811100,"iv":1250.1},{"strike":90,"dv":2922348,"iv":625.1},{"strike":91,"dv":404415,"iv":625.1}]},"exp3":{"label":"2026-05-15","callIV":7.2,"putIV":12.1,"atmCallIV":0.4,"atmPutIV":0,"atmBandCallIV":0.1,"atmBandPutIV":0,"atmCallDV":61519207,"atmPutDV":1153200,"deepOTMCallPct":15,"deepOTMPutPct":36.7,"callDV":13801662.000000002,"putDV":20719171,"dv":34520833,"calls":[{"strike":100,"dv":11724912,"iv":625.1},{"strike":105,"dv":2076750,"iv":1250.1}],"puts":[{"strike":18,"dv":1,"iv":5000.1},{"strike":22,"dv":84,"iv":5000.1},{"strike":23,"dv":28,"iv":5000.1},{"strike":24,"dv":207,"iv":5000.1},{"strike":25,"dv":1503,"iv":5000.1},{"strike":26,"dv":32,"iv":5000.1},{"strike":27,"dv":6,"iv":5000.1},{"strike":28,"dv":22,"iv":5000.1},{"strike":30,"dv":82,"iv":5000.1},{"strike":32,"dv":1,"iv":5000.1},{"strike":33,"dv":12,"iv":5000.1},{"strike":34,"dv":384,"iv":5000.1},{"strike":35,"dv":84,"iv":5000.1},{"strike":36,"dv":288,"iv":5000.1},{"strike":37,"dv":1690,"iv":5000.1},{"strike":38,"dv":4775,"iv":5000.1},{"strike":39,"dv":2144,"iv":5000.1},{"strike":40,"dv":3684,"iv":5000.1},{"strike":41,"dv":1015,"iv":5000.1},{"strike":42,"dv":13254,"iv":5000.1},{"strike":43,"dv":1272,"iv":5000.1},{"strike":44,"dv":1631,"iv":5000.1},{"strike":45,"dv":116016,"iv":5000.1},{"strike":46,"dv":81829,"iv":5000.1},{"strike":47,"dv":7328,"iv":5000.1},{"strike":48,"dv":2144,"iv":5000.1},{"strike":49,"dv":99022,"iv":5000.1},{"strike":50,"dv":70950,"iv":5000.1},{"strike":52.5,"dv":9702,"iv":5000.1},{"strike":55,"dv":116310,"iv":5000.1},{"strike":57.5,"dv":41700,"iv":5000.1},{"strike":58,"dv":510,"iv":5000.1},{"strike":59,"dv":3568,"iv":5000.1},{"strike":60,"dv":128300,"iv":5000.1},{"strike":61,"dv":270,"iv":5000.1},{"strike":62,"dv":1140,"iv":5000.1},{"strike":62.5,"dv":1575,"iv":5000.1},{"strike":63,"dv":828,"iv":5000.1},{"strike":64,"dv":6775,"iv":5000.1},{"strike":65,"dv":35293,"iv":5000.1},{"strike":66,"dv":2720,"iv":5000.1},{"strike":67,"dv":2448,"iv":2500.1},{"strike":67.5,"dv":8100,"iv":2500.1},{"strike":68,"dv":10602,"iv":2500.1},{"strike":69,"dv":9159,"iv":2500.1},{"strike":70,"dv":127939,"iv":2500.1},{"strike":71,"dv":45198,"iv":2500.1},{"strike":72,"dv":22448,"iv":2500.1},{"strike":72.5,"dv":7744,"iv":2500.1},{"strike":73,"dv":37587,"iv":2500.1},{"strike":74,"dv":32340,"iv":2500.1},{"strike":75,"dv":389666,"iv":2500.1},{"strike":76,"dv":93002,"iv":2500.1},{"strike":77,"dv":101310,"iv":2500.1},{"strike":78,"dv":96555,"iv":2500.1},{"strike":79,"dv":197540,"iv":2500.1},{"strike":80,"dv":1005038,"iv":2500.1},{"strike":81,"dv":87710,"iv":1250.1},{"strike":82,"dv":1896868,"iv":1250.1},{"strike":83,"dv":405888,"iv":1250.1},{"strike":84,"dv":846972,"iv":1250.1},{"strike":85,"dv":1420858,"iv":1250.1},{"strike":86,"dv":499720,"iv":1250.1},{"strike":87,"dv":2383605,"iv":1250.1},{"strike":88,"dv":2686875,"iv":625.1},{"strike":89,"dv":3337740,"iv":625.1},{"strike":90,"dv":4208080,"iv":625.1}]}}]};
+  // Combine IV from a saved history record (exp1/exp2/exp3), weighted by dv if available.
+  // Single-pool combine of a history record across expirations;
+  // old records fall back to legacy combined DV + single-strike ATM.
+  function combineHist(record) {
+    const exps = [];
+    for (const key of ['exp1', 'exp2', 'exp3']) {
+      const e = record[key];
+      if (!e || (e.callIV <= 0 && e.putIV <= 0)) continue;
+      exps.push(e);
+    }
+    if (exps.length === 0) return null;
+
+    function pool(valueFn, weightFn) {
+      var vals = [];
+      for (var i = 0; i < exps.length; i++) {
+        var v = valueFn(exps[i]);
+        if (v == null) continue;
+        var w = weightFn(exps[i]);
+        vals.push({ v: v, w: w > 0 ? w : 0 });
+      }
+      if (vals.length === 0) return null;
+      var sumW = 0, sumVW = 0;
+      for (var j = 0; j < vals.length; j++) { sumW += vals[j].w; sumVW += vals[j].v * vals[j].w; }
+      if (sumW > 0) return sumVW / sumW;
+      var sumV = 0;
+      for (var k = 0; k < vals.length; k++) sumV += vals[k].v;
+      return sumV / vals.length;
+    }
+    function legacyDV(e) { return e.dv || 0; }
+
+    var callIV = pool(
+      function(e) { return e.callIV > 0 ? e.callIV : null; },
+      function(e) { return e.callDV != null ? e.callDV : legacyDV(e); }
+    ) || 0;
+    var putIV = pool(
+      function(e) { return e.putIV > 0 ? e.putIV : null; },
+      function(e) { return e.putDV != null ? e.putDV : legacyDV(e); }
+    ) || 0;
+    var atmCallIV = pool(
+      function(e) { return (e.atmBandCallIV != null && e.atmBandCallIV > 0) ? e.atmBandCallIV : (e.atmCallIV != null ? e.atmCallIV : null); },
+      function(e) { return e.atmCallDV != null ? e.atmCallDV : legacyDV(e); }
+    );
+    var atmPutIV = pool(
+      function(e) { return (e.atmBandPutIV != null && e.atmBandPutIV > 0) ? e.atmBandPutIV : (e.atmPutIV != null ? e.atmPutIV : null); },
+      function(e) { return e.atmPutDV != null ? e.atmPutDV : legacyDV(e); }
+    );
+
+    return { callIV: callIV, putIV: putIV, atmCallIV: atmCallIV, atmPutIV: atmPutIV };
+  }
+  // Favorite star click handler
+  let favToastTimer = null;
+  function showFavToast(msg, success) {
+    const el = document.getElementById('fav-toast');
+    el.textContent = msg;
+    el.style.background = success ? '#4caf50' : '#f44336';
+    el.classList.add('show');
+    clearTimeout(favToastTimer);
+    favToastTimer = setTimeout(() => el.classList.remove('show'), 1500);
+  }
+
+  // Ticker notes: debounced autosave
+  const noteTimers = {};
+  document.querySelectorAll('.ticker-note').forEach(ta => {
+    const ticker = ta.getAttribute('data-ticker');
+    const statusEl = document.querySelector('.note-status[data-ticker="' + ticker + '"]');
+    const save = async () => {
+      if (!window.electronAPI || !window.electronAPI.saveNote) return;
+      if (statusEl) statusEl.textContent = 'saving…';
+      try {
+        await window.electronAPI.saveNote(ticker, ta.value);
+        if (statusEl) {
+          statusEl.textContent = 'saved';
+          setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 1200);
+        }
+        // Update note indicator next to ticker
+        const row = document.querySelector('tr.data-row[data-ticker="' + ticker + '"]');
+        if (row) {
+          const cell = row.children[1];
+          if (cell) {
+            const existing = cell.querySelector('span[title="Has note"]');
+            const hasText = ta.value.trim().length > 0;
+            if (hasText && !existing) {
+              const span = document.createElement('span');
+              span.setAttribute('title', 'Has note');
+              span.style.fontSize = '0.75em';
+              span.textContent = ' 📝';
+              cell.appendChild(span);
+            } else if (!hasText && existing) {
+              existing.remove();
+            }
+          }
+        }
+      } catch (err) {
+        if (statusEl) statusEl.textContent = 'failed';
+      }
+    };
+    ta.addEventListener('input', () => {
+      clearTimeout(noteTimers[ticker]);
+      noteTimers[ticker] = setTimeout(save, 700);
+    });
+    ta.addEventListener('blur', () => {
+      clearTimeout(noteTimers[ticker]);
+      save();
+    });
+    ta.addEventListener('click', (e) => e.stopPropagation());
+  });
+
+  document.querySelectorAll('.fav-star').forEach(star => {
+    star.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const ticker = star.getAttribute('data-ticker');
+      if (!ticker || !window.electronAPI || !window.electronAPI.toggleFavorite) return;
+      if (star.dataset.busy) return;
+      star.dataset.busy = '1';
+      try {
+        const result = await window.electronAPI.toggleFavorite(ticker);
+        const isFav = result.favorites.includes(ticker);
+        star.textContent = isFav ? '\u2605' : '\u2606';
+        star.style.color = isFav ? '#f5c518' : '#ccc';
+        star.closest('td').setAttribute('data-v', isFav ? '1' : '0');
+        showFavToast(isFav ? ticker + ' added to favorites' : ticker + ' removed from favorites', true);
+      } catch (err) {
+        showFavToast('Failed to update ' + ticker, false);
+      }
+      delete star.dataset.busy;
+    });
+  });
+
+  const classColors = {
+    surprising_positive: '#4caf50',
+    positive_anticipated: '#8bc34a',
+    negative_anticipated: '#ff9800',
+    surprising_negative: '#f44336',
+  };
+  const classNames = {
+    surprising_positive: 'Surprising +',
+    positive_anticipated: 'Anticipated +',
+    negative_anticipated: 'Anticipated -',
+    surprising_negative: 'Surprising -',
+  };
+
+  const renderedCharts = {};
+
+  function pairwiseCorrelation(tickerA, tickerB) {
+    const cdA = chartDataMap[tickerA];
+    const cdB = chartDataMap[tickerB];
+    if (!cdA || !cdB || !cdA.dates || !cdB.dates) return null;
+
+    const dateIdxA = {};
+    for (let i = 0; i < cdA.dates.length; i++) dateIdxA[cdA.dates[i]] = i;
+
+    const retA = [], retB = [];
+    let prevIdxA = -1, prevIdxB = -1;
+    for (let j = 0; j < cdB.dates.length; j++) {
+      const idxA = dateIdxA[cdB.dates[j]];
+      if (idxA == null) continue;
+      if (prevIdxA >= 0 && prevIdxB >= 0 && idxA === prevIdxA + 1 && j === prevIdxB + 1) {
+        if (cdA.closes[prevIdxA] > 0 && cdB.closes[prevIdxB] > 0) {
+          retA.push(Math.log(cdA.closes[idxA] / cdA.closes[prevIdxA]));
+          retB.push(Math.log(cdB.closes[j] / cdB.closes[prevIdxB]));
+        }
+      }
+      prevIdxA = idxA;
+      prevIdxB = j;
+    }
+
+    if (retA.length < 20) return null;
+
+    const n = retA.length;
+    let sx = 0, sy = 0, sxy = 0, sx2 = 0, sy2 = 0;
+    for (let k = 0; k < n; k++) {
+      sx += retA[k]; sy += retB[k];
+      sxy += retA[k] * retB[k];
+      sx2 += retA[k] * retA[k];
+      sy2 += retB[k] * retB[k];
+    }
+    const denom = Math.sqrt((n * sx2 - sx * sx) * (n * sy2 - sy * sy));
+    return denom > 0 ? (n * sxy - sx * sy) / denom : 0;
+  }
+
+  function corrColor(r) {
+    const abs = Math.abs(r);
+    if (r < 0) return 'rgba(76, 175, 80, ' + (0.5 + abs * 0.5) + ')';
+    if (abs < 0.3) return 'rgba(76, 175, 80, 0.7)';
+    if (abs < 0.6) return 'rgba(255, 193, 7, ' + (0.6 + (abs - 0.3) * 1.3) + ')';
+    return 'rgba(244, 67, 54, ' + (0.6 + (abs - 0.6) * 1.0) + ')';
+  }
+
+  // Portfolio correlation checker
+  document.getElementById('portfolio-corr-btn').addEventListener('click', () => {
+    const raw = document.getElementById('portfolio-corr-input').value;
+    const tickers = raw.split(',').map(t => t.trim().toUpperCase()).filter(t => t.length > 0);
+    const resultDiv = document.getElementById('portfolio-corr-result');
+
+    if (tickers.length < 2) {
+      resultDiv.innerHTML = '<span style="color:#888; font-size:0.9em;">Enter at least 2 tickers separated by commas.</span>';
+      return;
+    }
+
+    const missing = tickers.filter(t => !chartDataMap[t]);
+    if (missing.length > 0) {
+      resultDiv.innerHTML = '<span style="color:#c62828; font-size:0.9em;">Not in screening data: ' + missing.join(', ') + '</span>';
+      return;
+    }
+
+    // Compute all pairwise correlations
+    const pairs = [];
+    for (let i = 0; i < tickers.length; i++) {
+      for (let j = i + 1; j < tickers.length; j++) {
+        const r = pairwiseCorrelation(tickers[i], tickers[j]);
+        pairs.push({ a: tickers[i], b: tickers[j], r });
+      }
+    }
+
+    const valid = pairs.filter(p => p.r !== null);
+    if (valid.length === 0) {
+      resultDiv.innerHTML = '<span style="color:#888; font-size:0.9em;">Not enough overlapping data to compute correlations.</span>';
+      return;
+    }
+
+    const avgCorr = valid.reduce((s, p) => s + p.r, 0) / valid.length;
+    const maxCorr = Math.max(...valid.map(p => p.r));
+    const minCorr = Math.min(...valid.map(p => p.r));
+
+    // Verdict
+    let verdict, verdictColor;
+    if (avgCorr >= 0.7) { verdict = 'Highly correlated — low diversification'; verdictColor = '#c62828'; }
+    else if (avgCorr >= 0.5) { verdict = 'Moderately correlated'; verdictColor = '#ef6c00'; }
+    else if (avgCorr >= 0.3) { verdict = 'Moderately diversified'; verdictColor = '#f9a825'; }
+    else { verdict = 'Well diversified — low correlation'; verdictColor = '#2e7d32'; }
+
+    let html = '<div style="margin-bottom:6px;"><span style="font-weight:700; font-size:1.05em; color:' + verdictColor + ';">' + verdict + '</span>';
+    html += '<span style="color:#888; margin-left:12px; font-size:0.9em;">avg ' + avgCorr.toFixed(3) + ' &nbsp;|&nbsp; range ' + minCorr.toFixed(3) + ' to ' + maxCorr.toFixed(3) + '</span></div>';
+
+    // Pair table
+    html += '<table style="width:100%; border-collapse:collapse; font-size:0.9em; margin-top:4px;">';
+    html += '<tr style="color:#888; font-size:0.8em; text-transform:uppercase; letter-spacing:0.5px;"><th style="text-align:left; padding:4px 8px;">Pair</th><th style="text-align:right; padding:4px 8px;">Correlation</th></tr>';
+    valid.sort((a, b) => b.r - a.r);
+    for (const p of valid) {
+      const color = corrColor(p.r);
+      html += '<tr style="border-top:1px solid #eee;">' +
+        '<td style="padding:4px 8px;">' + p.a + ' / ' + p.b + '</td>' +
+        '<td style="padding:4px 8px; text-align:right; color:' + color + '; font-weight:600;">' + p.r.toFixed(3) + '</td>' +
+        '</tr>';
+    }
+    const skipped = pairs.filter(p => p.r === null);
+    if (skipped.length > 0) {
+      for (const p of skipped) {
+        html += '<tr style="border-top:1px solid #eee;">' +
+          '<td style="padding:4px 8px; color:#bbb;">' + p.a + ' / ' + p.b + '</td>' +
+          '<td style="padding:4px 8px; text-align:right; color:#bbb;">insufficient data</td></tr>';
+      }
+    }
+    html += '</table>';
+    resultDiv.innerHTML = html;
+  });
+
+  document.getElementById('portfolio-corr-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('portfolio-corr-btn').click();
+  });
+
+  // Click handler for data rows
+  document.querySelectorAll('tr.data-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      const ticker = row.getAttribute('data-ticker');
+      const chartRow = document.querySelector('tr.chart-row[data-chart-for="' + ticker + '"]');
+      if (!chartRow) return;
+
+      const isVisible = chartRow.style.display !== 'none';
+      // Toggle arrow indicator
+      const arrow = row.querySelector('td:first-child span');
+      if (arrow) arrow.textContent = isVisible ? '\u25B6' : '\u25BC';
+
+      if (isVisible) {
+        chartRow.style.display = 'none';
+        return;
+      }
+
+      chartRow.style.display = '';
+
+      // Render chart if not yet done
+      if (!renderedCharts[ticker]) {
+        const cd = chartDataMap[ticker];
+        if (!cd) return;
+
+        const canvas = document.getElementById('chart-' + ticker);
+        if (!canvas) return;
+
+        // Build all datasets using numeric indices for x — avoids category/scatter misalignment
+        const eventsByClass = {};
+        for (const ev of cd.events) {
+          if (!eventsByClass[ev.classification]) eventsByClass[ev.classification] = [];
+          if (ev.idx != null && ev.idx < cd.dates.length) {
+            eventsByClass[ev.classification].push({ x: ev.idx, y: ev.y });
+          }
+        }
+
+        // Convert line and bar data to {x, y} indexed points so all datasets share the linear x scale
+        const pricePoints = cd.closes.map((v, i) => ({ x: i, y: v }));
+        const volumePoints = cd.volumes.map((v, i) => ({ x: i, y: v }));
+
+        const datasets = [{
+          label: 'Volume',
+          data: volumePoints,
+          type: 'bar',
+          backgroundColor: 'rgba(100, 100, 180, 0.25)',
+          borderColor: 'rgba(100, 100, 180, 0.4)',
+          borderWidth: 1,
+          yAxisID: 'yVol',
+          order: 2,
+        }, {
+          label: ticker + ' Close',
+          data: pricePoints,
+          borderColor: 'rgba(136, 176, 136, 0.8)',
+          backgroundColor: 'rgba(136, 176, 136, 0.1)',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: true,
+          yAxisID: 'y',
+          order: 1,
+        }];
+
+        for (const [cls, points] of Object.entries(eventsByClass)) {
+          datasets.push({
+            label: classNames[cls] || cls,
+            data: points,
+            type: 'scatter',
+            backgroundColor: classColors[cls] || '#ccc',
+            borderColor: classColors[cls] || '#ccc',
+            pointRadius: 7,
+            pointHoverRadius: 9,
+            yAxisID: 'y',
+            order: 0,
+          });
+        }
+
+        const dates = cd.dates;
+        renderedCharts[ticker] = new Chart(canvas, {
+          type: 'line',
+          data: { datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 300 },
+            plugins: {
+              title: { display: true, text: ticker + ' Price with Events', color: '#b0b0b0' },
+              legend: { labels: { color: '#909090', boxWidth: 12, font: { size: 11 } } },
+              tooltip: {
+                callbacks: {
+                  title: function(items) { return items[0] ? dates[items[0].parsed.x] || '' : ''; }
+                }
+              },
+            },
+            scales: {
+              x: {
+                type: 'linear',
+                ticks: {
+                  color: '#909090',
+                  maxTicksLimit: 12,
+                  font: { size: 10 },
+                  callback: function(val) { return dates[val] || ''; },
+                },
+                grid: { color: '#2a2a4a' },
+                min: 0,
+                max: dates.length - 1,
+              },
+              y: {
+                position: 'left',
+                ticks: { color: '#909090', font: { size: 10 } },
+                grid: { color: '#2a2a4a' },
+              },
+              yVol: {
+                position: 'right',
+                display: false,
+                beginAtZero: true,
+                max: Math.max(...(cd.volumes || [0])) * 4,
+                grid: { drawOnChartArea: false },
+              },
+            },
+          },
+        });
+
+        // Populate company summary
+        const sumEl = document.getElementById('summary-' + ticker);
+        if (sumEl && summaryMap[ticker]) {
+          sumEl.textContent = summaryMap[ticker];
+        }
+
+        // Render last-5-day DV (bars) + average IV (line) mini-chart next to summary
+        const dvIvCanvas = document.getElementById('dv-iv-chart-' + ticker);
+        const dvIvHist = ivHistoryMap[ticker];
+        if (dvIvCanvas && Array.isArray(dvIvHist) && dvIvHist.length > 0) {
+          const recent = dvIvHist.slice(-5);
+          const labels = recent.map(r => (r.date || '').slice(5));
+          const dvSeries = recent.map(r => {
+            let dv = 0;
+            for (const k of ['exp1', 'exp2', 'exp3']) {
+              const e = r[k];
+              if (!e) continue;
+              dv += (e.callDV || 0) + (e.putDV || 0);
+            }
+            return dv;
+          });
+          const ivSeries = recent.map(r => {
+            const c = combineHist(r);
+            if (!c) return null;
+            const vals = [];
+            if (c.callIV > 0) vals.push(c.callIV);
+            if (c.putIV > 0) vals.push(c.putIV);
+            if (!vals.length) return null;
+            return vals.reduce((s, v) => s + v, 0) / vals.length;
+          });
+
+          const dvIvDateMap = recent.map(r => r.date);
+          const renderStrikeBreakdown = (dateStr) => {
+            const rec = (ivHistoryMap[ticker] || []).find(r => r.date === dateStr);
+            const wrap = document.getElementById('dv-iv-strike-wrap-' + ticker);
+            const title = document.getElementById('dv-iv-strike-title-' + ticker);
+            const body = document.getElementById('dv-iv-strike-body-' + ticker);
+            if (!rec || !wrap || !body) return;
+            const exps = ['exp1', 'exp2', 'exp3'].map(k => rec[k]).filter(e => e && (e.calls || e.puts));
+            if (!exps.length) {
+              body.innerHTML = '<div style="color:#888; font-size:0.85em; padding:8px 0;">No per-strike data for ' + dateStr + ' (older snapshots stored aggregates only — newer dates will populate).</div>';
+              if (title) title.textContent = ticker + ' — ' + dateStr;
+              wrap.style.display = 'block';
+              return;
+            }
+            if (title) title.textContent = ticker + ' — ' + dateStr;
+            body.innerHTML = exps.map((_, i) => '<div style="display:inline-block; width:48%; margin-right:1%; vertical-align:top;"><div style="height:300px;"><canvas id="strike-hist-' + ticker + '-' + dateStr + '-' + i + '"></canvas></div></div>').join('');
+            wrap.style.display = 'block';
+            exps.forEach((e, i) => {
+              const cv = document.getElementById('strike-hist-' + ticker + '-' + dateStr + '-' + i);
+              if (!cv) return;
+              const strikeSet = new Set();
+              (e.calls || []).forEach(c => strikeSet.add(c.strike));
+              (e.puts || []).forEach(p => strikeSet.add(p.strike));
+              const strikes = Array.from(strikeSet).sort((a, b) => a - b);
+              const cMap = {}, pMap = {};
+              (e.calls || []).forEach(c => { cMap[c.strike] = c; });
+              (e.puts || []).forEach(p => { pMap[p.strike] = p; });
+              new Chart(cv, {
+                data: {
+                  labels: strikes.map(s => '$' + s.toFixed(s >= 100 ? 0 : s >= 1 ? 1 : 2)),
+                  datasets: [
+                    { type: 'bar', label: 'Call $Vol', data: strikes.map(s => cMap[s] ? cMap[s].dv : 0), backgroundColor: 'rgba(72,187,120,0.55)', yAxisID: 'y' },
+                    { type: 'bar', label: 'Put $Vol', data: strikes.map(s => pMap[s] ? pMap[s].dv : 0), backgroundColor: 'rgba(245,101,101,0.55)', yAxisID: 'y' },
+                    { type: 'line', label: 'Call IV', data: strikes.map(s => cMap[s] && cMap[s].iv > 0 ? cMap[s].iv : null), borderColor: 'rgba(72,187,120,0.95)', backgroundColor: 'rgba(72,187,120,0.95)', borderWidth: 2, pointRadius: 2, spanGaps: true, yAxisID: 'y1' },
+                    { type: 'line', label: 'Put IV', data: strikes.map(s => pMap[s] && pMap[s].iv > 0 ? pMap[s].iv : null), borderColor: 'rgba(245,101,101,0.95)', backgroundColor: 'rgba(245,101,101,0.95)', borderWidth: 2, pointRadius: 2, spanGaps: true, yAxisID: 'y1' },
+                  ],
+                },
+                options: {
+                  responsive: true, maintainAspectRatio: false, animation: { duration: 200 },
+                  interaction: { mode: 'index', intersect: false },
+                  plugins: {
+                    title: { display: true, text: e.label || ('Exp ' + (i + 1)), color: '#b0b0b0', font: { size: 11 } },
+                    legend: { labels: { color: '#909090', boxWidth: 10, font: { size: 9 } } },
+                  },
+                  scales: {
+                    x: { ticks: { color: '#909090', font: { size: 9 }, maxRotation: 60, minRotation: 0 }, grid: { color: '#2a2a4a' } },
+                    y: { position: 'left', beginAtZero: true, title: { display: true, text: '$Vol', color: '#909090', font: { size: 9 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : (v / 1e3).toFixed(0) + 'K'; } }, grid: { color: '#2a2a4a' } },
+                    y1: { position: 'right', title: { display: true, text: 'IV %', color: '#909090', font: { size: 9 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } }, grid: { drawOnChartArea: false } },
+                  },
+                },
+              });
+            });
+          };
+
+          const closeBtn = document.querySelector('button[data-strike-close="' + ticker + '"]');
+          if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+              const wrap = document.getElementById('dv-iv-strike-wrap-' + ticker);
+              if (wrap) wrap.style.display = 'none';
+            });
+          }
+
+          new Chart(dvIvCanvas, {
+            data: {
+              labels,
+              datasets: [
+                {
+                  type: 'bar',
+                  label: 'Option $Vol',
+                  data: dvSeries,
+                  backgroundColor: 'rgba(122,162,199,0.55)',
+                  borderColor: 'rgba(122,162,199,0.9)',
+                  borderWidth: 1,
+                  yAxisID: 'y',
+                  order: 1,
+                },
+                {
+                  type: 'line',
+                  label: 'Avg IV',
+                  data: ivSeries,
+                  borderColor: 'rgba(245,180,80,0.95)',
+                  backgroundColor: 'rgba(245,180,80,0.95)',
+                  borderWidth: 2,
+                  pointRadius: 3,
+                  spanGaps: true,
+                  tension: 0.2,
+                  yAxisID: 'y1',
+                  order: 0,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              animation: { duration: 200 },
+              interaction: { mode: 'index', intersect: false },
+              onClick: (evt, els, chart) => {
+                let idx = els && els.length ? els[0].index : null;
+                if (idx == null) {
+                  const pts = chart.getElementsAtEventForMode(evt, 'index', { intersect: false }, true);
+                  if (pts && pts.length) idx = pts[0].index;
+                }
+                if (idx == null) return;
+                const dateStr = dvIvDateMap[idx];
+                if (dateStr) renderStrikeBreakdown(dateStr);
+              },
+              plugins: {
+                title: { display: true, text: 'Last 5d Option $Vol & Avg IV (click a day for strikes)', color: '#b0b0b0', font: { size: 11 } },
+                legend: { labels: { color: '#909090', boxWidth: 10, font: { size: 9 } } },
+                tooltip: {
+                  callbacks: {
+                    label: function(ctx) {
+                      const v = ctx.raw;
+                      if (v == null) return ctx.dataset.label + ': N/A';
+                      if (ctx.dataset.yAxisID === 'y1') return ctx.dataset.label + ': ' + v.toFixed(1) + '%';
+                      return ctx.dataset.label + ': $' + (v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : (v / 1e3).toFixed(0) + 'K');
+                    },
+                  },
+                },
+              },
+              scales: {
+                x: { ticks: { color: '#909090', font: { size: 9 } }, grid: { color: '#2a2a4a' } },
+                y: {
+                  position: 'left',
+                  beginAtZero: true,
+                  title: { display: true, text: '$Vol', color: '#909090', font: { size: 9 } },
+                  ticks: {
+                    color: '#909090', font: { size: 9 },
+                    callback: function(v) { return v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : (v / 1e3).toFixed(0) + 'K'; },
+                  },
+                  grid: { color: '#2a2a4a' },
+                },
+                y1: {
+                  position: 'right',
+                  title: { display: true, text: 'Avg IV %', color: '#909090', font: { size: 9 } },
+                  ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } },
+                  grid: { drawOnChartArea: false },
+                },
+              },
+            },
+          });
+        }
+
+        // Populate news headlines
+        const newsEl = document.getElementById('news-' + ticker);
+        const news = newsMap[ticker];
+        if (newsEl && news && news.length > 0) {
+          const catColors = { technical: '#5b9bd5', fear: '#c0392b', win: '#27ae60', macro_fear: '#e07c4f', macro_win: '#2ecc71', mixed: '#999' };
+          const catLabels = { technical: 'Technical', fear: 'Fear', win: 'Win', macro_fear: 'Macro Fear', macro_win: 'Macro Win', mixed: 'Mixed' };
+          const renderHeadline = (n) => {
+            const badge = n.category ? '<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.75em;font-weight:600;color:#fff;background:' + (catColors[n.category] || '#999') + ';margin-right:6px;vertical-align:middle;">' + (catLabels[n.category] || '') + '</span>' : '';
+            return '<div style="margin-bottom:6px; font-size:0.95em; line-height:1.5;">' +
+              '<span style="color:#666; font-size:0.85em; margin-right:6px;">' + (n.date ? n.date + ' ' : '') + (n.time || '') + '</span>' +
+              badge +
+              '<a href="' + n.url + '" style="color:#7aa2c7; text-decoration:none;">' + n.headline + '</a>' +
+            '</div>';
+          };
+          const DEFAULT_SHOW = 10;
+          const shown = news.slice(0, DEFAULT_SHOW).map(renderHeadline).join('');
+          const hidden = news.slice(DEFAULT_SHOW).map(renderHeadline).join('');
+          let html = '<div>' + shown + '</div>';
+          if (hidden) {
+            const hiddenId = 'news-hidden-' + ticker;
+            const btnId = 'news-toggle-' + ticker;
+            html += '<div id="' + hiddenId + '" style="display:none;">' + hidden + '</div>';
+            html += '<button id="' + btnId + '" type="button" style="margin-top:6px; background:transparent; color:#7aa2c7; border:1px solid #445; border-radius:3px; padding:3px 10px; font-size:0.85em; cursor:pointer;">Show ' + (news.length - DEFAULT_SHOW) + ' more</button>';
+            newsEl.innerHTML = html;
+            const btn = document.getElementById(btnId);
+            const hiddenEl = document.getElementById(hiddenId);
+            btn.addEventListener('click', () => {
+              const isHidden = hiddenEl.style.display === 'none';
+              hiddenEl.style.display = isHidden ? 'block' : 'none';
+              btn.textContent = isHidden ? 'Show less' : ('Show ' + (news.length - DEFAULT_SHOW) + ' more');
+            });
+          } else {
+            newsEl.innerHTML = html;
+          }
+        }
+
+        // Render options strike charts (nearest 2 expirations side by side)
+        const od = cd.optionsStrikes;
+        if (od && od.length > 0) {
+          const optsWrap = document.getElementById('opts-wrap-' + ticker);
+          if (optsWrap) {
+            optsWrap.style.display = 'block';
+            const fmtDollar = (v) => v >= 1e6 ? '$'+(v/1e6).toFixed(1)+'M' : v >= 1e3 ? '$'+(v/1e3).toFixed(0)+'K' : '$'+v.toFixed(0);
+
+            for (let ei = 0; ei < Math.min(2, od.length); ei++) {
+              const exp = od[ei];
+              const canvas = document.getElementById('opts-chart-' + ei + '-' + ticker);
+              if (!exp || !canvas) continue;
+
+              const strikeSet = new Set();
+              exp.calls.forEach(c => strikeSet.add(c.strike));
+              exp.puts.forEach(p => strikeSet.add(p.strike));
+              const strikes = Array.from(strikeSet).sort((a, b) => a - b);
+              const strikeLabels = strikes.map(s => '$' + s.toFixed(s >= 100 ? 0 : s >= 1 ? 1 : 2));
+
+              const callMap = {};
+              exp.calls.forEach(c => { callMap[c.strike] = c; });
+              const putMap = {};
+              exp.puts.forEach(p => { putMap[p.strike] = p; });
+
+              const callDollarVol = strikes.map(s => callMap[s] ? callMap[s].dollarVol : 0);
+              const putDollarVol = strikes.map(s => putMap[s] ? putMap[s].dollarVol : 0);
+              const callDollarOI = strikes.map(s => callMap[s] ? callMap[s].dollarOI : 0);
+              const putDollarOI = strikes.map(s => putMap[s] ? putMap[s].dollarOI : 0);
+              const callIV = strikes.map(s => callMap[s] && callMap[s].iv > 0 ? callMap[s].iv : null);
+              const putIV = strikes.map(s => putMap[s] && putMap[s].iv > 0 ? putMap[s].iv : null);
+
+              // Populate weighted IV label
+              const ivLabel = document.getElementById('opts-iv-label-' + ei + '-' + ticker);
+              if (ivLabel && (exp.wCallIV > 0 || exp.wPutIV > 0)) {
+                let ivHtml = '<span style="color:rgba(72,187,120,0.9);">Call IV: ' + exp.wCallIV.toFixed(1) + '%</span>';
+                if (exp.atmCallIV > 0) ivHtml += '<span style="color:#888; font-size:0.85em;"> (ATM ' + exp.atmCallIV.toFixed(1) + '%, ' + (exp.ivSpreadCall >= 0 ? '+' : '') + exp.ivSpreadCall.toFixed(1) + ' spread, ' + (exp.deepOTMCallPct || 0).toFixed(0) + '% deep)</span>';
+                ivHtml += ' | <span style="color:rgba(245,101,101,0.9);">Put IV: ' + exp.wPutIV.toFixed(1) + '%</span>';
+                if (exp.atmPutIV > 0) ivHtml += '<span style="color:#888; font-size:0.85em;"> (ATM ' + exp.atmPutIV.toFixed(1) + '%, ' + (exp.ivSpreadPut >= 0 ? '+' : '') + exp.ivSpreadPut.toFixed(1) + ' spread, ' + (exp.deepOTMPutPct || 0).toFixed(0) + '% deep)</span>';
+                ivLabel.innerHTML = ivHtml;
+              }
+
+              new Chart(canvas, {
+                type: 'bar',
+                data: {
+                  labels: strikeLabels,
+                  datasets: [
+                    { label: 'Call $ OI', data: callDollarOI, backgroundColor: 'rgba(72, 187, 120, 0.15)', borderColor: 'rgba(72, 187, 120, 0.3)', borderWidth: 1, yAxisID: 'yDollar', stack: 'call', order: 3, barPercentage: 0.95 },
+                    { label: 'Put $ OI', data: putDollarOI, backgroundColor: 'rgba(245, 101, 101, 0.15)', borderColor: 'rgba(245, 101, 101, 0.3)', borderWidth: 1, yAxisID: 'yDollar', stack: 'put', order: 3, barPercentage: 0.95 },
+                    { label: 'Call $ Vol', data: callDollarVol, backgroundColor: 'rgba(72, 187, 120, 0.6)', borderColor: 'rgba(72, 187, 120, 0.9)', borderWidth: 1, yAxisID: 'yDollar', stack: 'call', order: 2, barPercentage: 0.6 },
+                    { label: 'Put $ Vol', data: putDollarVol, backgroundColor: 'rgba(245, 101, 101, 0.6)', borderColor: 'rgba(245, 101, 101, 0.9)', borderWidth: 1, yAxisID: 'yDollar', stack: 'put', order: 2, barPercentage: 0.6 },
+                    { label: 'Call IV', data: callIV, borderColor: 'rgba(72, 187, 120, 0.9)', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, type: 'line', yAxisID: 'yIV', order: 1, spanGaps: true },
+                    { label: 'Put IV', data: putIV, borderColor: 'rgba(245, 101, 101, 0.9)', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, type: 'line', yAxisID: 'yIV', order: 1, spanGaps: true },
+                  ],
+                },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  animation: { duration: 200 },
+                  plugins: {
+                    title: { display: true, text: 'Exp: ' + exp.label, color: '#b0b0b0', font: { size: 11 } },
+                    legend: { display: false },
+                    tooltip: {
+                      callbacks: {
+                        label: function(ctx) {
+                          if (ctx.dataset.yAxisID === 'yIV') return ctx.dataset.label + ': ' + (ctx.raw !== null ? ctx.raw.toFixed(1) + '%' : 'N/A');
+                          return ctx.dataset.label + ': ' + fmtDollar(ctx.raw);
+                        }
+                      }
+                    },
+                  },
+                  scales: {
+                    x: { stacked: true, ticks: { color: '#909090', font: { size: 8 }, maxRotation: 45 }, grid: { color: '#2a2a4a' } },
+                    yDollar: {
+                      position: 'left',
+                      stacked: false,
+                      ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return fmtDollar(v); } },
+                      grid: { color: '#2a2a4a' },
+                      beginAtZero: true,
+                    },
+                    yIV: {
+                      position: 'right',
+                      ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } },
+                      grid: { drawOnChartArea: false },
+                    },
+                  },
+                },
+              });
+            }
+
+            // IV history click handler — either label toggles the history chart
+            let ivHistChart = null;
+            const histWrap = document.getElementById('iv-history-wrap-' + ticker);
+            const histCanvas = document.getElementById('iv-history-chart-' + ticker);
+            const hist = ivHistoryMap[ticker];
+
+            function toggleHistory() {
+              if (!histWrap || !histCanvas || !hist || hist.length < 2) return;
+              if (histWrap.style.display !== 'none') {
+                histWrap.style.display = 'none';
+                return;
+              }
+              histWrap.style.display = 'block';
+              if (ivHistChart) return; // already rendered
+
+              const labels = hist.map(r => r.date);
+              const combined = hist.map(r => combineHist(r));
+
+              const callIVSeries = combined.map(c => c && c.callIV > 0 ? c.callIV : null);
+              const putIVSeries = combined.map(c => c && c.putIV > 0 ? c.putIV : null);
+              const callSpreadSeries = combined.map(c => c && c.callIV > 0 && c.atmCallIV != null ? c.callIV - c.atmCallIV : null);
+              const putSpreadSeries = combined.map(c => c && c.putIV > 0 && c.atmPutIV != null ? c.putIV - c.atmPutIV : null);
+
+              const lineBase = { type: 'line', borderWidth: 2, pointRadius: 2, fill: false, spanGaps: true, tension: 0.2 };
+              const datasets = [
+                { ...lineBase, label: 'Call IV', data: callIVSeries, borderColor: 'rgba(72,187,120,0.95)', backgroundColor: 'rgba(72,187,120,0.95)', yAxisID: 'y' },
+                { ...lineBase, label: 'Put IV', data: putIVSeries, borderColor: 'rgba(245,101,101,0.95)', backgroundColor: 'rgba(245,101,101,0.95)', yAxisID: 'y' },
+                { ...lineBase, label: 'Call Spread (vs ATM)', data: callSpreadSeries, borderColor: 'rgba(72,187,120,0.6)', backgroundColor: 'rgba(72,187,120,0.6)', borderDash: [4, 3], yAxisID: 'y1' },
+                { ...lineBase, label: 'Put Spread (vs ATM)', data: putSpreadSeries, borderColor: 'rgba(245,101,101,0.6)', backgroundColor: 'rgba(245,101,101,0.6)', borderDash: [4, 3], yAxisID: 'y1' },
+              ];
+
+              ivHistChart = new Chart(histCanvas, {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  animation: { duration: 200 },
+                  interaction: { mode: 'index', intersect: false },
+                  plugins: {
+                    title: { display: true, text: 'Weighted IV History — ' + ticker, color: '#b0b0b0', font: { size: 11 } },
+                    legend: { labels: { color: '#909090', boxWidth: 10, font: { size: 9 } } },
+                    tooltip: { callbacks: { label: function(ctx) { return ctx.dataset.label + ': ' + (ctx.raw != null ? ctx.raw.toFixed(1) + '%' : 'N/A'); } } },
+                  },
+                  scales: {
+                    x: { ticks: { color: '#909090', font: { size: 9 } }, grid: { color: '#2a2a4a' } },
+                    y: { position: 'left', title: { display: true, text: 'IV %', color: '#909090', font: { size: 10 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } }, grid: { color: '#2a2a4a' } },
+                    y1: { position: 'right', title: { display: true, text: 'Spread %', color: '#909090', font: { size: 10 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(1) + '%'; } }, grid: { drawOnChartArea: false } },
+                  },
+                },
+              });
+            }
+
+            for (let li = 0; li < 2; li++) {
+              const lbl = document.getElementById('opts-iv-label-' + li + '-' + ticker);
+              if (lbl) lbl.addEventListener('click', toggleHistory);
+            }
+          }
+        }
+
+      }
+    });
+  });
+
+  // Sorting — skip chart rows
+  const table = document.getElementById('screen-table');
+  const headers = table.querySelectorAll('th');
+  let currentCol = -1, ascending = true;
+
+  headers.forEach((th, colIdx) => {
+    th.addEventListener('click', () => {
+      if (currentCol === colIdx) {
+        ascending = !ascending;
+      } else {
+        currentCol = colIdx;
+        ascending = (colIdx === 1 || colIdx === 5);
+      }
+
+      headers.forEach(h => h.classList.remove('sorted-asc', 'sorted-desc'));
+      th.classList.add(ascending ? 'sorted-asc' : 'sorted-desc');
+
+      headers.forEach(h => h.querySelector('.sort-arrow').textContent = '');
+      th.querySelector('.sort-arrow').textContent = ascending ? ' \u25B2' : ' \u25BC';
+
+      const tbody = table.querySelector('tbody');
+      // Collect data-row + chart-row pairs
+      const pairs = [];
+      const dataRows = tbody.querySelectorAll('tr.data-row');
+      dataRows.forEach(dr => {
+        const ticker = dr.getAttribute('data-ticker');
+        const chartRow = tbody.querySelector('tr.chart-row[data-chart-for="' + ticker + '"]');
+        pairs.push({ dataRow: dr, chartRow });
+      });
+      // Also collect rows without data-row class (error/skipped tickers)
+      const allTrSet = new Set();
+      pairs.forEach(p => { allTrSet.add(p.dataRow); if (p.chartRow) allTrSet.add(p.chartRow); });
+      const otherRows = Array.from(tbody.querySelectorAll('tr')).filter(r => !allTrSet.has(r) && !r.classList.contains('chart-row'));
+      otherRows.forEach(r => pairs.push({ dataRow: r, chartRow: null }));
+
+      pairs.sort((a, b) => {
+        const aVal = a.dataRow.children[colIdx]?.getAttribute('data-v') || '';
+        const bVal = b.dataRow.children[colIdx]?.getAttribute('data-v') || '';
+        const aNum = parseFloat(aVal);
+        const bNum = parseFloat(bVal);
+
+        let cmp;
+        if (!isNaN(aNum) && !isNaN(bNum)) {
+          cmp = aNum - bNum;
+        } else {
+          cmp = aVal.localeCompare(bVal);
+        }
+        return ascending ? cmp : -cmp;
+      });
+
+      pairs.forEach(p => {
+        tbody.appendChild(p.dataRow);
+        if (p.chartRow) tbody.appendChild(p.chartRow);
+      });
+    });
+  });
+})();
+</script>
+</body></html>

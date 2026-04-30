@@ -649,9 +649,9 @@ const screenRun = document.getElementById('screen-run');
 btnScreen.addEventListener('click', async () => {
   await window.electronAPI.showModal();
   screenModal.style.display = 'flex';
-  screenPeriod.value = '200';
+  screenPeriod.value = '100';
   screenLookbackDays.value = '5';
-  screenPercentile.value = '95';
+  screenPercentile.value = '92';
   screenPeriod.focus();
   populateScreeningRuns();
 });
@@ -955,9 +955,9 @@ screenViewSelect.addEventListener('change', async () => {
 });
 
 screenRun.addEventListener('click', async () => {
-  const period = parseInt(screenPeriod.value, 10) || 200;
+  const period = parseInt(screenPeriod.value, 10) || 100;
   const lookbackDays = parseInt(screenLookbackDays.value, 10) || 5;
-  const percentileThreshold = parseInt(screenPercentile.value, 10) || 95;
+  const percentileThreshold = parseInt(screenPercentile.value, 10) || 92;
   const overrideRaw = document.getElementById('screen-override-tickers').value.trim();
   const overrideTickers = overrideRaw
     ? overrideRaw.split(/[,\s]+/).map(t => t.trim().toUpperCase()).filter(Boolean)
