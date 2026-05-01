@@ -1535,11 +1535,19 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       config.screenTickers = options.overrideTickers;
     }
 
-    // Filter to favorites only if requested — include all favorites even if not in the 100 list
-    if (options.favoritesOnly) {
+    // Filter to super favorites only if requested (takes priority over favoritesOnly)
+    if (options.superOnly) {
+      const supers = loadSuperFavorites();
+      if (supers.length > 0) {
+        config.screenTickers = supers;
+      }
+    } else if (options.favoritesOnly) {
+      // Include both regular and super favorites, even if not in the 100 list
       const favs = loadFavorites();
-      if (favs.length > 0) {
-        config.screenTickers = favs;
+      const supers = loadSuperFavorites();
+      const combined = Array.from(new Set([...favs, ...supers]));
+      if (combined.length > 0) {
+        config.screenTickers = combined;
       }
     }
 
@@ -1843,8 +1851,9 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
 
     // Generate HTML results page
     const currentFavorites = loadFavorites();
+    const currentSuperFavorites = loadSuperFavorites();
     const currentNotes = loadNotes();
-    const html = generateScreeningHTML(result.allTickers, tickers.length, config, ivHistoryForHTML, currentFavorites, preEventStats, currentNotes, preEventByReturnBucket);
+    const html = generateScreeningHTML(result.allTickers, tickers.length, config, ivHistoryForHTML, currentFavorites, preEventStats, currentNotes, preEventByReturnBucket, currentSuperFavorites);
 
     // Save HTML for "Latest Run Results" (alias) and a timestamped snapshot in ci/screening-runs/
     const screenResultsPath = path.join(__dirname, 'ci', 'screening-results.html');
@@ -2008,6 +2017,7 @@ ipcMain.handle('run-glm-analysis', async (event, options = {}) => {
 });
 
 const FAVORITES_PATH = path.join(__dirname, 'ci', 'screening-favorites.json');
+const SUPER_FAVORITES_PATH = path.join(__dirname, 'ci', 'screening-super-favorites.json');
 
 function loadFavorites() {
   try { return JSON.parse(require('fs').readFileSync(FAVORITES_PATH, 'utf-8')); } catch (_) { return []; }
@@ -2017,16 +2027,35 @@ function saveFavorites(favs) {
   require('fs').writeFileSync(FAVORITES_PATH, JSON.stringify(favs, null, 2) + '\n', 'utf-8');
 }
 
+function loadSuperFavorites() {
+  try { return JSON.parse(require('fs').readFileSync(SUPER_FAVORITES_PATH, 'utf-8')); } catch (_) { return []; }
+}
+
+function saveSuperFavorites(favs) {
+  require('fs').writeFileSync(SUPER_FAVORITES_PATH, JSON.stringify(favs, null, 2) + '\n', 'utf-8');
+}
+
+// Cycles ticker through 3 states: none -> favorite -> super -> none
 ipcMain.handle('toggle-favorite', async (event, ticker) => {
   const favs = loadFavorites();
-  const idx = favs.indexOf(ticker);
-  if (idx >= 0) { favs.splice(idx, 1); } else { favs.push(ticker); }
+  const supers = loadSuperFavorites();
+  const inFav = favs.indexOf(ticker);
+  const inSuper = supers.indexOf(ticker);
+  if (inSuper >= 0) {
+    supers.splice(inSuper, 1);
+  } else if (inFav >= 0) {
+    favs.splice(inFav, 1);
+    supers.push(ticker);
+  } else {
+    favs.push(ticker);
+  }
   saveFavorites(favs);
-  return { favorites: favs };
+  saveSuperFavorites(supers);
+  return { favorites: favs, superFavorites: supers };
 });
 
 ipcMain.handle('get-favorites', async () => {
-  return { favorites: loadFavorites() };
+  return { favorites: loadFavorites(), superFavorites: loadSuperFavorites() };
 });
 
 const NOTES_PATH = path.join(__dirname, 'ci', 'screening-notes.json');
@@ -2055,7 +2084,7 @@ ipcMain.handle('save-note', async (event, ticker, note) => {
   return { ok: true, notes };
 });
 
-function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData = {}, favorites = [], preEventStats = {}, notes = {}, preEventByReturnBucket = null) {
+function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData = {}, favorites = [], preEventStats = {}, notes = {}, preEventByReturnBucket = null, superFavorites = []) {
   const classColors = {
     surprising_positive: '#4caf50',
     positive_anticipated: '#8bc34a',
@@ -2072,6 +2101,7 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
 
   const hitCount = allTickers.filter(h => h.classification).length;
   const favSet = new Set(favorites);
+  const superFavSet = new Set(superFavorites);
 
   // Combine IV from up to 3 expirations, weighted by dollar volume per expiration.
   // Single-pool combination across up to 3 nearest expirations.
@@ -2346,13 +2376,18 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     const callSpreadVal = callSpread != null ? callSpread : -9999;
     const putSpreadVal = putSpread != null ? putSpread : -9999;
 
-    const isFav = favSet.has(h.ticker);
+    const isSuper = superFavSet.has(h.ticker);
+    const isFav = !isSuper && favSet.has(h.ticker);
+    const favLevel = isSuper ? 2 : (isFav ? 1 : 0);
+    const favColor = isSuper ? '#e53935' : (isFav ? '#f5c518' : '#ccc');
+    const favGlyph = favLevel > 0 ? '★' : '☆';
+    const favTitle = isSuper ? 'Super favorite (click to clear)' : (isFav ? 'Favorite (click to make super)' : 'Click to favorite');
     const noteText = (notes && notes[h.ticker]) ? notes[h.ticker] : '';
     const hasNote = !!noteText;
     const noteIndicator = hasNote ? ' <span title="Has note" style="font-size:0.75em;">📝</span>' : '';
 
     return `<tr ${hasChart ? `class="data-row" data-ticker="${h.ticker}"` : ''} style="${inlineStyle}">
-      <td style="text-align:center; width:28px; padding:4px;" data-v="${isFav ? 1 : 0}"><span class="fav-star" data-ticker="${h.ticker}" style="cursor:pointer; font-size:1.1em; color:${isFav ? '#f5c518' : '#ccc'};" title="Toggle favorite">${isFav ? '\u2605' : '\u2606'}</span></td>
+      <td style="text-align:center; width:28px; padding:4px;" data-v="${favLevel}"><span class="fav-star" data-ticker="${h.ticker}" style="cursor:pointer; font-size:1.1em; color:${favColor};" title="${favTitle}">${favGlyph}</span></td>
       <td data-v="${h.ticker}" style="font-weight:bold;">${h.ticker}${hasChart ? ' <span style="font-size:0.7em;color:#aaa;">▶</span>' : ''}${noteIndicator}</td>
       <td data-v="${sec || 'zzz'}" style="font-size:0.82em; color:#888;">${sec || ''}</td>
       <td data-v="${dateStr || 'zzz'}">${dateStr}</td>
@@ -2709,11 +2744,17 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
       star.dataset.busy = '1';
       try {
         const result = await window.electronAPI.toggleFavorite(ticker);
-        const isFav = result.favorites.includes(ticker);
-        star.textContent = isFav ? '\\u2605' : '\\u2606';
-        star.style.color = isFav ? '#f5c518' : '#ccc';
-        star.closest('td').setAttribute('data-v', isFav ? '1' : '0');
-        showFavToast(isFav ? ticker + ' added to favorites' : ticker + ' removed from favorites', true);
+        const supers = result.superFavorites || [];
+        const favs = result.favorites || [];
+        const isSuper = supers.includes(ticker);
+        const isFav = !isSuper && favs.includes(ticker);
+        const level = isSuper ? 2 : (isFav ? 1 : 0);
+        star.textContent = level > 0 ? '\\u2605' : '\\u2606';
+        star.style.color = isSuper ? '#e53935' : (isFav ? '#f5c518' : '#ccc');
+        star.title = isSuper ? 'Super favorite (click to clear)' : (isFav ? 'Favorite (click to make super)' : 'Click to favorite');
+        star.closest('td').setAttribute('data-v', String(level));
+        const msg = isSuper ? ticker + ' is now a super favorite \\u2B50' : (isFav ? ticker + ' added to favorites' : ticker + ' removed from favorites');
+        showFavToast(msg, true);
       } catch (err) {
         showFavToast('Failed to update ' + ticker, false);
       }

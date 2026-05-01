@@ -182,6 +182,12 @@ async function createTab(url = '') {
   });
 
   switchTab(tabId);
+
+  if (!url) {
+    urlBar.focus();
+    urlBar.select();
+  }
+
   return tabId;
 }
 
@@ -288,8 +294,8 @@ urlBar.addEventListener('keypress', (e) => {
           ? input
           : 'https://' + input;
       } else {
-        // It's a search query - use DuckDuckGo
-        url = `https://duckduckgo.com/?q=${encodeURIComponent(input)}`;
+        // It's a search query - use Google
+        url = `https://www.google.com/search?q=${encodeURIComponent(input)}`;
       }
 
       // Optimistic update - show URL immediately for snappy feel
@@ -646,6 +652,30 @@ const screenPercentile = document.getElementById('screen-percentile');
 const screenCancel = document.getElementById('screen-cancel');
 const screenRun = document.getElementById('screen-run');
 
+async function refreshSuperFavoritesDisplay() {
+  const wrap = document.getElementById('super-favorites-display');
+  const chips = document.getElementById('super-favorites-chips');
+  const countEl = document.getElementById('super-favorites-count');
+  if (!wrap || !chips) return;
+  try {
+    const result = await window.electronAPI.getFavorites();
+    const supers = (result && result.superFavorites) || [];
+    if (supers.length === 0) {
+      wrap.style.display = 'none';
+      return;
+    }
+    wrap.style.display = 'block';
+    countEl.textContent = '(' + supers.length + ')';
+    chips.innerHTML = supers
+      .slice()
+      .sort()
+      .map(t => '<span style="padding: 2px 8px; background: #2f1518; color: #ef9a9a; border: 1px solid #5a2a2e; border-radius: 4px; font-size: 11px; font-weight: 500;">' + t + '</span>')
+      .join('');
+  } catch (_) {
+    wrap.style.display = 'none';
+  }
+}
+
 btnScreen.addEventListener('click', async () => {
   await window.electronAPI.showModal();
   screenModal.style.display = 'flex';
@@ -654,6 +684,7 @@ btnScreen.addEventListener('click', async () => {
   screenPercentile.value = '92';
   screenPeriod.focus();
   populateScreeningRuns();
+  refreshSuperFavoritesDisplay();
 });
 
 screenCancel.addEventListener('click', async () => {
@@ -964,15 +995,16 @@ screenRun.addEventListener('click', async () => {
     : null;
   const fetchNews = document.getElementById('screen-fetch-news').checked;
   const favoritesOnly = document.getElementById('screen-favorites-only').checked;
+  const superOnly = document.getElementById('screen-super-only').checked;
 
   screenModal.style.display = 'none';
   await window.electronAPI.hideModal();
 
-  const tickerCount = overrideTickers ? overrideTickers.length : (favoritesOnly ? 'favorites' : 'all');
+  const tickerCount = overrideTickers ? overrideTickers.length : (superOnly ? 'super favorites' : (favoritesOnly ? 'favorites' : 'all'));
   showToast('Screening...', `Screening ${tickerCount} ticker${tickerCount === 1 ? '' : 's'} for recent events...`, 'info', 120000);
 
   try {
-    const result = await window.electronAPI.screenTickers({ period, lookbackDays, percentileThreshold, overrideTickers, fetchNews, favoritesOnly });
+    const result = await window.electronAPI.screenTickers({ period, lookbackDays, percentileThreshold, overrideTickers, fetchNews, favoritesOnly, superOnly });
 
     if (!result.success) {
       showToast('Error', result.error, 'error');

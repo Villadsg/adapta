@@ -448,87 +448,93 @@ const UNIVERSE = [
   // ── Small / Mid-cap ──────────────────────────────────────────────────
   // Defense / Aerospace
   'KTOS','MRCY','RKLB','BWXT','AVAV','AXON','HEI','ATI',
-  'CACI','JOBY','LUNR','RCAT',
+  'CACI','JOBY','OSK','WWD',
   // Biotech / Pharma
-  'TWST','CYTK','ARWR','IONS','EXAS','HALO','NBIX','PCVX','VKTX','KRYS',
-  'SRPT','ALNY','BMRN','INCY','ARGX','EXEL','CPRX','XENE','UTHR','RARE',
-  'RXRX','NUVB',
+  'TWST','CYTK','ARWR','EXAS','HALO','NBIX','KRYS',
+  'ALNY','BMRN','INCY','ARGX','EXEL','CPRX','UTHR','RARE',
+  'RXRX','NUVB','BPMC','CRSP','MRUS','RNA','ALKS',
   // Clean Energy
-  'ENPH','SEDG','BE','FSLR','RUN','SHLS',
+  'SEDG','BE','FSLR','RUN','SHLS',
   // SaaS / Cloud / Software
-  'AI','UPST','BRZE','CFLT','S','GTLB','DOCN','PAYC','PCTY',
+  'UPST','BRZE','CFLT','S','GTLB','DOCN','PAYC','PCTY',
   'WIX','APPF','NTNX','JAMF','BL','SPSC','BILL','DDOG','ZS',
   'MNDY','TOST','HUBS','VEEV','ESTC','FRSH','PTC','ASAN','PCOR','TYL',
-  'CWAN','TTGT','EVLV',
+  'CWAN','TTGT','EVLV','DSGX','DBX','WK','PEGA',
   // Cybersecurity
-  'TENB','QLYS','OKTA','VRNS','SAIL',
+  'TENB','QLYS','OKTA','VRNS','SAIL','CYBR',
   // Fintech / Payments
   'SOFI','LC','AFRM','PAYO','RELY','FOUR','ACIW','VRRM','HLNE',
-  'MQ','WEX','HOOD','SSNC','EVER','GENI',
+  'MQ','WEX','HOOD','SSNC','EVER','GENI','EVR',
   // Medtech / Healthcare
   'INSP','GKOS','NVCR','TMDX','IRTC','DOCS','ALGN','HIMS','MEDP',
-  'HQY','GMED','DXCM','PODD','HOLX','RVMD','MMSI','PRCT',
-  'GDRX',
+  'HQY','GMED','DXCM','PODD','HOLX','MMSI','PRCT',
+  'BRKR','PEN',
   // Semiconductors
-  'AEHR','LSCC','AMBA','SWKS','RMBS','CRUS','SLAB','ALGM','DIOD','PSTG',
-  'MTSI','ONTO','NOVT','ACLS','SITM',
+  'LSCC','AMBA','RMBS','CRUS','SLAB','ALGM','DIOD',
+  'MTSI','ONTO','NOVT','SITM','CRDO','POWI',
   // Industrials / Infrastructure
-  'SAIA','TREX','CWST','EXPO','POWL','ESAB','SPXC','CGNX',
-  'GNRC','AAON','DY',
+  'SAIA','CWST','EXPO','POWL','ESAB','SPXC','CGNX',
+  'AAON','DY','WCC','MLI','BLD','CSWI','MIDD','FBIN',
   // Energy / Materials / Mining
-  'MP','CALX','HAYW','IREN','RIG',
+  'MP','CALX','HAYW','IREN','RIG','VNOM','MGY',
   // Consumer / Retail / Food
   'CELH','WING','ELF','SFM','DORM','CARG','TTMI',
-  'SHAK','BROS','CAVA','TXRH','DECK',
+  'SHAK','BROS','CAVA','TXRH','DECK','BIRK','CART',
   // AI / Robotics
-  'SOUN','SERV',
+  'SOUN','SERV','ASTS',
   // Misc growth
   'EPAM','DUOL','RDDT','RBRK','IOT','KVYO','AXSM','IOVA',
 
   // ── Large / Mega-cap ─────────────────────────────────────────────────
   // Defense / Aerospace
-  'LHX','HII','TDG','LDOS','BWA','TXT','CW','PLTR',
-  'RTX','GD','NOC','BAH','SAIC',
+  'LHX','HII','TDG','BWA','TXT','CW','PLTR',
+  'RTX','GD','NOC','SAIC','LMT','BA','HWM',
   // Biotech / Pharma
-  'REGN','VRTX','GMAB','TECH','BIO','MRNA','BIIB',
-  'ILMN','MDGL','LEGN','INSM','FOLD','ACLX','TGTX','DAWN',
+  'REGN','VRTX','GMAB','BIO',
+  'ILMN','MDGL','LEGN','INSM','FOLD','TGTX','DAWN',
   'LLY','ABBV','AZN','AMGN','JAZZ','NTRA','ITCI','GILD',
+  'SMMT','ASND','VRNA',
   // Clean Energy / Utilities
-  'VST','CEG','AES','CWEN','BEPC','NEE','ORA','FLNC',
+  'VST','CEG','AES','CWEN','NEE','ORA','FLNC','NRG',
   // SaaS / Cloud / Software
   'CRWD','PANW','NET','SNOW','MDB','TEAM','WDAY','NOW',
   'CDNS','SNPS','MANH','GWRE','DOCU','ROKU','U',
   'PATH','PINS','SNAP','TTD','GRAB','SE','SHOP',
   'MSFT','ADBE','CRM','ORCL','INTU','SAP','GDDY','ZM','TWLO','APP',
+  'NICE','BSY','DT',
   // Cybersecurity
-  'FTNT','RPD','FICO',
+  'FTNT','RPD','FICO','CHKP',
   // Fintech / Payments
-  'GPN','FIS','FISV','PYPL','COIN','MKTX','LPLA','IBKR','NDAQ',
+  'FIS','PYPL','MKTX','LPLA','IBKR','NDAQ',
   'CBOE','ICE','CME','MSCI','SPGI',
   'V','MA','AXP','TW','CPAY','EFX','XYZ','TROW',
+  'NU','JKHY','FUTU',
   // Medtech / Healthcare
-  'ISRG','EW','STE','TFX','LNTH','HSIC','XRAY',
+  'ISRG','EW','STE','LNTH','HSIC','XRAY',
   'WST','IDXX','IQV','ZBH','BSX','PHG','RMD','GEHC',
   'UNH','ABT','TMO','SYK','BDX','ZTS','MASI','ICLR',
+  'BAX','COO','WAT',
   // Semiconductors
-  'MCHP','MPWR','MRVL','LRCX','KLAC','AMAT','ASML','ON','NXPI',
-  'QCOM','TER','ENTG','WOLF','AMKR','COHR','CEVA','SMTC',
-  'NVDA','AMD','AVGO','ARM','MU','SMCI','TSM','GFS','KEYS','ANET',
+  'MCHP','MPWR','MRVL','LRCX','KLAC','ASML','NXPI',
+  'QCOM','TER','AMKR','COHR','CEVA','SMTC',
+  'NVDA','AMD','AVGO','ARM','MU','SMCI','TSM','KEYS','ANET',
+  'STM','TXN',
   // Industrials / Infrastructure
-  'ATKR','TT','XYL','WMS','SITE','MATX','EMR','ROK','NDSN',
-  'FELE','RBC','AOS','ITT','GGG','FLS','IR','AME',
-  'TRMB','LECO','ZWS',
-  'GE','CAT','ETN','PH','URI','HON','DE','HUBB','ODFL','TTEK','ZBRA','CARR','DELL',
+  'TT','XYL','WMS','SITE','EMR','ROK','NDSN',
+  'FELE','RBC','ITT','GGG','FLS','IR','AME',
+  'LECO','ZWS',
+  'GE','CAT','ETN','PH','URI','HUBB','ZBRA','CARR','DELL',
+  'OC','PWR',
   // Energy / Materials / Mining
-  'UUUU','LEU','WFRD','TDW','NE','CCJ','UEC','DNN','NXE',
-  'STNG','DINO','SM','PR','CTRA','EQT','AR','CNX',
-  'XOM','SLB','EOG',
+  'CCJ','DNN',
+  'STNG','CTRA','EQT','AR','CNX',
+  'SLB','TPL','RRC','CHRD','FANG',
   // Consumer / Retail / Food
-  'SMPL','LULU','ONON','CROX','YETI','FOXF','BURL','FIVE',
-  'BOOT','DKS','ANF','AEO','WOOF','MNST','COKE',
+  'LULU','ONON','YETI','FOXF','BURL','FIVE',
+  'BOOT','DKS','ANF','AEO','MNST','COKE',
   'CMG','DASH','UBER','LYFT','ABNB',
-  'COST','WMT','NKE','SBUX','MCD','PEP','DPZ','DKNG','POOL','FND',
-  'ROST','TJX','CPNG','EXPE',
+  'COST','WMT','NKE','SBUX','MCD','PEP','DPZ','DKNG','FND',
+  'ROST','TJX','CPNG','EXPE','WMG','EL','TPR','HLT',
 ];
 
 /**

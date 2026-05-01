@@ -67,17 +67,25 @@
           <label for="screen-override-tickers" style="font-size: 0.85em;">Override tickers <span style="color: #999;">(optional — comma-separated, bypasses saved list)</span></label>
           <input type="text" id="screen-override-tickers" placeholder="e.g. AAPL, TSLA, NVDA" style="width: 100%; margin-top: 4px;" />
         </div>
-        <div style="margin-top: 8px;">
-          <label style="font-size: 0.85em; display: flex; align-items: center; gap: 6px;">
+        <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
+          <label class="toggle-pill" title="Slower — scrapes Finviz per ticker">
             <input type="checkbox" id="screen-fetch-news" />
-            Fetch news headlines <span style="color: #999;">(slower — scrapes Finviz per ticker)</span>
+            <span>Fetch news</span>
+          </label>
+          <label class="toggle-pill" title="Run only favorited tickers (includes super favorites)">
+            <input type="checkbox" id="screen-favorites-only" />
+            <span>Favorites only</span>
+          </label>
+          <label class="toggle-pill toggle-super" title="Run only super favorites">
+            <input type="checkbox" id="screen-super-only" />
+            <span>★ Super favorites only</span>
           </label>
         </div>
-        <div style="margin-top: 8px;">
-          <label style="font-size: 0.85em; display: flex; align-items: center; gap: 6px;">
-            <input type="checkbox" id="screen-favorites-only" />
-            Favorites only <span style="color: #999;">(run only starred tickers)</span>
-          </label>
+        <div id="super-favorites-display" style="margin-top: 10px; display: none;">
+          <div style="font-size: 0.8em; color: #a0aec0; margin-bottom: 4px;">
+            <span style="color: #e53935;">★</span> Super favorites <span id="super-favorites-count" style="color: #7a8499;"></span>
+          </div>
+          <div id="super-favorites-chips" style="display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px; background: #1f2229; border: 1px solid #2e333d; border-radius: 6px; max-height: 80px; overflow-y: auto;"></div>
         </div>
       </div>
       <div class="modal-buttons">
