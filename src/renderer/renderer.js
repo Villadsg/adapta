@@ -19,6 +19,29 @@ const btnMaximize = document.getElementById('btn-maximize');
 const btnClose = document.getElementById('btn-close');
 const toastContainer = document.getElementById('toast-container');
 
+// TTS controls
+const btnStopTts = document.getElementById('btn-stop-tts');
+const btnToggleTts = document.getElementById('btn-toggle-tts');
+let ttsEnabled = true;
+
+btnStopTts.addEventListener('click', () => window.electronAPI.stopSpeaking());
+
+btnToggleTts.addEventListener('click', async () => {
+  ttsEnabled = !ttsEnabled;
+  await window.electronAPI.toggleTts(ttsEnabled);
+  btnToggleTts.classList.toggle('tts-disabled', !ttsEnabled);
+  btnToggleTts.title = ttsEnabled ? 'TTS enabled (claude.ai)' : 'TTS disabled';
+});
+
+window.electronAPI.onTtsStateChanged((data) => {
+  btnStopTts.style.display = data.speaking ? 'inline-flex' : 'none';
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.key === 'Escape') window.electronAPI.stopSpeaking();
+});
+
 // Toast notification function
 function showToast(title, message, type = 'success', duration = 3000) {
   const toast = document.createElement('div');

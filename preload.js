@@ -75,6 +75,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Listen for URL changes
   onUrlChanged: (callback) => ipcRenderer.on('url-changed', (event, data) => callback(data)),
 
+  // TTS: read Claude.ai responses aloud via OmniVoice
+  speakText: (text) => ipcRenderer.send('speak-text', text),
+  stopSpeaking: () => ipcRenderer.send('stop-speaking'),
+  toggleTts: (enabled) => ipcRenderer.invoke('toggle-tts', enabled),
+  onTtsStateChanged: (callback) => ipcRenderer.on('tts-state-changed', (event, data) => callback(data)),
+
   // Window controls
   windowMinimize: () => ipcRenderer.invoke('window-minimize'),
   windowMaximize: () => ipcRenderer.invoke('window-maximize'),

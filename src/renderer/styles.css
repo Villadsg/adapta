@@ -933,3 +933,13 @@ body {
   text-transform: uppercase;
   color: #a0aec0;
 }
+
+/* TTS buttons */
+.btn-stop-tts {
+  background: #ef5350;
+  color: white;
+}
+.btn-stop-tts:hover { background: #e53935; }
+
+.btn-toggle-tts { background: #4db6ac; color: white; }
+.btn-toggle-tts.tts-disabled { background: #546e7a; color: #90a4ae; }

@@ -376,6 +376,24 @@
       </div>
     </div>
 
+    <!-- TTS Test -->
+    <div class="section">
+      <h2>TTS Test</h2>
+      <div class="form-group">
+        <label for="tts-test-input">Test text:</label>
+        <textarea
+          id="tts-test-input"
+          placeholder="Type something to hear it read aloud..."
+          style="width: 100%; height: 80px; font-family: inherit; font-size: 14px;
+                 background: #1e1e1e; border: 1px solid #404040; border-radius: 4px;
+                 color: #ffffff; padding: 12px; resize: vertical;">Hello, this is a test of the text to speech system.</textarea>
+      </div>
+      <div class="button-group">
+        <button id="btn-tts-speak" class="btn-primary">▶ Speak</button>
+        <button id="btn-tts-stop" class="btn-secondary">⏹ Stop</button>
+      </div>
+    </div>
+
     <!-- SQL Query Interface -->
     <div class="section">
       <h2>SQL Query Interface</h2>
@@ -567,6 +585,16 @@
 
     // Load settings on page load
     loadWatchlistSettings();
+
+    // === TTS Test ===
+    const ttsTestInput = document.getElementById('tts-test-input');
+    document.getElementById('btn-tts-speak').addEventListener('click', () => {
+      const text = ttsTestInput.value.trim();
+      if (text) window.electronAPI.speakText(text);
+    });
+    document.getElementById('btn-tts-stop').addEventListener('click', () => {
+      window.electronAPI.stopSpeaking();
+    });
   </script>
 </body>
 </html>

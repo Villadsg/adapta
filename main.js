@@ -14,8 +14,9 @@ global.fetch = function(url, opts = {}) {
   return _origFetch.call(this, url, opts);
 };
 
-const { app, BrowserWindow, BrowserView, ipcMain } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, globalShortcut } = require('electron');
 const path = require('path');
+const { spawn } = require('child_process');
 const ArticleDatabase = require('./src/services/database');
 const PriceTrackingService = require('./src/services/priceTracking');
 const StockAnalysisService = require('./src/services/stockAnalysis');
@@ -36,6 +37,12 @@ let stockAnalyzer;
 let optionsAnalyzer;
 let chronosHoldService;
 let glmAnalyzer;
+
+// TTS state
+let activeTtsProcess = null;
+let ttsEnabled = true;
+const ttsPythonScript = path.join(__dirname, 'python', 'tts_speak.py');
+const ttsVoiceRef = path.join(__dirname, 'python', 'voice_ref.wav');
 
 // Tab management
 const tabs = new Map(); // tabId -> BrowserView
@@ -283,6 +290,113 @@ function updateBrowserViewBounds(browserView) {
   });
 }
 
+// TTS: inject MutationObserver into claude.ai tabs to detect finished responses
+function injectClaudeTTS(browserView) {
+  const url = browserView.webContents.getURL();
+  if (!url.includes('claude.ai')) return;
+
+  browserView.webContents.executeJavaScript(`
+    (function() {
+      const currentPath = location.pathname;
+      if (window.__claudeTTSPath === currentPath) return;
+      window.__claudeTTSPath = currentPath;
+
+      const seen = new WeakSet();
+      const injectedAt = Date.now();
+
+      function extractText(el) {
+        return (el.innerText || el.textContent || '').trim();
+      }
+
+      function maybeSpeak(el) {
+        if (seen.has(el)) return;
+        seen.add(el);
+        if (Date.now() - injectedAt < 800) return;
+        const text = extractText(el);
+        if (text.length < 20) return;
+        const capped = text
+          .replace(/\`\`\`[\\s\\S]*?\`\`\`/g, ' [code block] ')
+          .replace(/[*_\`#>]/g, '')
+          .replace(/\\n{2,}/g, '. ')
+          .replace(/\\n/g, ' ')
+          .replace(/ {2,}/g, ' ')
+          .trim()
+          .slice(0, 3000);
+        window.electronAPI.speakText(capped);
+      }
+
+      const ASSISTANT_SEL = '[data-testid="assistant-message"][data-is-streaming="false"], [data-is-streaming="false"]:not([data-testid="human-turn"])';
+
+      function isAssistant(el) {
+        // Must have data-is-streaming="false" and not be a human turn
+        if (!el.matches) return false;
+        if (el.matches('[data-testid="human-turn"], [data-testid="human-message"]')) return false;
+        return el.matches('[data-is-streaming="false"]');
+      }
+
+      function checkEl(el) {
+        if (!el || el.nodeType !== 1) return;
+        if (isAssistant(el)) maybeSpeak(el);
+        const nodes = el.querySelectorAll ? el.querySelectorAll(ASSISTANT_SEL) : [];
+        for (const n of nodes) {
+          if (isAssistant(n)) maybeSpeak(n);
+        }
+      }
+
+      const observer = new MutationObserver((mutations) => {
+        for (const m of mutations) {
+          if (m.type === 'childList') {
+            for (const node of m.addedNodes) checkEl(node);
+          } else if (m.type === 'attributes' && m.attributeName === 'data-is-streaming') {
+            if (m.target.getAttribute('data-is-streaming') === 'false' && isAssistant(m.target)) maybeSpeak(m.target);
+          }
+        }
+      });
+
+      observer.observe(document.body, {
+        childList: true, subtree: true,
+        attributes: true, attributeFilter: ['data-is-streaming']
+      });
+    })()
+  `).catch(() => {});
+}
+
+// TTS: spawn OmniVoice Python subprocess to synthesize and play text
+function spawnOmniVoiceTTS(text) {
+  if (activeTtsProcess) {
+    activeTtsProcess.kill('SIGTERM');
+    activeTtsProcess = null;
+  }
+  if (!ttsEnabled || !text) return;
+
+  const child = spawn('python3', [ttsPythonScript], {
+    stdio: ['pipe', 'pipe', 'pipe']
+  });
+
+  activeTtsProcess = child;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('tts-state-changed', { speaking: true });
+  }
+
+  const fs = require('fs');
+  const payload = { text };
+  if (fs.existsSync(ttsVoiceRef)) payload.ref_audio = ttsVoiceRef;
+  child.stdin.write(JSON.stringify(payload));
+  child.stdin.end();
+
+  child.on('close', () => {
+    activeTtsProcess = null;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('tts-state-changed', { speaking: false });
+    }
+  });
+
+  child.on('error', (err) => {
+    console.error('TTS subprocess error:', err.message);
+    activeTtsProcess = null;
+  });
+}
+
 // Create a new tab
 function createTab(url = 'https://simplywall.st/dashboard') {
   const tabId = nextTabId++;
@@ -372,6 +486,7 @@ function createTab(url = 'https://simplywall.st/dashboard') {
 
   browserView.webContents.on('did-navigate-in-page', (event, url) => {
     sendUrlUpdate(url, browserView.webContents.getTitle());
+    setTimeout(() => injectClaudeTTS(browserView), 400);
   });
 
   browserView.webContents.on('page-title-updated', (event, title) => {
@@ -423,6 +538,7 @@ function createTab(url = 'https://simplywall.st/dashboard') {
         }
       `);
     }
+    injectClaudeTTS(browserView);
   });
 
   // Load URL if provided
@@ -3488,6 +3604,31 @@ ipcMain.handle('get-embedding-stats', async (event) => {
   }
 });
 
+// TTS IPC handlers
+ipcMain.on('speak-text', (event, text) => {
+  if (typeof text !== 'string' || !text.trim()) return;
+  spawnOmniVoiceTTS(text);
+});
+
+ipcMain.on('stop-speaking', () => {
+  if (activeTtsProcess) {
+    activeTtsProcess.kill('SIGTERM');
+    activeTtsProcess = null;
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('tts-state-changed', { speaking: false });
+  }
+});
+
+ipcMain.handle('toggle-tts', (event, enabled) => {
+  ttsEnabled = !!enabled;
+  if (!ttsEnabled && activeTtsProcess) {
+    activeTtsProcess.kill('SIGTERM');
+    activeTtsProcess = null;
+  }
+  return { ttsEnabled };
+});
+
 // App lifecycle
 let backendReadyResolve;
 const backendReadyPromise = new Promise((r) => { backendReadyResolve = r; });
@@ -3531,9 +3672,25 @@ async function initBackend() {
 app.whenReady().then(() => {
   createWindow();
   initBackend();
+
+  globalShortcut.register('Escape', () => {
+    if (activeTtsProcess) {
+      activeTtsProcess.kill('SIGTERM');
+      activeTtsProcess = null;
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('tts-state-changed', { speaking: false });
+      }
+    }
+  });
 });
 
 app.on('window-all-closed', async () => {
+  // Kill any active TTS subprocess
+  if (activeTtsProcess) {
+    activeTtsProcess.kill('SIGTERM');
+    activeTtsProcess = null;
+  }
+
   // Stop price polling
   if (priceTracker) {
     priceTracker.stopPolling();
@@ -3547,6 +3704,10 @@ app.on('window-all-closed', async () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
 });
 
 app.on('activate', () => {
