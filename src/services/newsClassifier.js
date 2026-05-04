@@ -136,14 +136,18 @@ const SECTOR_MAP = {
 };
 
 // --- Generic technical anchors (same across all sectors) ---
+// Pure analysis/opinion language: charts, ratings, valuation. NOT earnings outcomes (those are wins/fears).
 const TECHNICAL_ANCHORS = [
-  'Stock price target raised by analysts to new high',
-  'Technical chart pattern signals breakout above resistance',
-  'Earnings beat estimates with revenue growth acceleration',
-  'RSI and MACD indicators suggest bullish momentum',
+  'Technical chart pattern signals breakout above resistance level',
+  'RSI and MACD indicators suggest bullish momentum building',
   'Valuation metrics show stock trading at discount to peers',
-  'Quarterly results exceed Wall Street consensus expectations',
-  'Analyst upgrades stock rating to outperform on fundamentals',
+  'Analyst upgrades stock rating to outperform citing fundamentals',
+  'Options market positioning suggests elevated implied volatility',
+  'Analyst initiates coverage with buy rating and price target',
+  'Wall Street raises price target ahead of earnings season',
+  'Short interest declines as bearish sentiment reverses on charts',
+  'Stock consolidates near support with technical setup improving',
+  'Sector rotation into growth names benefits high-beta names',
 ];
 
 // --- Per-sector macro/abstract fear anchors ---
@@ -374,235 +378,247 @@ const MACRO_WIN_ANCHORS = {
   ],
 };
 
-// --- Per-sector "specific future fear" anchors ---
-// Captures news describing a specific bad outcome likely in the near future.
-// Distinct from narrative (macro forces/trends) by focusing on imminent, concrete threats.
+// --- Per-sector "specific fear" anchors ---
+// Covers BOTH imminent future threats AND already-happened negative outcomes
+// (stock drops, misses estimates, cuts guidance, loses contract, etc.)
 const FEAR_ANCHORS = {
   defense: [
+    'Stock drops after Pentagon cancels major contract award removing backlog revenue',
+    'Defense contractor loses critical program evaluation to rival ending multi-year pursuit',
+    'Earnings miss driven by contract delays and cost overruns on key programs',
+    'Inspector general investigation freezes company government contracts pending review',
     'Pentagon may cancel next-generation drone contract amid budget sequestration threat',
-    'Key defense supplier faces imminent security clearance revocation jeopardizing programs',
-    'Congressional committee threatens to block export license for critical weapons system',
-    'Major ally reportedly planning to abandon joint fighter program over cost overruns',
-    'Inspector general investigation could freeze company government contracts for months',
+    'Major ally abandons joint program over cost overruns creating revenue shortfall',
     'Competitor prototype outperforms in evaluation putting billion dollar award at risk',
-    'Cyberattack on defense contractor may have compromised classified program data',
   ],
   biotech: [
-    'FDA likely to issue complete response letter rejecting lead drug candidate application',
-    'Clinical trial safety signal could force immediate enrollment halt and program suspension',
-    'Patent challenge ruling expected soon threatens to invalidate core drug franchise protection',
-    'Key opinion leader publicly questions efficacy data ahead of advisory committee vote',
-    'Manufacturing contamination at sole production facility risks extended supply disruption',
-    'Competitor readout expected to show superior results threatening market share loss',
-    'Medicare coverage determination may exclude new therapy from reimbursement eligibility',
+    'FDA rejects drug application sending stock sharply lower on complete response letter',
+    'Clinical trial fails to meet primary endpoint forcing program discontinuation',
+    'Stock plunges after safety signal forces immediate enrollment halt and program suspension',
+    'Earnings miss as drug launch falls far short of prescription forecast expectations',
+    'Patent invalidated opening door to generic competition years earlier than expected',
+    'FDA advisory committee votes against recommending approval of lead drug candidate',
+    'Medicare excludes new therapy from reimbursement devastating commercial launch outlook',
   ],
   cleanenergy: [
-    'Proposed tariff on imported solar panels could make projects economically unviable',
-    'Grid interconnection delays threaten to strand billions in committed renewable capacity',
-    'Key battery material supplier warns of potential force majeure disrupting deliveries',
-    'State utility commission may reverse net metering policy devastating rooftop solar economics',
-    'Fire safety investigation could trigger mandatory recall of residential battery systems',
-    'Project financing costs surging as lenders reassess renewable energy credit risk',
-    'Permitting moratorium on wind farms expected to halt new development pipeline',
+    'Stock drops after tariff announcement makes project pipeline economically unviable',
+    'Project cancellations accelerate as grid interconnection delays strand committed capacity',
+    'Quarterly miss driven by installation shortfalls and deteriorating panel margins',
+    'Proposed solar tariff crushes project economics forcing major pipeline write-downs',
+    'Fire safety investigation triggers mandatory recall of residential battery systems',
+    'Project financing costs surge as lenders reassess renewable energy credit risk',
+    'State utility commission reverses net metering policy devastating rooftop solar economics',
   ],
   saas: [
-    'Major enterprise customer preparing to terminate contract and migrate to competitor platform',
-    'Data breach investigation may reveal customer information exposure triggering liability',
-    'Proposed regulation would ban cross-border data transfers threatening international revenue',
-    'Key integration partner planning to build competing native functionality next quarter',
-    'Engineering team attrition accelerating with critical product launch deadline approaching',
+    'Stock drops after reporting customer churn spike and disappointing new bookings',
+    'Earnings miss as major enterprise customer terminates contract migrating to competitor',
+    'Revenue growth decelerates sharply as economic downturn forces enterprise budget cuts',
+    'Customer concentration risk realized as largest account reduces spending significantly',
     'Open source alternative gaining rapid adoption threatening to commoditize core product',
-    'Customer churn rate spiking as economic downturn forces enterprise software budget cuts',
+    'Net revenue retention falls below one hundred percent signaling customer contraction',
+    'Data breach triggers regulatory investigation and customer cancellation wave',
   ],
   cyber: [
-    'Zero day vulnerability discovered in flagship product could enable widespread exploitation',
-    'Government certification renewal at risk after audit reveals compliance gaps',
-    'Major customer breach despite deployed security product threatens credibility and renewals',
-    'Competitor offering free tier that directly targets company core customer segment',
-    'Pending legislation could mandate vendor liability for breaches undermining business model',
-    'Key technology partnership dissolution would remove critical threat intelligence data source',
-    'Nation state actor reportedly developing bypass for company primary detection technology',
+    'Stock plunges after major customer breach despite deployed product damages credibility',
+    'Zero day vulnerability in flagship product exploited in widespread attack campaign',
+    'Earnings miss driven by deal slippage and elongating enterprise sales cycles',
+    'Government certification suspended after audit reveals compliance gaps in product',
+    'Stock drops as customer fails to renew large platform contract citing budget constraints',
+    'Competitor free tier gaining rapid adoption threatening to commoditize core product',
+    'Nation state actor develops bypass for company detection technology undermining value',
   ],
   fintech: [
-    'Regulatory enforcement action expected for alleged consumer lending violations',
-    'Banking partner may terminate sponsorship agreement cutting off payment processing access',
-    'Rising default rates on loan portfolio could trigger covenant breach and capital call',
-    'State attorney general investigation into fee practices threatens multi-state penalties',
-    'Card network rule change would significantly increase interchange costs for platform',
-    'Fraud losses accelerating faster than revenue growth threatening unit economics viability',
-    'Proposed interest rate cap legislation would eliminate profitability of core lending product',
+    'Stock drops after reporting rising default rates and deteriorating credit quality',
+    'Regulatory enforcement action announced for alleged consumer lending violations',
+    'Earnings miss driven by credit losses accelerating beyond management guidance',
+    'Banking partner terminates sponsorship agreement cutting off payment processing access',
+    'Fraud losses accelerate faster than revenue growth destroying unit economics',
+    'Rising default rates trigger covenant breach concern and capital adequacy questions',
+    'State attorney general launches investigation into fee practices threatening penalties',
   ],
   medtech: [
-    'FDA warning letter could force production halt at primary manufacturing facility',
-    'Class action lawsuit alleges device malfunction causing patient injuries',
-    'Medicare reimbursement rate cut proposal would make procedure economically unviable',
-    'Competitor device shows superior outcomes in head-to-head clinical trial results',
-    'Supply chain disruption threatens inability to fulfill hospital purchase orders',
-    'Post-market surveillance data reveals higher than expected adverse event rates',
-    'Key surgeon advocate withdraws endorsement citing concerns about long-term device safety',
+    'Stock drops after FDA warning letter forces production halt at primary facility',
+    'Earnings miss driven by weak surgical procedure volumes and hospital budget constraints',
+    'Competitor device shows superior outcomes in head-to-head clinical trial versus company',
+    'Class action lawsuit filed alleging device malfunction causing serious patient injuries',
+    'Medicare reimbursement rate cut makes procedure economically unviable for hospitals',
+    'Post-market data reveals higher than expected adverse event rates triggering review',
+    'Key surgeon advocates withdraw endorsement citing long-term device safety concerns',
   ],
   semis: [
-    'Commerce Department preparing expanded export ban that would cut off major chip customer',
-    'Key foundry partner warns of potential fab shutdown due to contamination risk',
-    'Major smartphone OEM reportedly considering switching to rival chip supplier next quarter',
-    'Yield issues at new process node could delay production ramp by multiple quarters',
-    'Trade restrictions may block access to critical lithography equipment for fab expansion',
-    'Inventory correction accelerating as end market demand falls sharply below forecasts',
-    'Customer design win loss to competitor threatens multi-year revenue stream',
+    'Stock plunges after reporting inventory correction is deeper and longer than expected',
+    'Earnings miss as end market demand falls sharply below management guidance forecasts',
+    'Major OEM switches to rival chip supplier ending multi-year design win relationship',
+    'Export ban expansion cuts off major data center customer destroying revenue outlook',
+    'Yield issues at new process node delay production ramp by multiple quarters',
+    'Inventory correction accelerates as end market demand falls sharply below forecasts',
+    'Stock drops on weak guidance citing softening demand across key end markets',
   ],
   industrial: [
-    'Major infrastructure project cancellation would eliminate significant backlog revenue',
-    'Raw material cost surge threatens to erase margins on fixed-price contracts',
-    'OSHA investigation after workplace incident could result in facility shutdown order',
-    'Key distributor planning to drop product line in favor of lower-cost competitor',
-    'Supply chain bottleneck threatens inability to meet committed delivery schedules',
-    'Environmental compliance failure risks substantial fines and remediation costs',
-    'Labor strike authorization vote at primary manufacturing plant expected this week',
+    'Stock drops after major infrastructure contract cancellation eliminates backlog revenue',
+    'Earnings miss driven by raw material cost surge and margin compression on fixed contracts',
+    'Labor strike at primary manufacturing plant halts production creating delivery shortfalls',
+    'OSHA investigation after workplace incident results in facility shutdown order',
+    'Key distributor drops product line in favor of lower-cost competitor alternatives',
+    'Supply chain bottleneck forces inability to meet committed customer delivery schedules',
+    'Environmental compliance failure results in substantial fines and remediation costs',
   ],
   energy: [
-    'Proposed drilling moratorium would strand significant proved reserve assets',
-    'Pipeline permit rejection threatens to leave production capacity without takeaway route',
-    'Environmental disaster investigation could result in license revocation and cleanup liability',
-    'Foreign government threatens to nationalize mining assets and revoke concessions',
-    'Uranium supply contract counterparty at risk of default on delivery obligations',
-    'Regulatory change could reclassify key resource as hazardous restricting extraction',
-    'Commodity price collapse below breakeven threatens forced production curtailment',
+    'Stock drops on commodity price collapse below breakeven forcing production curtailment',
+    'Earnings miss driven by weak commodity prices and disappointing production volumes',
+    'Drilling moratorium strands significant proved reserve assets reducing valuation',
+    'Environmental disaster investigation triggers license revocation and cleanup liability',
+    'Foreign government nationalizes mining assets revoking operating concessions',
+    'Pipeline permit rejected leaving production capacity without takeaway route',
+    'Commodity price collapse threatens viability of high-cost production assets',
   ],
   consumer: [
-    'Product recall imminent after contamination reports surface across multiple markets',
-    'Viral social media backlash threatens lasting brand damage and consumer boycott',
-    'Key retail partner planning to reduce shelf space allocation next quarter',
-    'Input cost inflation expected to force price increases risking volume decline',
-    'Whistleblower complaint alleges food safety violations at primary production facility',
-    'Celebrity partnership dissolution could trigger significant sales decline in key demographic',
-    'Proposed tariff on imported ingredients would substantially increase cost of goods sold',
+    'Stock drops after reporting same-store sales miss and cutting full-year guidance',
+    'Product recall announced after contamination reports surface across multiple markets',
+    'Earnings miss driven by traffic declines and margin compression from input costs',
+    'Viral social media backlash causes lasting brand damage and consumer boycott',
+    'Key retail partner reduces shelf space allocation hurting volume and visibility',
+    'Celebrity partnership dissolution triggers significant sales decline in key demographic',
+    'Input cost inflation forces price increases that drive material volume decline',
   ],
   general: [
-    'Company facing imminent risk of debt covenant breach and potential default',
-    'Regulatory investigation could result in substantial fines and operational restrictions',
-    'Key executive departure threatens to disrupt critical ongoing strategic initiative',
-    'Major customer contract loss would create significant revenue gap next quarter',
-    'Supply chain failure risks inability to meet near-term demand commitments',
-    'Lawsuit verdict expected soon with potential for material financial liability',
-    'Credit rating downgrade warning could increase borrowing costs and limit financing',
+    'Stock plunges after reporting earnings miss and cutting full-year revenue guidance',
+    'Company misses estimates with weaker than expected margins and cash generation',
+    'Major customer contract loss creates significant revenue gap in forward outlook',
+    'Regulatory investigation results in substantial fines and operational restrictions',
+    'Key executive departure disrupts critical ongoing strategic initiative execution',
+    'Credit rating downgraded increasing borrowing costs and limiting financing access',
+    'Lawsuit verdict delivers material financial liability exceeding reserve estimates',
   ],
 };
 
-// --- Per-sector "specific future win" anchors ---
-// Captures news describing a specific positive outcome likely in the near future.
-// Distinct from narrative (macro forces/trends) by focusing on imminent, concrete catalysts.
+// --- Per-sector "specific win" anchors ---
+// Covers BOTH imminent future catalysts AND already-happened positive outcomes
+// (stock jumps, beats estimates, secures contract, reports record revenue, etc.)
 const WIN_ANCHORS = {
   defense: [
+    'Stock jumps after securing major Pentagon contract award beating competitors',
+    'Defense contractor wins sole-source position on critical modernization program',
+    'Earnings beat driven by strong defense program execution and record backlog',
+    'Company reports record revenue from classified program ramp ahead of schedule',
+    'Allied nation finalizes major weapons purchase agreement boosting outlook',
     'Pentagon expected to award next-generation drone contract worth billions this quarter',
-    'Allied nation finalizing major weapons purchase agreement with defense contractor',
-    'Company prototype reportedly outperforming rivals in critical evaluation trial',
-    'Congressional committee signals strong bipartisan support for expanded defense budget',
-    'New classified program contract expected to be announced within weeks',
-    'Defense contractor secures sole-source position on critical modernization program',
     'Foreign military sales approval imminent for advanced weapons system export',
+    'Stock surges on news of unexpected contract expansion and scope increase',
   ],
   biotech: [
-    'FDA advisory committee expected to recommend approval of lead drug candidate',
+    'FDA approves drug candidate sending stock sharply higher on approval news',
+    'Clinical trial results show superior efficacy beating placebo with strong p-value',
+    'Drug receives breakthrough therapy designation accelerating regulatory timeline',
+    'Stock jumps after positive interim data from pivotal trial exceeds expectations',
+    'Major pharmaceutical company exercises option on licensing deal at premium valuation',
+    'FDA advisory committee votes to recommend approval of lead drug candidate',
     'Pivotal trial results due soon with interim data suggesting strong efficacy signal',
-    'Breakthrough therapy designation accelerates path to near-term drug approval',
-    'Major pharmaceutical partner likely to exercise option on licensing deal',
-    'Patent portfolio strengthened with key ruling expected to block generic competition',
-    'Expanded indication filing could double addressable patient population this year',
-    'Priority review voucher accelerates regulatory timeline for flagship treatment',
+    'Earnings beat driven by blockbuster drug launch exceeding prescription forecasts',
   ],
   cleanenergy: [
-    'Major utility contract award expected to secure multi-year revenue visibility',
-    'Federal incentive extension likely to accelerate project pipeline deployment',
-    'Grid interconnection approval imminent for large-scale solar and storage project',
-    'Strategic partnership with major energy company expected to be announced soon',
-    'New technology breakthrough dramatically improves panel efficiency ahead of competitors',
-    'State renewable portfolio standard increase expected to drive demand surge',
+    'Company wins major utility contract securing multi-year revenue visibility',
+    'Stock surges after grid interconnection approval for large-scale solar project',
     'Project financing secured at favorable terms enabling accelerated capacity buildout',
+    'Quarterly results beat on strong installation volumes and improving margins',
+    'Federal incentive extension drives accelerated project pipeline deployment',
+    'New technology breakthrough dramatically improves panel efficiency ahead of competitors',
+    'Strategic partnership with major energy company announced boosting growth outlook',
+    'Stock rallies on record project pipeline and improving unit economics',
   ],
   saas: [
-    'Major enterprise customer expected to expand contract significantly this quarter',
-    'New product launch generating exceptional early adoption and pipeline growth',
-    'Strategic acquisition target identified that would accelerate platform capabilities',
-    'Key industry analyst expected to upgrade rating citing accelerating growth metrics',
+    'Earnings beat estimates with accelerating revenue growth and improving margins',
+    'Stock jumps on record net revenue retention and strong new customer additions',
+    'Major enterprise customer expands contract significantly exceeding expectations',
+    'New product launch drives exceptional early adoption and pipeline acceleration',
     'Platform selected as standard by major government agency for enterprise deployment',
-    'Customer retention metrics reaching record highs signaling durable competitive moat',
-    'AI feature integration driving measurable uplift in customer engagement and upsell',
+    'Customer retention metrics reach record highs signaling durable competitive moat',
+    'AI feature integration drives measurable uplift in customer spending and upsell',
+    'Stock rallies after reporting record free cash flow and raised full-year guidance',
   ],
   cyber: [
-    'Major federal agency contract award expected after successful evaluation period',
-    'New threat detection capability demonstrates superior performance in independent testing',
-    'Zero trust mandate driving accelerated enterprise adoption ahead of compliance deadline',
-    'Strategic partnership with cloud hyperscaler expected to expand distribution significantly',
-    'Industry certification achievement positions company for expanded government opportunities',
-    'Managed detection service gaining rapid enterprise traction with strong unit economics',
-    'Platform consolidation trend driving multi-product adoption among existing customers',
+    'Stock surges after reporting record bookings and strong new customer acquisition',
+    'Major federal agency contract win validates platform against competitive field',
+    'Earnings beat driven by platform consolidation and multi-product upsell success',
+    'New threat detection capability outperforms rivals in independent testing evaluation',
+    'Zero trust mandate drives accelerated enterprise adoption ahead of compliance deadline',
+    'Strategic partnership with cloud hyperscaler expands distribution significantly',
+    'Stock jumps on strong quarterly results with raising of full-year guidance',
+    'Company reports record annual recurring revenue growth beating analyst estimates',
   ],
   fintech: [
-    'Banking charter approval expected to unlock deposit funding and margin expansion',
-    'Major payment network partnership announcement imminent expanding merchant reach',
-    'Regulatory clarity on digital assets expected to accelerate institutional adoption',
-    'Credit performance improving faster than expected with loss rates declining sharply',
-    'New market expansion into high-growth geography generating strong early traction',
-    'Embedded finance partnership with major retailer expected to drive transaction volume',
-    'Interest rate environment shift expected to significantly boost net interest margin',
+    'Stock surges after reporting strong loan origination growth and improving credit quality',
+    'Banking charter approved unlocking deposit funding and margin expansion opportunity',
+    'Earnings beat driven by record transaction volumes and expanding net interest margin',
+    'Major payment network partnership announced expanding merchant reach significantly',
+    'Credit performance improves faster than expected with loss rates declining sharply',
+    'Stock jumps on record payment volume and stronger than expected revenue growth',
+    'Regulatory clarity on digital assets accelerates institutional adoption momentum',
+    'New market expansion generates strong early traction with record first-quarter results',
   ],
   medtech: [
-    'FDA clearance expected for next-generation device with expanded clinical indications',
-    'Landmark clinical trial results due showing potential for superior patient outcomes',
-    'Major hospital system contract award expected to drive significant revenue growth',
-    'New reimbursement code approval would dramatically improve procedure economics',
-    'Robotic surgery platform adoption accelerating with new surgeon training pipeline',
-    'International regulatory approval imminent opening large new addressable market',
-    'Post-market data showing exceptional outcomes likely to strengthen competitive position',
+    'FDA clears next-generation device with expanded indications boosting addressable market',
+    'Earnings beat driven by strong surgical procedure volumes and robust device placements',
+    'Stock jumps after landmark clinical trial results show superior patient outcomes',
+    'Major hospital system contract win drives significant revenue growth acceleration',
+    'New reimbursement code approval dramatically improves procedure economics',
+    'International regulatory approval opens large new addressable market ahead of schedule',
+    'Stock surges on record procedure volumes and raising of full-year earnings guidance',
+    'Post-market data shows exceptional outcomes strengthening competitive positioning',
   ],
   semis: [
-    'Major design win secured with leading smartphone OEM for next-generation chip',
-    'New process node yield improvements ahead of schedule enabling accelerated ramp',
-    'Data center AI chip demand driving capacity expansion with customer prepayments',
-    'Strategic fab partnership expected to secure supply and reduce concentration risk',
-    'Key customer qualification complete positioning for volume production ramp',
-    'Inventory correction nearing bottom with restocking cycle expected to begin soon',
-    'Automotive design win pipeline converting to production revenue this quarter',
+    'Stock jumps after reporting record data center chip revenue beating estimates',
+    'Major design win secured with leading hyperscaler for next-generation AI chip',
+    'Earnings beat driven by AI chip demand surge with raised full-year guidance',
+    'Data center win with mystery hyperscaler boosts revenue outlook significantly',
+    'Company reports record quarterly revenue from automotive and AI chip ramp',
+    'Key customer qualification complete enabling volume production ramp this quarter',
+    'Stock surges on strong demand signals and expanding data center market share',
+    'Inventory correction ends with restocking cycle driving better than expected results',
   ],
   industrial: [
-    'Major infrastructure project award expected to significantly expand order backlog',
-    'New product line gaining rapid market share with margin accretive pricing',
-    'Strategic acquisition expected to close creating significant cost synergy opportunity',
-    'Key customer expanding purchase commitments citing superior product performance',
-    'Reshoring trend driving domestic manufacturing facility expansion ahead of schedule',
-    'Pricing power demonstrating ability to pass through cost increases with margin expansion',
-    'Automation technology deployment reducing production costs and improving throughput',
+    'Stock surges after winning major infrastructure contract exceeding analyst expectations',
+    'Earnings beat driven by record order backlog and strong pricing power execution',
+    'Company reports record revenue from reshoring-driven domestic manufacturing demand',
+    'Major customer expands purchase commitments citing superior product performance',
+    'Strategic acquisition closes creating significant cost synergy ahead of schedule',
+    'New product line gains rapid market share with margin-accretive pricing success',
+    'Stock jumps on record backlog and raising of full-year revenue guidance',
+    'Automation technology deployment delivers record throughput improvement results',
   ],
   energy: [
-    'Exploration results indicate significantly larger resource than initial estimates',
-    'Production permit approval expected to unlock substantial proved reserve development',
-    'Long-term offtake agreement imminent securing favorable pricing for output',
-    'Strategic joint venture with major operator expected to accelerate development timeline',
-    'Commodity price surge above breakeven dramatically improving cash flow outlook',
-    'Government strategic reserve purchase program expected to support sustained demand',
-    'New extraction technology breakthrough reducing costs well below industry average',
+    'Exploration results confirm significantly larger resource than initial estimates',
+    'Stock jumps on record production volumes and improving commodity price realization',
+    'Long-term offtake agreement signed securing favorable pricing for future output',
+    'Earnings beat driven by strong commodity prices and better than expected volumes',
+    'Production permit approved unlocking substantial proved reserve development',
+    'Strategic joint venture accelerates development timeline ahead of schedule',
+    'New extraction technology reduces costs well below industry average breakeven',
+    'Stock rallies on record cash flow generation and increased shareholder return program',
   ],
   consumer: [
-    'Viral product trend driving exceptional demand ahead of quarterly earnings report',
-    'Major retail chain expansion adding significant new store distribution this quarter',
-    'Celebrity brand partnership launch expected to drive substantial awareness and trial',
-    'Menu innovation driving same-store sales acceleration above industry growth rates',
-    'International market entry generating strong early consumer reception and reorder rates',
-    'Premium pricing strategy succeeding with consumers trading up despite market conditions',
-    'Health and wellness trend alignment positioning brand for sustained demand growth',
+    'Stock jumps after reporting record same-store sales growth and raised guidance',
+    'Viral product drives exceptional demand with record sell-through at retail partners',
+    'Earnings beat driven by strong volume growth and premium pricing success',
+    'Major retail chain expansion adds significant new store distribution this quarter',
+    'Celebrity brand partnership drives substantial awareness and record trial conversion',
+    'International market entry generates strong early consumer reception and reorders',
+    'Premium pricing strategy succeeds with consumers trading up despite conditions',
+    'Stock surges on record restaurant traffic and expanding restaurant margins',
   ],
   general: [
-    'Major contract award expected to create significant new revenue stream next quarter',
-    'Strategic acquisition closing soon with strong expected synergy realization',
-    'New product launch exceeding early adoption targets with strong customer feedback',
-    'Regulatory approval imminent that would unlock substantial market opportunity',
-    'Credit rating upgrade expected to reduce financing costs and improve capital access',
-    'Key partnership agreement about to be finalized expanding addressable market',
-    'Operational improvement initiative delivering better than expected margin expansion',
+    'Stock jumps after reporting record quarterly revenue and raising full-year guidance',
+    'Earnings beat estimates with stronger than expected margins and cash generation',
+    'Major contract win creates significant new revenue stream beating analyst models',
+    'Strategic acquisition closes with better than expected synergy realization pace',
+    'New product launch exceeds early adoption targets with strong customer feedback',
+    'Regulatory approval received unlocking substantial new market opportunity',
+    'Stock surges on record results and management raising earnings per share outlook',
+    'Credit rating upgraded reducing financing costs and improving capital structure',
   ],
 };
 
-const SIMILARITY_THRESHOLD = 0.03;
+const SIMILARITY_THRESHOLD = 0.015;
 
 // Module-level cache: { sector: Float64Array[] }
 let cachedTechnicalEmb = null;
@@ -677,14 +693,17 @@ async function ensureMacroWinAnchors(sector) {
 }
 
 /**
- * Compute average cosine similarity of an embedding against a set of anchor embeddings
+ * Compute max cosine similarity of an embedding against a set of anchor embeddings.
+ * Max is better than average: a headline that strongly matches one anchor should win,
+ * not be diluted by weaker anchors in the same category.
  */
-function avgSimilarity(embedding, anchors) {
-  let sum = 0;
+function maxSimilarity(embedding, anchors) {
+  let best = -Infinity;
   for (const anchor of anchors) {
-    sum += embeddingService.cosineSimilarity(embedding, anchor);
+    const s = embeddingService.cosineSimilarity(embedding, anchor);
+    if (s > best) best = s;
   }
-  return sum / anchors.length;
+  return best;
 }
 
 /**
@@ -692,11 +711,11 @@ function avgSimilarity(embedding, anchors) {
  * 5-way: technical, fear (specific), win (specific), macro_fear (abstract), macro_win (abstract)
  */
 function classifySingle(headlineEmb, techAnchors, fearAnchors, winAnchors, macroFearAnchors, macroWinAnchors) {
-  const techSim = avgSimilarity(headlineEmb, techAnchors);
-  const fearSim = avgSimilarity(headlineEmb, fearAnchors);
-  const winSim = avgSimilarity(headlineEmb, winAnchors);
-  const macroFearSim = avgSimilarity(headlineEmb, macroFearAnchors);
-  const macroWinSim = avgSimilarity(headlineEmb, macroWinAnchors);
+  const techSim = maxSimilarity(headlineEmb, techAnchors);
+  const fearSim = maxSimilarity(headlineEmb, fearAnchors);
+  const winSim = maxSimilarity(headlineEmb, winAnchors);
+  const macroFearSim = maxSimilarity(headlineEmb, macroFearAnchors);
+  const macroWinSim = maxSimilarity(headlineEmb, macroWinAnchors);
 
   const sims = { technical: techSim, fear: fearSim, win: winSim, macro_fear: macroFearSim, macro_win: macroWinSim };
   const sorted = Object.entries(sims).sort((a, b) => b[1] - a[1]);

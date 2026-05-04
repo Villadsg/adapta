@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<title>Ticker Screening Results</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 20px; background: #1a1d23; color: #eaeaea; }
+  h1 { font-size: 1.4em; margin-bottom: 4px; color: #a8b5a2; }
+  .summary { color: #a0aec0; margin-bottom: 16px; font-size: 0.95em; }
+  table { width: 100%; border-collapse: collapse; background: #262a33; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.4); }
+  #screen-table th { background: #2f3540; padding: 10px 12px; text-align: left; font-size: 0.85em; color: #a0aec0; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; user-select: none; }
+  #screen-table th:hover { color: #fff; background: #3a414d; }
+  #screen-table th .sort-arrow { font-size: 0.7em; margin-left: 3px; color: #5a6a8a; }
+  #screen-table th.sorted-asc .sort-arrow, #screen-table th.sorted-desc .sort-arrow { color: #fff; }
+  td { padding: 8px 12px; border-top: 1px solid #2e333d; font-size: 0.95em; }
+  tr.data-row:hover { background: #2c303a; }
+  tr:hover { background: #22252c; }
+  .chart-row td { border-top: none; }
+  input, textarea { background: #15171c; color: #ddd; border: 1px solid #333; }
+  input::placeholder, textarea::placeholder { color: #6a7590; }
+  /* Override inline light-theme colors used throughout the generated markup */
+  [style*="background:#fff"] { background: #262a33 !important; }
+  [style*="background: #fff"] { background: #262a33 !important; }
+  [style*="background:#f7f9fc"] { background: #22252c !important; }
+  [style*="background:#f9f9f9"] { background: #22252c !important; }
+  [style*="background:#f5f5f5"] { background: #2f3540 !important; }
+  [style*="color:#333"] { color: #eaeaea !important; }
+  [style*="color:#444"] { color: #eaeaea !important; }
+  [style*="color:#666"] { color: #a0aec0 !important; }
+  [style*="color:#888"] { color: #8a96b0 !important; }
+  [style*="color:#999"] { color: #7a8499 !important; }
+  [style*="color:#aaa"] { color: #6a7590 !important; }
+  [style*="color:#bbb"] { color: #5a6680 !important; }
+  #fav-toast { position:fixed; bottom:20px; right:20px; padding:8px 16px; border-radius:6px; font-size:0.9em; color:#fff; opacity:0; transition:opacity 0.3s; pointer-events:none; z-index:9999; }
+  #fav-toast.show { opacity:1; }
+</style></head><body>
+<div id="fav-toast"></div>
+<h1>Ticker Screening Results</h1>
+<p class="summary">1 hit out of 1 tickers screened &mdash; 5d lookback, p92 threshold</p>
+<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.95em;">
+  <span style="color:#666; font-weight:600;">Avg Weighted IV (1 tickers):</span>
+  <span style="color:rgba(72,187,120,0.9); font-weight:bold; margin-left:10px;">Call 5.3%</span>
+  <span style="color:rgba(245,101,101,0.9); font-weight:bold; margin-left:10px;">Put 8.9%</span>
+  <span style="color:#999; margin-left:16px;">|</span>
+  <span style="color:#666; font-weight:600; margin-left:16px;">Avg ATM IV:</span>
+  <span style="color:rgba(72,187,120,0.7); font-weight:bold; margin-left:10px;">Call 1.6%</span>
+  <span style="color:rgba(245,101,101,0.7); font-weight:bold; margin-left:10px;">Put 0.9%</span>
+</div>
+<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.92em;">
+    <div style="color:#666; font-weight:600; margin-bottom:4px;">Pre-Event IV Profile <span style="color:#999; font-weight:normal; font-size:0.9em;">(avg percentile rank of each pre-event snapshot within that ticker's own point-in-time history; 50 = neutral, &gt;60 = elevated, &lt;40 = suppressed)</span></div>
+    <div style="color:#aaa; font-size:0.78em; margin-bottom:6px;">Requires ≥10 history records before the event date. (n) = events contributing.</div>
+    <table style="border-collapse:collapse;">
+      <thead><tr style="color:#888; font-size:0.8em; text-transform:uppercase;">
+        <th style="padding:4px 10px; text-align:left;">Classification</th>
+        <th style="padding:4px 10px; text-align:right;">Call IV</th>
+        <th style="padding:4px 10px; text-align:right;">Put IV</th>
+        <th style="padding:4px 10px; text-align:right;">C Spr</th>
+        <th style="padding:4px 10px; text-align:right;">P Spr</th>
+      </tr></thead>
+      <tbody><tr>
+      <td style="padding:6px 10px; font-weight:bold; color:#4caf50;">Surprising +</td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p64</span> <span style="color:#aaa; font-size:0.85em;">(67)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p61</span> <span style="color:#aaa; font-size:0.85em;">(60)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p59</span> <span style="color:#aaa; font-size:0.85em;">(64)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p58</span> <span style="color:#aaa; font-size:0.85em;">(64)</span></td>
+    </tr><tr>
+      <td style="padding:6px 10px; font-weight:bold; color:#8bc34a;">Anticipated +</td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#d32f2f; font-weight:600;">p91</span> <span style="color:#aaa; font-size:0.85em;">(1)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p64</span> <span style="color:#aaa; font-size:0.85em;">(1)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#bbb;">—</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#bbb;">—</span></td>
+    </tr><tr>
+      <td style="padding:6px 10px; font-weight:bold; color:#ff9800;">Anticipated -</td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p50</span> <span style="color:#aaa; font-size:0.85em;">(8)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p50</span> <span style="color:#aaa; font-size:0.85em;">(7)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#1565c0; font-weight:600;">p25</span> <span style="color:#aaa; font-size:0.85em;">(7)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p54</span> <span style="color:#aaa; font-size:0.85em;">(7)</span></td>
+    </tr><tr>
+      <td style="padding:6px 10px; font-weight:bold; color:#f44336;">Surprising -</td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p53</span> <span style="color:#aaa; font-size:0.85em;">(51)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p47</span> <span style="color:#aaa; font-size:0.85em;">(48)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p48</span> <span style="color:#aaa; font-size:0.85em;">(36)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p54</span> <span style="color:#aaa; font-size:0.85em;">(36)</span></td>
+    </tr></tbody>
+    </table>
+  </div>
+<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.92em;">
+    <div style="color:#666; font-weight:600; margin-bottom:4px;">IV Profile by Daily Return Bucket <span style="color:#999; font-weight:normal; font-size:0.9em;">(median split on next-day return; average IV/spread ranks from the day before — tests if high rank precedes high vs low next-day return)</span></div>
+    <table style="border-collapse:collapse;">
+      <thead><tr style="color:#888; font-size:0.8em; text-transform:uppercase;">
+        <th style="padding:4px 10px; text-align:left;">Bucket</th>
+        <th style="padding:4px 10px; text-align:right;">Call IV</th>
+        <th style="padding:4px 10px; text-align:right;">Put IV</th>
+        <th style="padding:4px 10px; text-align:right;">C Spr</th>
+        <th style="padding:4px 10px; text-align:right;">P Spr</th>
+      </tr></thead>
+      <tbody><tr>
+    <td style="padding:6px 10px; font-weight:bold; color:#1565c0;">Low Returns <span style="color:#999; font-weight:normal; font-size:0.85em;">[-22.7% … +0.1%]</span> <span style="color:#aaa; font-size:0.85em;">n=411</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p61</span> <span style="color:#aaa; font-size:0.85em;">(399)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p61</span> <span style="color:#aaa; font-size:0.85em;">(377)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p50</span> <span style="color:#aaa; font-size:0.85em;">(411)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p49</span> <span style="color:#aaa; font-size:0.85em;">(411)</span></td>
+  </tr><tr>
+    <td style="padding:6px 10px; font-weight:bold; color:#d32f2f;">High Returns <span style="color:#999; font-weight:normal; font-size:0.85em;">[+0.1% … +20.1%]</span> <span style="color:#aaa; font-size:0.85em;">n=411</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#d32f2f; font-weight:600;">p71</span> <span style="color:#aaa; font-size:0.85em;">(405)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#d32f2f; font-weight:600;">p68</span> <span style="color:#aaa; font-size:0.85em;">(387)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#0277bd; font-weight:600;">p42</span> <span style="color:#aaa; font-size:0.85em;">(411)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#0277bd; font-weight:600;">p42</span> <span style="color:#aaa; font-size:0.85em;">(411)</span></td>
+  </tr></tbody>
+    </table>
+  </div>
+<div id="portfolio-corr-box" style="margin-bottom:14px; padding:12px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.95em;">
+  <div style="color:#666; font-weight:600; margin-bottom:6px;">Portfolio Correlation Check</div>
+  <div style="display:flex; align-items:center; gap:10px;">
+    <input id="portfolio-corr-input" type="text" placeholder="e.g. AAPL, MSFT, NVDA" style="flex:1; padding:7px 10px; border:1px solid #ddd; border-radius:6px; font-size:0.95em; outline:none;" />
+    <button id="portfolio-corr-btn" style="padding:7px 16px; border:none; border-radius:6px; background:#5b8cb8; color:#fff; font-size:0.9em; cursor:pointer;">Check</button>
+  </div>
+  <div id="portfolio-corr-result" style="margin-top:8px;"></div>
+</div>
+
+<table id="screen-table">
+<thead><tr>
+  <th style="width:28px; text-align:center; padding:4px;"><span class="sort-arrow"></span></th>
+  <th>Ticker<span class="sort-arrow"></span></th>
+  <th>Sector<span class="sort-arrow"></span></th>
+  <th>Date<span class="sort-arrow"></span></th>
+  <th>Gap %<span class="sort-arrow"></span></th>
+  <th>Percentile<span class="sort-arrow"></span></th>
+  <th>Classification<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Volume<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">R&sup2; (SPY)<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Mkt Cap<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Opt $ Vol<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Call IV<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Weighted OTM IV minus ATM IV. (pN) = self-history rank, [sN] = sector rank">C Spr<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Put IV<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Weighted OTM IV minus ATM IV. (pN) = self-history rank, [sN] = sector rank">P Spr<span class="sort-arrow"></span></th>
+</tr></thead>
+<tbody><tr class="data-row" data-ticker="AXSM" style=" cursor:pointer;">
+      <td style="text-align:center; width:28px; padding:4px;" data-v="2"><span class="fav-star" data-ticker="AXSM" style="cursor:pointer; font-size:1.1em; color:#e53935;" title="Super favorite (click to clear)">★</span></td>
+      <td data-v="AXSM" style="font-weight:bold;">AXSM <span style="font-size:0.7em;color:#aaa;">▶</span></td>
+      <td data-v="Healthcare" style="font-size:0.82em; color:#888;">Healthcare</td>
+      <td data-v="2026-04-30">2026-04-30</td>
+      <td data-v="11.792831389249573">11.79%</td>
+      <td data-v="98.93617021276596">98.9%</td>
+      <td data-v="surprising_positive" style="color:#4caf50; font-weight:bold;">Surprising +</td>
+      <td data-v="2798900" style="text-align:right;">2.8M</td>
+      <td data-v="0.04111630707349234" style="text-align:right;">0.041</td>
+      <td data-v="10623893504" style="text-align:right;">10.6B</td>
+      <td data-v="279163" style="text-align:right;">$279K</td>
+      <td data-v="5.3" style="text-align:right; color:rgba(72,187,120,0.9);">5.3% <span style="color:#888; font-size:0.78em;">(p3)</span></td>
+      <td data-v="3.7" style="text-align:right; color:rgba(72,187,120,0.7); font-size:0.88em;">+3.7 <span style="color:#888; font-size:0.78em;">(p76)</span> <span style="color:#6a8; font-size:0.78em;">[s76]</span></td>
+      <td data-v="8.9" style="text-align:right; color:rgba(245,101,101,0.9);">8.9% <span style="color:#888; font-size:0.78em;">(p8)</span></td>
+      <td data-v="8" style="text-align:right; color:rgba(245,101,101,0.7); font-size:0.88em;">+8.0 <span style="color:#888; font-size:0.78em;">(p68)</span> <span style="color:#6a8; font-size:0.78em;">[s68]</span></td>
+    </tr>
+    <tr class="chart-row" data-chart-for="AXSM" style="display:none;">
+      <td colspan="15" style="padding:0; background:#1a1d23;">
+        <div style="display:flex; gap:12px; align-items:stretch; margin:12px 20px 8px;">
+          <div id="summary-AXSM" style="flex:0 1 78ch; padding:14px 18px; background:#262a33; border-left:3px solid #4a5a8a; border-radius:6px; color:#cdd5e0; font-size:0.98em; line-height:1.65; max-height:200px; overflow-y:auto;"></div>
+          <div style="flex:1 1 0; min-width:280px; height:200px; background:#262a33; border-radius:6px; padding:6px 10px;">
+            <canvas id="dv-iv-chart-AXSM"></canvas>
+          </div>
+        </div>
+        <div id="dv-iv-strike-wrap-AXSM" style="display:none; margin:0 20px 8px; padding:10px 14px; background:#262a33; border-left:3px solid #7aa2c7; border-radius:6px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span id="dv-iv-strike-title-AXSM" style="color:#cdd5e0; font-size:0.92em;"></span>
+            <button type="button" data-strike-close="AXSM" style="background:transparent; color:#888; border:1px solid #444; border-radius:3px; padding:2px 8px; font-size:0.8em; cursor:pointer;">close</button>
+          </div>
+          <div id="dv-iv-strike-body-AXSM"></div>
+        </div>
+        <div style="padding:6px 20px 8px; display:flex; gap:8px; align-items:flex-start;">
+          <label style="color:#aaa; font-size:0.82em; padding-top:6px; min-width:48px;">Notes</label>
+          <textarea class="ticker-note" data-ticker="AXSM" placeholder="Add a note about AXSM..." style="flex:1; min-height:42px; padding:6px 8px; border:1px solid #333; border-radius:4px; background:#15171c; color:#ddd; font-size:0.88em; font-family:inherit; resize:vertical;"></textarea>
+          <span class="note-status" data-ticker="AXSM" style="color:#888; font-size:0.78em; padding-top:8px; min-width:54px;"></span>
+        </div>
+        <div style="padding:12px 16px; height:480px;">
+          <canvas id="chart-AXSM"></canvas>
+        </div>
+        <div id="opts-wrap-AXSM" style="display:none; padding:8px 16px 4px;">
+          <div style="display:flex; gap:8px;">
+            <div style="flex:1; min-width:0;">
+              <div id="opts-iv-label-0-AXSM" style="color:#aaa; font-size:0.82em; padding:2px 4px; cursor:pointer; user-select:none;" title="Click for historical weighted IV"></div>
+              <div style="height:360px;"><canvas id="opts-chart-0-AXSM"></canvas></div>
+            </div>
+            <div style="flex:1; min-width:0;">
+              <div id="opts-iv-label-1-AXSM" style="color:#aaa; font-size:0.82em; padding:2px 4px; cursor:pointer; user-select:none;" title="Click for historical weighted IV"></div>
+              <div style="height:360px;"><canvas id="opts-chart-1-AXSM"></canvas></div>
+            </div>
+          </div>
+          <div id="iv-history-wrap-AXSM" style="display:none; padding:8px 0; height:420px;">
+            <canvas id="iv-history-chart-AXSM"></canvas>
+          </div>
+        </div>
+        <div id="news-AXSM" style="padding:4px 20px 14px;"></div>
+      </td>
+    </tr></tbody>
+</table>
+
+<script>
+(function() {
+  const chartDataMap = {"AXSM":{"dates":["2025-12-16","2025-12-17","2025-12-18","2025-12-19","2025-12-22","2025-12-23","2025-12-24","2025-12-26","2025-12-29","2025-12-30","2025-12-31","2026-01-02","2026-01-05","2026-01-06","2026-01-07","2026-01-08","2026-01-09","2026-01-12","2026-01-13","2026-01-14","2026-01-15","2026-01-16","2026-01-20","2026-01-21","2026-01-22","2026-01-23","2026-01-26","2026-01-27","2026-01-28","2026-01-29","2026-01-30","2026-02-02","2026-02-03","2026-02-04","2026-02-05","2026-02-06","2026-02-09","2026-02-10","2026-02-11","2026-02-12","2026-02-13","2026-02-17","2026-02-18","2026-02-19","2026-02-20","2026-02-23","2026-02-24","2026-02-25","2026-02-26","2026-02-27","2026-03-02","2026-03-03","2026-03-04","2026-03-05","2026-03-06","2026-03-09","2026-03-10","2026-03-11","2026-03-12","2026-03-13","2026-03-16","2026-03-17","2026-03-18","2026-03-19","2026-03-20","2026-03-23","2026-03-24","2026-03-25","2026-03-26","2026-03-27","2026-03-30","2026-03-31","2026-04-01","2026-04-02","2026-04-06","2026-04-07","2026-04-08","2026-04-09","2026-04-10","2026-04-13","2026-04-14","2026-04-15","2026-04-16","2026-04-17","2026-04-20","2026-04-21","2026-04-22","2026-04-23","2026-04-24","2026-04-27","2026-04-28","2026-04-29","2026-04-30","2026-05-01"],"closes":[146.8699951171875,148,147,152.64999389648438,154.6999969482422,154.19000244140625,153.63999938964844,152.0500030517578,150.67999267578125,148.7899932861328,182.63999938964844,178.69000244140625,171.49000549316406,171.8800048828125,170.69000244140625,167.5500030517578,169.3800048828125,176.82000732421875,174.3300018310547,177.00999450683594,174.13999938964844,177.27000427246094,184.5,189.10000610351562,186.97999572753906,185.9600067138672,184.52000427246094,188.02000427246094,185.1699981689453,185.26499938964844,184.25,185.8800048828125,187.35000610351562,185.5399932861328,180.83999633789062,182.5500030517578,183.22000122070312,184.3000030517578,186.2100067138672,182.94000244140625,181.2100067138672,183.3000030517578,184.74000549316406,186.1750030517578,183.72000122070312,174.75999450683594,169.9499969482422,164.22000122070312,163.19000244140625,163.88999938964844,166.3800048828125,164.0500030517578,164.0800018310547,161.4600067138672,162.3300018310547,164.49000549316406,166.33999633789062,159.5,154.1199951171875,156.0800018310547,158.22999572753906,161.1699981689453,157.8699951171875,158.8800048828125,156.9199981689453,156.83999633789062,158.75,161.77999877929688,164.26499938964844,156.35000610351562,160.5,169.02000427246094,171.77999877929688,168.5050048828125,169.74000549316406,168.74000549316406,173.19000244140625,178.89999389648438,178.11000061035156,178.3300018310547,184.17999267578125,184.17999267578125,184.19000244140625,188.99000549316406,188.69000244140625,182.97000122070312,186.4199981689453,182.72000122070312,185.9600067138672,187.39999389648438,185,183.9499969482422,207.75,206.52999877929688],"volumes":[303800,421900,392600,975300,606800,469900,145100,463200,551200,519500,3052600,1431200,1057200,791600,815000,808900,793800,1167300,613300,457400,666400,618900,1280600,1389300,621500,426600,335400,403200,421500,499900,745700,581100,910800,623400,891500,661800,309000,468300,374800,229800,364000,569700,495400,397500,573800,863500,1069100,872700,1002800,613800,566800,617300,428800,496000,387000,425600,423900,656800,769000,862700,510700,481500,464700,454800,849300,409900,1251800,434900,304400,680800,518000,677100,604300,617000,337500,401300,524900,986000,560300,549600,820800,540400,410100,767400,525100,717400,614300,418900,527100,919800,664600,760600,2798900,1636300],"events":[{"idx":10,"y":182.63999938964844,"classification":"surprising_positive"},{"idx":12,"y":171.49000549316406,"classification":"surprising_negative"},{"idx":17,"y":176.82000732421875,"classification":"surprising_positive"},{"idx":22,"y":184.5,"classification":"surprising_positive"},{"idx":45,"y":174.75999450683594,"classification":"surprising_negative"},{"idx":46,"y":169.9499969482422,"classification":"surprising_negative"},{"idx":47,"y":164.22000122070312,"classification":"surprising_negative"},{"idx":92,"y":207.75,"classification":"surprising_positive"}],"optionsStrikes":[{"label":"2026-05-15","calls":[{"strike":210,"dollarVol":57960,"dollarOI":0,"iv":3.12596875},{"strike":220,"dollarVol":22330,"dollarOI":0,"iv":6.250937500000001},{"strike":230,"dollarVol":22100,"dollarOI":0,"iv":12.500875},{"strike":240,"dollarVol":2460,"dollarOI":0,"iv":12.500875},{"strike":250,"dollarVol":1375.0000000000002,"dollarOI":0,"iv":25.00075},{"strike":260,"dollarVol":360,"dollarOI":0,"iv":25.00075},{"strike":270,"dollarVol":300,"dollarOI":0,"iv":25.00075},{"strike":280,"dollarVol":140,"dollarOI":0,"iv":25.00075}],"puts":[{"strike":130,"dollarVol":350,"dollarOI":0,"iv":50.0005},{"strike":140,"dollarVol":240.00000000000003,"dollarOI":0,"iv":50.0005},{"strike":150,"dollarVol":15,"dollarOI":0,"iv":50.0005},{"strike":155,"dollarVol":2580,"dollarOI":0,"iv":25.00075},{"strike":160,"dollarVol":231,"dollarOI":0,"iv":25.00075},{"strike":165,"dollarVol":141,"dollarOI":0,"iv":25.00075},{"strike":170,"dollarVol":2392,"dollarOI":0,"iv":25.00075},{"strike":175,"dollarVol":3150,"dollarOI":0,"iv":25.00075},{"strike":180,"dollarVol":9152,"dollarOI":0,"iv":12.500875},{"strike":185,"dollarVol":6400,"dollarOI":0,"iv":12.500875},{"strike":190,"dollarVol":14427.000000000002,"dollarOI":0,"iv":12.500875},{"strike":195,"dollarVol":7030,"dollarOI":0,"iv":6.250937500000001},{"strike":200,"dollarVol":22000,"dollarOI":0,"iv":3.12596875}],"wCallIV":6.4,"wPutIV":10.7,"atmCallIV":2,"atmPutIV":1.1,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":384771,"atmPutDV":37050,"ivSpreadCall":4.4,"ivSpreadPut":9.6,"deepOTMCallPct":25,"deepOTMPutPct":36.2},{"label":"2026-06-18","calls":[{"strike":210,"dollarVol":14400,"dollarOI":0,"iv":1.5634843750000003},{"strike":220,"dollarVol":9600,"dollarOI":0,"iv":3.12596875},{"strike":230,"dollarVol":7030,"dollarOI":0,"iv":6.250937500000001},{"strike":240,"dollarVol":217,"dollarOI":0,"iv":12.500875}],"puts":[{"strike":130,"dollarVol":60,"dollarOI":0,"iv":25.00075},{"strike":155,"dollarVol":210,"dollarOI":0,"iv":12.500875},{"strike":160,"dollarVol":480.00000000000006,"dollarOI":0,"iv":12.500875},{"strike":170,"dollarVol":850,"dollarOI":0,"iv":12.500875},{"strike":180,"dollarVol":37210,"dollarOI":0,"iv":6.250937500000001},{"strike":190,"dollarVol":4270,"dollarOI":0,"iv":6.250937500000001},{"strike":200,"dollarVol":3179.9999999999995,"dollarOI":0,"iv":1.5634843750000003}],"wCallIV":3.2,"wPutIV":6.2,"atmCallIV":1,"atmPutIV":0.5,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":175572,"atmPutDV":17270,"ivSpreadCall":2.2,"ivSpreadPut":5.7,"deepOTMCallPct":23.2,"deepOTMPutPct":83.9},{"label":"2026-09-18","calls":[{"strike":210,"dollarVol":2045,"dollarOI":0,"iv":0.7822421875000001},{"strike":220,"dollarVol":16720,"dollarOI":0,"iv":3.12596875},{"strike":230,"dollarVol":2348,"dollarOI":0,"iv":3.12596875},{"strike":250,"dollarVol":3600,"dollarOI":0,"iv":6.250937500000001},{"strike":260,"dollarVol":515,"dollarOI":0,"iv":6.250937500000001},{"strike":280,"dollarVol":185,"dollarOI":0,"iv":12.500875}],"puts":[{"strike":180,"dollarVol":1110,"dollarOI":0,"iv":6.250937500000001}],"wCallIV":3.5,"wPutIV":6.3,"atmCallIV":0.5,"atmPutIV":0.7,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":41192,"atmPutDV":2325,"ivSpreadCall":3,"ivSpreadPut":5.6,"deepOTMCallPct":26.2,"deepOTMPutPct":100}]}};
+  const summaryMap = {"AXSM":"Axsome Therapeutics, Inc., a biopharmaceutical company, develops and delivers novel therapies for the management of central nervous system (CNS) disorders in the United States. The company's commercial product portfolio includes Auvelity (dextromethorphan-bupropion), a N-methyl-D-aspartate receptor antagonist, sigma-1 receptor agonist, aminoketone, and CYP2D6 inhibitor indicated for the treatment of major depressive disorder in adults; Sunosi (solriamfetol), a dopamine and norepinephrine reuptake inhibitor, trace amine-associated receptor 1 agonist, and 5-HT1A agonist indicated for the treatment of excessive daytime sleepiness in patients with narcolepsy or obstructive sleep apnea; and Symbravo (MoSEIC meloxicam rizatriptan), or AXS-07, a rapidly absorbed, multi-mechanistic, selective COX-2 inhibitor, and 5-HT1B/1D agonist indicated for the acute treatment of migraine with or without aura. It also develops AXS-05 (dextromethorphan-bupropion), an investigational N-methyl-D-aspartate receptor antagonist, which has completed Phase III clinical trial to treat Alzheimer's disease agitation, as well as that has completed phase II clinical trial for the treatment of smoking cessation; AXS-12 (reboxetine), a highly selective and potent norepinephrine reuptake inhibitor and cortical dopamine modulator, which has completed Phase II trial to treat narcolepsy; AXS-14 (esreboxetine), a selective and potent norepinephrine reuptake inhibitor that has completed Phase III trial for the treatment of fibromyalgia and other conditions; and Solriamfetol, a dopamine and norepinephrine reuptake inhibitor, which is in Phase III trial for treating attention deficit hyperactivity, major depressive, binge eating, and excessive sleepiness associated with shift work disorder. It has a research collaboration agreement with Duke University for evaluating AXS-05 in a Phase 2 clinical trial in smoking cessation treatment. The company was incorporated in 2012 and is based in New York, New York."};
+  const newsMap = {};
+  const ivHistoryMap = {"AXSM":[{"date":"2026-03-24","exp1":{"label":"2026-04-17","callIV":45.3,"putIV":48.6},"exp2":{"label":"2026-05-15","callIV":63.8,"putIV":67.3}},{"date":"2026-03-25","exp1":{"label":"2026-04-17","callIV":54.3,"putIV":32.1},"exp2":{"label":"2026-05-15","callIV":62.5,"putIV":66.1}},{"date":"2026-03-26","exp1":{"label":"2026-04-17","callIV":40.9,"putIV":46.7},"exp2":{"label":"2026-05-15","callIV":60.8,"putIV":71.2}},{"date":"2026-03-27","exp1":{"label":"2026-04-17","callIV":5.7,"putIV":6.1},"exp2":{"label":"2026-05-15","callIV":3.8,"putIV":12.5}},{"date":"2026-03-29","exp1":{"label":"2026-04-17","callIV":52.9,"putIV":52.7},"exp2":{"label":"2026-05-15","callIV":67.3,"putIV":71.9}},{"date":"2026-03-30","exp1":{"label":"2026-04-17","callIV":49.5,"putIV":50.7},"exp2":{"label":"2026-05-15","callIV":65.5,"putIV":0}},{"date":"2026-03-31","exp1":{"label":"2026-04-17","callIV":45.5,"putIV":52.9},"exp2":{"label":"2026-05-15","callIV":62.4,"putIV":71.5}},{"date":"2026-04-01","exp1":{"label":"2026-04-17","callIV":39.3,"putIV":48.5},"exp2":{"label":"2026-05-15","callIV":64.7,"putIV":82.9}},{"date":"2026-04-02","exp1":{"label":"2026-04-17","callIV":70.6,"putIV":0},"exp2":{"label":"2026-05-15","callIV":0,"putIV":0}},{"date":"2026-04-03","exp1":{"label":"2026-04-17","callIV":78.5,"putIV":48.4,"atmCallIV":50.6,"atmPutIV":50.4,"deepOTMCallPct":69,"deepOTMPutPct":0},"exp2":{"label":"2026-05-15","callIV":69.7,"putIV":78.5,"atmCallIV":72.2,"atmPutIV":70.2,"deepOTMCallPct":53.9,"deepOTMPutPct":62.8}},{"date":"2026-04-04","exp1":{"label":"2026-04-17","callIV":81.2,"putIV":50.1,"atmCallIV":52.4,"atmPutIV":52.2,"deepOTMCallPct":69,"deepOTMPutPct":0},"exp2":{"label":"2026-05-15","callIV":70.5,"putIV":79.5,"atmCallIV":73,"atmPutIV":71,"deepOTMCallPct":53.9,"deepOTMPutPct":62.8}},{"date":"2026-04-05","exp1":{"label":"2026-04-17","callIV":84.3,"putIV":52,"atmCallIV":54.3,"atmPutIV":54.2,"deepOTMCallPct":69,"deepOTMPutPct":0},"exp2":{"label":"2026-05-15","callIV":71.3,"putIV":80.4,"atmCallIV":73.9,"atmPutIV":71.9,"deepOTMCallPct":53.9,"deepOTMPutPct":62.8},"exp3":{"label":"2026-06-18","callIV":0,"putIV":0,"atmCallIV":61.7,"atmPutIV":56.8,"deepOTMCallPct":0,"deepOTMPutPct":0}},{"date":"2026-04-06","exp1":{"label":"2026-04-17","callIV":51.5,"putIV":0,"atmCallIV":51.5,"atmPutIV":55.9,"deepOTMCallPct":17.5,"deepOTMPutPct":0},"exp2":{"label":"2026-05-15","callIV":70.3,"putIV":86.1,"atmCallIV":74.7,"atmPutIV":72,"deepOTMCallPct":91.4,"deepOTMPutPct":100},"exp3":{"label":"2026-06-18","callIV":53.3,"putIV":0,"atmCallIV":59.8,"atmPutIV":56.8,"deepOTMCallPct":97.4,"deepOTMPutPct":0}},{"date":"2026-04-07","sector":"Healthcare","exp1":{"label":"2026-04-17","callIV":53.4,"putIV":0,"atmCallIV":58.6,"atmPutIV":48.8,"deepOTMCallPct":28.4,"deepOTMPutPct":0},"exp2":{"label":"2026-05-15","callIV":75.5,"putIV":0,"atmCallIV":78.4,"atmPutIV":71,"deepOTMCallPct":5.2,"deepOTMPutPct":0},"exp3":{"label":"2026-06-18","callIV":58.6,"putIV":58.9,"atmCallIV":63.4,"atmPutIV":57.2,"deepOTMCallPct":100,"deepOTMPutPct":38}},{"date":"2026-04-08","sector":"Healthcare","exp1":{"label":"2026-04-17","callIV":17.9,"putIV":4.7,"atmCallIV":1.6,"atmPutIV":0,"deepOTMCallPct":46.3,"deepOTMPutPct":0,"dv":25797},"exp2":{"label":"2026-05-15","callIV":9,"putIV":12.5,"atmCallIV":0.8,"atmPutIV":0,"deepOTMCallPct":41.6,"deepOTMPutPct":100,"dv":6880},"exp3":{"label":"2026-06-18","callIV":9,"putIV":3.9,"atmCallIV":0.3,"atmPutIV":0.4,"deepOTMCallPct":100,"deepOTMPutPct":25.5,"dv":5770}},{"date":"2026-04-09","sector":"Healthcare","exp1":{"label":"2026-04-17","callIV":44,"putIV":0,"atmCallIV":33.5,"atmPutIV":53.6,"deepOTMCallPct":33.3,"deepOTMPutPct":0,"dv":120},"exp2":{"label":"2026-05-15","callIV":64.2,"putIV":0,"atmCallIV":68.6,"atmPutIV":75,"deepOTMCallPct":100,"deepOTMPutPct":0,"dv":8230},"exp3":{"label":"2026-06-18","callIV":0,"putIV":0,"atmCallIV":55.1,"atmPutIV":79.9,"deepOTMCallPct":0,"deepOTMPutPct":0,"dv":0}},{"date":"2026-04-10","sector":"Healthcare","exp1":{"label":"2026-04-17","callIV":45.2,"putIV":54.6,"atmCallIV":48.7,"atmPutIV":50,"deepOTMCallPct":9.7,"deepOTMPutPct":75.9,"dv":1365},"exp2":{"label":"2026-05-15","callIV":69.8,"putIV":75,"atmCallIV":73.9,"atmPutIV":75,"deepOTMCallPct":9.2,"deepOTMPutPct":0,"dv":41456},"exp3":{"label":"2026-06-18","callIV":57,"putIV":0,"atmCallIV":60.5,"atmPutIV":66.6,"deepOTMCallPct":23.2,"deepOTMPutPct":0,"dv":15779.999999999998}},{"date":"2026-04-11","sector":"Healthcare","exp1":{"label":"2026-04-17","callIV":53.4,"putIV":55.1,"atmCallIV":56.6,"atmPutIV":58.7,"deepOTMCallPct":73.5,"deepOTMPutPct":75.9,"dv":2924},"exp2":{"label":"2026-05-15","callIV":72.4,"putIV":73.1,"atmCallIV":74.9,"atmPutIV":75.6,"deepOTMCallPct":8.3,"deepOTMPutPct":0,"dv":45916},"exp3":{"label":"2026-06-18","callIV":58.2,"putIV":60,"atmCallIV":62.5,"atmPutIV":72.1,"deepOTMCallPct":19.3,"deepOTMPutPct":100,"dv":20819.999999999996}},{"date":"2026-04-12","sector":"Healthcare","exp1":{"label":"2026-04-17","callIV":57.7,"putIV":59.5,"atmCallIV":61.1,"atmPutIV":63.4,"deepOTMCallPct":73.5,"deepOTMPutPct":75.9,"dv":2924},"exp2":{"label":"2026-05-15","callIV":73.4,"putIV":74.2,"atmCallIV":76,"atmPutIV":76.7,"deepOTMCallPct":8.3,"deepOTMPutPct":0,"dv":45916},"exp3":{"label":"2026-06-18","callIV":58.6,"putIV":60.5,"atmCallIV":63,"atmPutIV":72.6,"deepOTMCallPct":19.3,"deepOTMPutPct":100,"dv":20819.999999999996}},{"date":"2026-04-13","sector":"Healthcare","exp1":{"label":"2026-04-17","callIV":21.2,"putIV":22,"atmCallIV":3.1,"atmPutIV":0,"deepOTMCallPct":73.5,"deepOTMPutPct":75.9,"dv":2924},"exp2":{"label":"2026-05-15","callIV":5.5,"putIV":1.6,"atmCallIV":0.8,"atmPutIV":0,"deepOTMCallPct":8.3,"deepOTMPutPct":0,"dv":45916},"exp3":{"label":"2026-06-18","callIV":5.6,"putIV":6.3,"atmCallIV":0.5,"atmPutIV":37,"deepOTMCallPct":19.3,"deepOTMPutPct":100,"dv":20819.999999999996}},{"date":"2026-04-14","sector":"Healthcare","exp1":{"label":"2026-04-17","callIV":46.1,"putIV":47.9,"atmCallIV":46.2,"atmPutIV":45.7,"deepOTMCallPct":4.4,"deepOTMPutPct":0,"dv":14101},"exp2":{"label":"2026-05-15","callIV":72.3,"putIV":82.1,"atmCallIV":78.4,"atmPutIV":75.1,"deepOTMCallPct":11.5,"deepOTMPutPct":83.7,"dv":168420},"exp3":{"label":"2026-06-18","callIV":56,"putIV":63.8,"atmCallIV":63.6,"atmPutIV":51.5,"deepOTMCallPct":72.3,"deepOTMPutPct":100,"dv":42664}},{"date":"2026-04-15","sector":"Healthcare","exp1":{"label":"2026-04-17","callIV":54.4,"putIV":0,"atmCallIV":69.2,"atmPutIV":57,"deepOTMCallPct":22.3,"deepOTMPutPct":0,"dv":3680},"exp2":{"label":"2026-05-15","callIV":78.2,"putIV":81.8,"atmCallIV":82.1,"atmPutIV":77.7,"deepOTMCallPct":59.5,"deepOTMPutPct":24.2,"dv":89604},"exp3":{"label":"2026-06-18","callIV":60.3,"putIV":0,"atmCallIV":65.2,"atmPutIV":58.7,"deepOTMCallPct":100,"deepOTMPutPct":0,"dv":1202}},{"date":"2026-04-16","sector":"Healthcare","exp1":{"label":"2026-04-17","callIV":54.4,"putIV":83.7,"atmCallIV":51.1,"atmPutIV":59.2,"atmBandCallIV":63.3,"atmBandPutIV":0,"atmCallDV":3832,"atmPutDV":0,"deepOTMCallPct":7.5,"deepOTMPutPct":0,"callDV":5763,"putDV":1725,"dv":7488},"exp2":{"label":"2026-05-15","callIV":77.7,"putIV":83.5,"atmCallIV":82.2,"atmPutIV":80.9,"atmBandCallIV":82.4,"atmBandPutIV":79.7,"atmCallDV":46780,"atmPutDV":12900,"deepOTMCallPct":15.5,"deepOTMPutPct":5,"callDV":58553,"putDV":22965,"dv":81518},"exp3":{"label":"2026-06-18","callIV":56.1,"putIV":0,"atmCallIV":63.7,"atmPutIV":51.3,"atmBandCallIV":69.1,"atmBandPutIV":0,"atmCallDV":19980,"atmPutDV":0,"deepOTMCallPct":100,"deepOTMPutPct":0,"callDV":650,"putDV":0,"dv":650}},{"date":"2026-04-17","sector":"Healthcare","exp1":{"label":"2026-04-17","callIV":49.7,"putIV":72.9,"atmCallIV":78.6,"atmPutIV":33.2,"atmBandCallIV":118.8,"atmBandPutIV":0,"atmCallDV":106251,"atmPutDV":0,"deepOTMCallPct":1,"deepOTMPutPct":0,"callDV":12955,"putDV":765,"dv":13720},"exp2":{"label":"2026-05-15","callIV":79.5,"putIV":85.4,"atmCallIV":83.8,"atmPutIV":80.5,"atmBandCallIV":0,"atmBandPutIV":79.6,"atmCallDV":0,"atmPutDV":27329.999999999996,"deepOTMCallPct":22.1,"deepOTMPutPct":25,"callDV":46180,"putDV":5170,"dv":51350},"exp3":{"label":"2026-06-18","callIV":62.7,"putIV":62.9,"atmCallIV":64.3,"atmPutIV":40.3,"atmBandCallIV":70,"atmBandPutIV":0,"atmCallDV":38257,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":8461,"putDV":5350,"dv":13811}},{"date":"2026-04-18","sector":"Healthcare","exp1":{"label":"2026-05-15","callIV":77.3,"putIV":89.7,"atmCallIV":80.6,"atmPutIV":80.6,"atmBandCallIV":83.1,"atmBandPutIV":80.6,"atmCallDV":232563,"atmPutDV":34460,"deepOTMCallPct":31.9,"deepOTMPutPct":81.2,"callDV":218833,"putDV":131370,"dv":350203},"exp2":{"label":"2026-06-18","callIV":60,"putIV":63.3,"atmCallIV":63.7,"atmPutIV":34,"atmBandCallIV":75.8,"atmBandPutIV":0,"atmCallDV":360827,"atmPutDV":0,"deepOTMCallPct":35.8,"deepOTMPutPct":77.6,"callDV":77386,"putDV":6890,"dv":84276},"exp3":{"label":"2026-09-18","callIV":51.7,"putIV":0,"atmCallIV":52.8,"atmPutIV":50.9,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":2090,"putDV":0,"dv":2090}},{"date":"2026-04-20","sector":"Healthcare","exp1":{"label":"2026-05-15","callIV":72.3,"putIV":80.9,"atmCallIV":76.2,"atmPutIV":73.7,"atmBandCallIV":84,"atmBandPutIV":73.7,"atmCallDV":665107,"atmPutDV":83408,"deepOTMCallPct":59.4,"deepOTMPutPct":25.6,"callDV":62773,"putDV":134565,"dv":197338},"exp2":{"label":"2026-06-18","callIV":56.5,"putIV":0,"atmCallIV":59.8,"atmPutIV":31.9,"atmBandCallIV":63,"atmBandPutIV":0,"atmCallDV":65307,"atmPutDV":0,"deepOTMCallPct":100,"deepOTMPutPct":0,"callDV":4628,"putDV":0,"dv":4628},"exp3":{"label":"2026-09-18","callIV":51,"putIV":0,"atmCallIV":51.1,"atmPutIV":51.1,"atmBandCallIV":52,"atmBandPutIV":0,"atmCallDV":110150,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":8925,"putDV":0,"dv":8925}},{"date":"2026-04-21","sector":"Healthcare","exp1":{"label":"2026-05-15","callIV":80.9,"putIV":83.2,"atmCallIV":81.2,"atmPutIV":75.2,"atmBandCallIV":87.5,"atmBandPutIV":75,"atmCallDV":39054,"atmPutDV":110018,"deepOTMCallPct":13.8,"deepOTMPutPct":14.6,"callDV":298743,"putDV":295922,"dv":594665},"exp2":{"label":"2026-06-18","callIV":62.2,"putIV":60.8,"atmCallIV":63.9,"atmPutIV":53,"atmBandCallIV":65.7,"atmBandPutIV":0,"atmCallDV":34515,"atmPutDV":0,"deepOTMCallPct":8.3,"deepOTMPutPct":0,"callDV":68422,"putDV":1250,"dv":69672},"exp3":{"label":"2026-09-18","callIV":51.6,"putIV":55.3,"atmCallIV":53.6,"atmPutIV":49.2,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":100,"callDV":7670.000000000001,"putDV":325,"dv":7995.000000000001}},{"date":"2026-04-22","sector":"Healthcare","exp1":{"label":"2026-05-15","callIV":74.4,"putIV":95.7,"atmCallIV":78.5,"atmPutIV":77.2,"atmBandCallIV":83.8,"atmBandPutIV":78.5,"atmCallDV":44950,"atmPutDV":3323,"deepOTMCallPct":52.4,"deepOTMPutPct":76,"callDV":15157,"putDV":36205,"dv":51362},"exp2":{"label":"2026-06-18","callIV":59.8,"putIV":0,"atmCallIV":61.8,"atmPutIV":42.8,"atmBandCallIV":64,"atmBandPutIV":0,"atmCallDV":40120,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":15900,"putDV":0,"dv":15900},"exp3":{"label":"2026-09-18","callIV":51.1,"putIV":50.6,"atmCallIV":51.4,"atmPutIV":52.3,"atmBandCallIV":53.2,"atmBandPutIV":0,"atmCallDV":3290,"atmPutDV":0,"deepOTMCallPct":18.8,"deepOTMPutPct":100,"callDV":2771,"putDV":370,"dv":3141}},{"date":"2026-04-23","sector":"Healthcare","dailyReturn":-1.9847639655532139,"exp1":{"label":"2026-05-15","callIV":84.1,"putIV":88,"atmCallIV":90,"atmPutIV":78.2,"atmBandCallIV":116.5,"atmBandPutIV":78.2,"atmCallDV":264350,"atmPutDV":7351,"deepOTMCallPct":24.9,"deepOTMPutPct":100,"callDV":41961,"putDV":1930,"dv":43891},"exp2":{"label":"2026-06-18","callIV":61.9,"putIV":59.3,"atmCallIV":67,"atmPutIV":50.4,"atmBandCallIV":69.5,"atmBandPutIV":0,"atmCallDV":7670,"atmPutDV":0,"deepOTMCallPct":30.8,"deepOTMPutPct":100,"callDV":2010,"putDV":1240,"dv":3250},"exp3":{"label":"2026-09-18","callIV":51.9,"putIV":0,"atmCallIV":55.2,"atmPutIV":51.8,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":44.8,"deepOTMPutPct":0,"callDV":9900,"putDV":0,"dv":9900}},{"date":"2026-04-24","sector":"Healthcare","dailyReturn":2.0249545334520054,"exp1":{"label":"2026-05-15","callIV":92.6,"putIV":98.1,"atmCallIV":91.3,"atmPutIV":81.4,"atmBandCallIV":91.5,"atmBandPutIV":0,"atmCallDV":133834,"atmPutDV":0,"deepOTMCallPct":2,"deepOTMPutPct":97.4,"callDV":32190,"putDV":182895,"dv":215085},"exp2":{"label":"2026-06-18","callIV":61.5,"putIV":66.8,"atmCallIV":66.7,"atmPutIV":41.2,"atmBandCallIV":76.3,"atmBandPutIV":0,"atmCallDV":264690,"atmPutDV":0,"deepOTMCallPct":57.2,"deepOTMPutPct":100,"callDV":7100,"putDV":500,"dv":7600},"exp3":{"label":"2026-09-18","callIV":51.9,"putIV":0,"atmCallIV":57.5,"atmPutIV":52.4,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":40.1,"deepOTMPutPct":0,"callDV":3138,"putDV":0,"dv":3138}},{"date":"2026-04-26","sector":"Healthcare","dailyReturn":1.773207898160277,"exp1":{"label":"2026-05-15","callIV":87.6,"putIV":100.5,"atmCallIV":90.3,"atmPutIV":84.8,"atmBandCallIV":104.7,"atmBandPutIV":0,"atmCallDV":236041,"atmPutDV":0,"deepOTMCallPct":6.6,"deepOTMPutPct":97.7,"callDV":46146,"putDV":211199,"dv":257345},"exp2":{"label":"2026-06-18","callIV":60.7,"putIV":64.9,"atmCallIV":65.7,"atmPutIV":43.5,"atmBandCallIV":72.1,"atmBandPutIV":0,"atmCallDV":388490,"atmPutDV":0,"deepOTMCallPct":22.3,"deepOTMPutPct":100,"callDV":18170,"putDV":500,"dv":18670},"exp3":{"label":"2026-09-18","callIV":51.9,"putIV":0,"atmCallIV":54.2,"atmPutIV":53,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":36.7,"deepOTMPutPct":0,"callDV":6042,"putDV":0,"dv":6042}},{"date":"2026-04-27","sector":"Healthcare","dailyReturn":0.7743531569306007,"exp1":{"label":"2026-05-15","callIV":87.5,"putIV":101.1,"atmCallIV":96.5,"atmPutIV":92,"atmBandCallIV":99.4,"atmBandPutIV":91.1,"atmCallDV":136929,"atmPutDV":27350,"deepOTMCallPct":65,"deepOTMPutPct":24.1,"callDV":216286,"putDV":3284765,"dv":3501051},"exp2":{"label":"2026-06-18","callIV":60.6,"putIV":83.1,"atmCallIV":67.5,"atmPutIV":40.5,"atmBandCallIV":68.3,"atmBandPutIV":0,"atmCallDV":88650,"atmPutDV":0,"deepOTMCallPct":65.7,"deepOTMPutPct":77.5,"callDV":25867,"putDV":58932,"dv":84799},"exp3":{"label":"2026-09-18","callIV":52.8,"putIV":53.7,"atmCallIV":55.2,"atmPutIV":52.9,"atmBandCallIV":55.2,"atmBandPutIV":0,"atmCallDV":8662,"atmPutDV":0,"deepOTMCallPct":22,"deepOTMPutPct":7,"callDV":46386,"putDV":56910,"dv":103296}},{"date":"2026-04-28","sector":"Healthcare","dailyReturn":-1.280679815715511,"exp1":{"label":"2026-05-15","callIV":89.7,"putIV":111.2,"atmCallIV":95.7,"atmPutIV":106.4,"atmBandCallIV":97,"atmBandPutIV":104.7,"atmCallDV":162800,"atmPutDV":45060,"deepOTMCallPct":59.9,"deepOTMPutPct":56.8,"callDV":183515,"putDV":169669,"dv":353184},"exp2":{"label":"2026-06-18","callIV":63.2,"putIV":75.2,"atmCallIV":67.1,"atmPutIV":52,"atmBandCallIV":68.1,"atmBandPutIV":0,"atmCallDV":75970,"atmPutDV":0,"deepOTMCallPct":6.8,"deepOTMPutPct":100,"callDV":31045,"putDV":2342,"dv":33387},"exp3":{"label":"2026-09-18","callIV":52.7,"putIV":0,"atmCallIV":53.4,"atmPutIV":52,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":29550,"putDV":0,"dv":29550}},{"date":"2026-04-29","sector":"Healthcare","dailyReturn":-0.5675692171663851,"exp1":{"label":"2026-05-15","callIV":92.8,"putIV":103,"atmCallIV":100.4,"atmPutIV":98.5,"atmBandCallIV":106.3,"atmBandPutIV":98.6,"atmCallDV":75975,"atmPutDV":7262.000000000001,"deepOTMCallPct":69.1,"deepOTMPutPct":15.8,"callDV":85585,"putDV":73553,"dv":159138,"calls":[{"strike":190,"dv":11250,"iv":9923.1},{"strike":195,"dv":2170,"iv":9393.3},{"strike":200,"dv":13000,"iv":9511.7},{"strike":210,"dv":9920,"iv":9067.4},{"strike":220,"dv":26520,"iv":9121.1},{"strike":230,"dv":6720,"iv":9455.6},{"strike":240,"dv":7920,"iv":9856},{"strike":250,"dv":7705,"iv":7978.5},{"strike":260,"dv":380,"iv":8701.2}],"puts":[{"strike":125,"dv":1826,"iv":13139.7},{"strike":140,"dv":870,"iv":11674.8},{"strike":150,"dv":4104,"iv":10644.6},{"strike":155,"dv":3420,"iv":10452.9},{"strike":160,"dv":1426,"iv":10647},{"strike":170,"dv":2997,"iv":10153.9},{"strike":175,"dv":30250,"iv":10363.8},{"strike":180,"dv":28660,"iv":9941.4}]},"exp2":{"label":"2026-06-18","callIV":66.3,"putIV":68.1,"atmCallIV":68.8,"atmPutIV":52.9,"atmBandCallIV":89.7,"atmBandPutIV":0,"atmCallDV":29982,"atmPutDV":0,"deepOTMCallPct":23,"deepOTMPutPct":100,"callDV":8285,"putDV":49109.99999999999,"dv":57394.99999999999,"calls":[{"strike":190,"dv":6380,"iv":6804.2},{"strike":210,"dv":865,"iv":6192.7},{"strike":220,"dv":590,"iv":5965.6},{"strike":230,"dv":450,"iv":5817.9}],"puts":[{"strike":130,"dv":2320,"iv":7746.6},{"strike":150,"dv":790,"iv":7117.3},{"strike":165,"dv":46000,"iv":6757.8}]},"exp3":{"label":"2026-09-18","callIV":54.8,"putIV":65.9,"atmCallIV":55.7,"atmPutIV":51.2,"atmBandCallIV":55.7,"atmBandPutIV":0,"atmCallDV":258000,"atmPutDV":0,"deepOTMCallPct":2.3,"deepOTMPutPct":100,"callDV":51545,"putDV":150,"dv":51695,"calls":[{"strike":190,"dv":48400,"iv":5490.8},{"strike":200,"dv":1940,"iv":5417.8},{"strike":220,"dv":1205,"iv":5060.5}],"puts":[{"strike":100,"dv":150,"iv":6591.8}]}},{"date":"2026-04-30","sector":"Healthcare","dailyReturn":12.310412964471285,"exp1":{"label":"2026-05-15","callIV":54,"putIV":57,"atmCallIV":54.2,"atmPutIV":49.4,"atmBandCallIV":63.9,"atmBandPutIV":0,"atmCallDV":756665,"atmPutDV":0,"deepOTMCallPct":5.1,"deepOTMPutPct":98.1,"callDV":500440,"putDV":128859.00000000001,"dv":629299,"calls":[{"strike":210,"dv":412050,"iv":5407.8},{"strike":220,"dv":63000,"iv":5294.2},{"strike":230,"dv":7350,"iv":5350.4},{"strike":240,"dv":3325,"iv":5044},{"strike":250,"dv":10800,"iv":5683.6},{"strike":260,"dv":3825,"iv":6108.4},{"strike":280,"dv":90,"iv":9235.8}],"puts":[{"strike":120,"dv":64,"iv":15771.5},{"strike":125,"dv":206,"iv":14829.1},{"strike":130,"dv":170,"iv":13779.3},{"strike":135,"dv":5,"iv":12827.2},{"strike":140,"dv":699,"iv":11967.8},{"strike":145,"dv":20,"iv":11015.7},{"strike":150,"dv":75,"iv":10254},{"strike":155,"dv":1870,"iv":7919.9},{"strike":160,"dv":777,"iv":8696.3},{"strike":165,"dv":6402,"iv":6645.5},{"strike":170,"dv":912,"iv":5205.1},{"strike":175,"dv":112280,"iv":5532.3},{"strike":180,"dv":412,"iv":5527.4},{"strike":185,"dv":2472,"iv":5761.8},{"strike":195,"dv":1515,"iv":5206.3},{"strike":200,"dv":980,"iv":4942.7}]},"exp2":{"label":"2026-06-18","callIV":47.7,"putIV":47.8,"atmCallIV":47.2,"atmPutIV":44.9,"atmBandCallIV":66.1,"atmBandPutIV":45.7,"atmCallDV":535785,"atmPutDV":7525,"deepOTMCallPct":53.9,"deepOTMPutPct":82.3,"callDV":96828,"putDV":31088,"dv":127916,"calls":[{"strike":210,"dv":37200,"iv":4700.4},{"strike":220,"dv":7400,"iv":4858.4},{"strike":230,"dv":51500,"iv":4809},{"strike":240,"dv":728,"iv":5018.4}],"puts":[{"strike":120,"dv":110,"iv":8964.9},{"strike":135,"dv":110,"iv":7329.1},{"strike":140,"dv":270,"iv":6836},{"strike":145,"dv":2142,"iv":6357.5},{"strike":150,"dv":441,"iv":5886.3},{"strike":160,"dv":250,"iv":5089.2},{"strike":165,"dv":270,"iv":5797.2},{"strike":170,"dv":185,"iv":5482.2},{"strike":175,"dv":900,"iv":5135.5},{"strike":180,"dv":20910,"iv":4613.1},{"strike":200,"dv":5500,"iv":4347}]},"exp3":{"label":"2026-09-18","callIV":47.6,"putIV":58.1,"atmCallIV":48.4,"atmPutIV":42.5,"atmBandCallIV":51.4,"atmBandPutIV":0,"atmCallDV":405206,"atmPutDV":0,"deepOTMCallPct":7.3,"deepOTMPutPct":100,"callDV":30424,"putDV":248,"dv":30672,"calls":[{"strike":210,"dv":24750,"iv":4775.7},{"strike":220,"dv":3454,"iv":4734.5},{"strike":250,"dv":2220,"iv":4614.9}],"puts":[{"strike":140,"dv":248,"iv":5808.1}]}},{"date":"2026-05-01","sector":"Healthcare","dailyReturn":-0.5872448715779182,"exp1":{"label":"2026-05-15","callIV":51.6,"putIV":56.5,"atmCallIV":54.7,"atmPutIV":56,"atmBandCallIV":58.4,"atmBandPutIV":0,"atmCallDV":384771,"atmPutDV":0,"deepOTMCallPct":25,"deepOTMPutPct":36.2,"callDV":107025,"putDV":68108,"dv":175133,"calls":[{"strike":210,"dv":57960,"iv":5243},{"strike":220,"dv":22330,"iv":5206.3},{"strike":230,"dv":22100,"iv":4865.8},{"strike":240,"dv":2460,"iv":5019.6},{"strike":250,"dv":1375,"iv":5107.5},{"strike":260,"dv":360,"iv":5673.9},{"strike":270,"dv":300,"iv":7768.6},{"strike":280,"dv":140,"iv":6171.9}],"puts":[{"strike":130,"dv":350,"iv":12695.3},{"strike":140,"dv":240,"iv":8945.3},{"strike":150,"dv":15,"iv":9887.7},{"strike":155,"dv":2580,"iv":8803.7},{"strike":160,"dv":231,"iv":7412.1},{"strike":165,"dv":141,"iv":5869.2},{"strike":170,"dv":2392,"iv":6162.1},{"strike":175,"dv":3150,"iv":5925.3},{"strike":180,"dv":9152,"iv":5322.3},{"strike":185,"dv":6400,"iv":5227.1},{"strike":190,"dv":14427,"iv":5139.2},{"strike":195,"dv":7030,"iv":5698.3},{"strike":200,"dv":22000,"iv":5599.4}]},"exp2":{"label":"2026-06-18","callIV":44.2,"putIV":44.7,"atmCallIV":46,"atmPutIV":42.4,"atmBandCallIV":53.9,"atmBandPutIV":42.4,"atmCallDV":175572,"atmPutDV":7250,"deepOTMCallPct":23.2,"deepOTMPutPct":92.4,"callDV":31247,"putDV":41990,"dv":73237,"calls":[{"strike":210,"dv":14400,"iv":4560},{"strike":220,"dv":9600,"iv":4294.5},{"strike":230,"dv":7030,"iv":4284.1},{"strike":240,"dv":217,"iv":4543.5}],"puts":[{"strike":130,"dv":60,"iv":7670.9},{"strike":155,"dv":210,"iv":5449.3},{"strike":160,"dv":480,"iv":5556.7},{"strike":170,"dv":850,"iv":4917},{"strike":180,"dv":37210,"iv":4454.4},{"strike":200,"dv":3180,"iv":4244.4}]},"exp3":{"label":"2026-09-18","callIV":43.9,"putIV":41.5,"atmCallIV":46.5,"atmPutIV":40.7,"atmBandCallIV":47.7,"atmBandPutIV":40.6,"atmCallDV":41192,"atmPutDV":2325,"deepOTMCallPct":25.6,"deepOTMPutPct":100,"callDV":25228,"putDV":1110,"dv":26338,"calls":[{"strike":210,"dv":2045,"iv":4603.3},{"strike":220,"dv":16720,"iv":4424.5},{"strike":230,"dv":2348,"iv":4337.8},{"strike":250,"dv":3600,"iv":4155},{"strike":260,"dv":515,"iv":4213.6}],"puts":[{"strike":180,"dv":1110,"iv":4150.8}]}},{"date":"2026-05-03","sector":"Healthcare","dailyReturn":-0.5872448715779182,"exp1":{"label":"2026-05-15","callIV":55.4,"putIV":56.9,"atmCallIV":54.7,"atmPutIV":50.9,"atmBandCallIV":55.8,"atmBandPutIV":0,"atmCallDV":384771,"atmPutDV":0,"deepOTMCallPct":25,"deepOTMPutPct":36.2,"callDV":107025,"putDV":68108,"dv":175133,"calls":[{"strike":210,"dv":57960,"iv":5632.4},{"strike":220,"dv":22330,"iv":5592.1},{"strike":230,"dv":22100,"iv":5227.1},{"strike":240,"dv":2460,"iv":5254},{"strike":250,"dv":1375,"iv":5488.3},{"strike":260,"dv":360,"iv":6093.8},{"strike":270,"dv":300,"iv":8344.7},{"strike":280,"dv":140,"iv":6640.7}],"puts":[{"strike":130,"dv":350,"iv":13632.8},{"strike":140,"dv":240,"iv":9609.4},{"strike":150,"dv":15,"iv":10620.2},{"strike":155,"dv":2580,"iv":9453.1},{"strike":160,"dv":231,"iv":7963.9},{"strike":165,"dv":141,"iv":6298.9},{"strike":170,"dv":2392,"iv":6621.1},{"strike":175,"dv":3150,"iv":6362.3},{"strike":180,"dv":9152,"iv":5717.8},{"strike":185,"dv":6400,"iv":5615.3},{"strike":190,"dv":14427,"iv":5520.1},{"strike":195,"dv":7030,"iv":5337},{"strike":200,"dv":22000,"iv":5087.9}]},"exp2":{"label":"2026-06-18","callIV":45.1,"putIV":45.5,"atmCallIV":47,"atmPutIV":43.3,"atmBandCallIV":50,"atmBandPutIV":43.3,"atmCallDV":175572,"atmPutDV":7250,"deepOTMCallPct":23.2,"deepOTMPutPct":92.4,"callDV":31247,"putDV":41990,"dv":73237,"calls":[{"strike":210,"dv":14400,"iv":4655.8},{"strike":220,"dv":9600,"iv":4384.8},{"strike":230,"dv":7030,"iv":4374.4},{"strike":240,"dv":217,"iv":4639.3}],"puts":[{"strike":130,"dv":60,"iv":7832.1},{"strike":155,"dv":210,"iv":5078.2},{"strike":160,"dv":480,"iv":5044},{"strike":170,"dv":850,"iv":5019.6},{"strike":180,"dv":37210,"iv":4548.4},{"strike":200,"dv":3180,"iv":4334.2}]},"exp3":{"label":"2026-09-18","callIV":44.2,"putIV":41.8,"atmCallIV":46.8,"atmPutIV":41,"atmBandCallIV":48.1,"atmBandPutIV":40.9,"atmCallDV":41192,"atmPutDV":2325,"deepOTMCallPct":25.6,"deepOTMPutPct":100,"callDV":25228,"putDV":1110,"dv":26338,"calls":[{"strike":210,"dv":2045,"iv":4636.6},{"strike":220,"dv":16720,"iv":4456.2},{"strike":230,"dv":2348,"iv":4369},{"strike":250,"dv":3600,"iv":4184.6},{"strike":260,"dv":515,"iv":4243.8}],"puts":[{"strike":180,"dv":1110,"iv":4180.4}]}},{"date":"2026-05-04","sector":"Healthcare","dailyReturn":-0.5872448715779182,"exp1":{"label":"2026-05-15","callIV":6.4,"putIV":10.7,"atmCallIV":2,"atmPutIV":1.1,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":384771,"atmPutDV":37050,"deepOTMCallPct":25,"deepOTMPutPct":36.2,"callDV":107025,"putDV":68108,"dv":175133,"calls":[{"strike":210,"dv":57960,"iv":312.6},{"strike":220,"dv":22330,"iv":625.1},{"strike":230,"dv":22100,"iv":1250.1},{"strike":240,"dv":2460,"iv":1250.1},{"strike":250,"dv":1375,"iv":2500.1},{"strike":260,"dv":360,"iv":2500.1},{"strike":270,"dv":300,"iv":2500.1},{"strike":280,"dv":140,"iv":2500.1}],"puts":[{"strike":130,"dv":350,"iv":5000.1},{"strike":140,"dv":240,"iv":5000.1},{"strike":150,"dv":15,"iv":5000.1},{"strike":155,"dv":2580,"iv":2500.1},{"strike":160,"dv":231,"iv":2500.1},{"strike":165,"dv":141,"iv":2500.1},{"strike":170,"dv":2392,"iv":2500.1},{"strike":175,"dv":3150,"iv":2500.1},{"strike":180,"dv":9152,"iv":1250.1},{"strike":185,"dv":6400,"iv":1250.1},{"strike":190,"dv":14427,"iv":1250.1},{"strike":195,"dv":7030,"iv":625.1},{"strike":200,"dv":22000,"iv":312.6}]},"exp2":{"label":"2026-06-18","callIV":3.2,"putIV":6.2,"atmCallIV":1,"atmPutIV":0.5,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":175572,"atmPutDV":17270,"deepOTMCallPct":23.2,"deepOTMPutPct":83.9,"callDV":31247,"putDV":46260,"dv":77507,"calls":[{"strike":210,"dv":14400,"iv":156.3},{"strike":220,"dv":9600,"iv":312.6},{"strike":230,"dv":7030,"iv":625.1},{"strike":240,"dv":217,"iv":1250.1}],"puts":[{"strike":130,"dv":60,"iv":2500.1},{"strike":155,"dv":210,"iv":1250.1},{"strike":160,"dv":480,"iv":1250.1},{"strike":170,"dv":850,"iv":1250.1},{"strike":180,"dv":37210,"iv":625.1},{"strike":190,"dv":4270,"iv":625.1},{"strike":200,"dv":3180,"iv":156.3}]},"exp3":{"label":"2026-09-18","callIV":3.5,"putIV":6.3,"atmCallIV":0.5,"atmPutIV":0.7,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":41192,"atmPutDV":2325,"deepOTMCallPct":26.2,"deepOTMPutPct":100,"callDV":25413,"putDV":1110,"dv":26523,"calls":[{"strike":210,"dv":2045,"iv":78.2},{"strike":220,"dv":16720,"iv":312.6},{"strike":230,"dv":2348,"iv":312.6},{"strike":250,"dv":3600,"iv":625.1},{"strike":260,"dv":515,"iv":625.1},{"strike":280,"dv":185,"iv":1250.1}],"puts":[{"strike":180,"dv":1110,"iv":625.1}]}}]};
+  // Combine IV from a saved history record (exp1/exp2/exp3), weighted by dv if available.
+  // Single-pool combine of a history record across expirations;
+  // old records fall back to legacy combined DV + single-strike ATM.
+  function combineHist(record) {
+    const exps = [];
+    for (const key of ['exp1', 'exp2', 'exp3']) {
+      const e = record[key];
+      if (!e || (e.callIV <= 0 && e.putIV <= 0)) continue;
+      exps.push(e);
+    }
+    if (exps.length === 0) return null;
+
+    function pool(valueFn, weightFn) {
+      var vals = [];
+      for (var i = 0; i < exps.length; i++) {
+        var v = valueFn(exps[i]);
+        if (v == null) continue;
+        var w = weightFn(exps[i]);
+        vals.push({ v: v, w: w > 0 ? w : 0 });
+      }
+      if (vals.length === 0) return null;
+      var sumW = 0, sumVW = 0;
+      for (var j = 0; j < vals.length; j++) { sumW += vals[j].w; sumVW += vals[j].v * vals[j].w; }
+      if (sumW > 0) return sumVW / sumW;
+      var sumV = 0;
+      for (var k = 0; k < vals.length; k++) sumV += vals[k].v;
+      return sumV / vals.length;
+    }
+    function legacyDV(e) { return e.dv || 0; }
+
+    var callIV = pool(
+      function(e) { return e.callIV > 0 ? e.callIV : null; },
+      function(e) { return e.callDV != null ? e.callDV : legacyDV(e); }
+    ) || 0;
+    var putIV = pool(
+      function(e) { return e.putIV > 0 ? e.putIV : null; },
+      function(e) { return e.putDV != null ? e.putDV : legacyDV(e); }
+    ) || 0;
+    var atmCallIV = pool(
+      function(e) { return (e.atmBandCallIV != null && e.atmBandCallIV > 0) ? e.atmBandCallIV : (e.atmCallIV != null ? e.atmCallIV : null); },
+      function(e) { return e.atmCallDV != null ? e.atmCallDV : legacyDV(e); }
+    );
+    var atmPutIV = pool(
+      function(e) { return (e.atmBandPutIV != null && e.atmBandPutIV > 0) ? e.atmBandPutIV : (e.atmPutIV != null ? e.atmPutIV : null); },
+      function(e) { return e.atmPutDV != null ? e.atmPutDV : legacyDV(e); }
+    );
+
+    return { callIV: callIV, putIV: putIV, atmCallIV: atmCallIV, atmPutIV: atmPutIV };
+  }
+  // Favorite star click handler
+  let favToastTimer = null;
+  function showFavToast(msg, success) {
+    const el = document.getElementById('fav-toast');
+    el.textContent = msg;
+    el.style.background = success ? '#4caf50' : '#f44336';
+    el.classList.add('show');
+    clearTimeout(favToastTimer);
+    favToastTimer = setTimeout(() => el.classList.remove('show'), 1500);
+  }
+
+  // Ticker notes: debounced autosave
+  const noteTimers = {};
+  document.querySelectorAll('.ticker-note').forEach(ta => {
+    const ticker = ta.getAttribute('data-ticker');
+    const statusEl = document.querySelector('.note-status[data-ticker="' + ticker + '"]');
+    const save = async () => {
+      if (!window.electronAPI || !window.electronAPI.saveNote) return;
+      if (statusEl) statusEl.textContent = 'saving…';
+      try {
+        await window.electronAPI.saveNote(ticker, ta.value);
+        if (statusEl) {
+          statusEl.textContent = 'saved';
+          setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 1200);
+        }
+        // Update note indicator next to ticker
+        const row = document.querySelector('tr.data-row[data-ticker="' + ticker + '"]');
+        if (row) {
+          const cell = row.children[1];
+          if (cell) {
+            const existing = cell.querySelector('span[title="Has note"]');
+            const hasText = ta.value.trim().length > 0;
+            if (hasText && !existing) {
+              const span = document.createElement('span');
+              span.setAttribute('title', 'Has note');
+              span.style.fontSize = '0.75em';
+              span.textContent = ' 📝';
+              cell.appendChild(span);
+            } else if (!hasText && existing) {
+              existing.remove();
+            }
+          }
+        }
+      } catch (err) {
+        if (statusEl) statusEl.textContent = 'failed';
+      }
+    };
+    ta.addEventListener('input', () => {
+      clearTimeout(noteTimers[ticker]);
+      noteTimers[ticker] = setTimeout(save, 700);
+    });
+    ta.addEventListener('blur', () => {
+      clearTimeout(noteTimers[ticker]);
+      save();
+    });
+    ta.addEventListener('click', (e) => e.stopPropagation());
+  });
+
+  document.querySelectorAll('.fav-star').forEach(star => {
+    star.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const ticker = star.getAttribute('data-ticker');
+      if (!ticker || !window.electronAPI || !window.electronAPI.toggleFavorite) return;
+      if (star.dataset.busy) return;
+      star.dataset.busy = '1';
+      try {
+        const result = await window.electronAPI.toggleFavorite(ticker);
+        const supers = result.superFavorites || [];
+        const favs = result.favorites || [];
+        const isSuper = supers.includes(ticker);
+        const isFav = !isSuper && favs.includes(ticker);
+        const level = isSuper ? 2 : (isFav ? 1 : 0);
+        star.textContent = level > 0 ? '\u2605' : '\u2606';
+        star.style.color = isSuper ? '#e53935' : (isFav ? '#f5c518' : '#ccc');
+        star.title = isSuper ? 'Super favorite (click to clear)' : (isFav ? 'Favorite (click to make super)' : 'Click to favorite');
+        star.closest('td').setAttribute('data-v', String(level));
+        const msg = isSuper ? ticker + ' is now a super favorite \u2B50' : (isFav ? ticker + ' added to favorites' : ticker + ' removed from favorites');
+        showFavToast(msg, true);
+      } catch (err) {
+        showFavToast('Failed to update ' + ticker, false);
+      }
+      delete star.dataset.busy;
+    });
+  });
+
+  const classColors = {
+    surprising_positive: '#4caf50',
+    positive_anticipated: '#8bc34a',
+    negative_anticipated: '#ff9800',
+    surprising_negative: '#f44336',
+  };
+  const classNames = {
+    surprising_positive: 'Surprising +',
+    positive_anticipated: 'Anticipated +',
+    negative_anticipated: 'Anticipated -',
+    surprising_negative: 'Surprising -',
+  };
+
+  const renderedCharts = {};
+
+  function pairwiseCorrelation(tickerA, tickerB) {
+    const cdA = chartDataMap[tickerA];
+    const cdB = chartDataMap[tickerB];
+    if (!cdA || !cdB || !cdA.dates || !cdB.dates) return null;
+
+    const dateIdxA = {};
+    for (let i = 0; i < cdA.dates.length; i++) dateIdxA[cdA.dates[i]] = i;
+
+    const retA = [], retB = [];
+    let prevIdxA = -1, prevIdxB = -1;
+    for (let j = 0; j < cdB.dates.length; j++) {
+      const idxA = dateIdxA[cdB.dates[j]];
+      if (idxA == null) continue;
+      if (prevIdxA >= 0 && prevIdxB >= 0 && idxA === prevIdxA + 1 && j === prevIdxB + 1) {
+        if (cdA.closes[prevIdxA] > 0 && cdB.closes[prevIdxB] > 0) {
+          retA.push(Math.log(cdA.closes[idxA] / cdA.closes[prevIdxA]));
+          retB.push(Math.log(cdB.closes[j] / cdB.closes[prevIdxB]));
+        }
+      }
+      prevIdxA = idxA;
+      prevIdxB = j;
+    }
+
+    if (retA.length < 20) return null;
+
+    const n = retA.length;
+    let sx = 0, sy = 0, sxy = 0, sx2 = 0, sy2 = 0;
+    for (let k = 0; k < n; k++) {
+      sx += retA[k]; sy += retB[k];
+      sxy += retA[k] * retB[k];
+      sx2 += retA[k] * retA[k];
+      sy2 += retB[k] * retB[k];
+    }
+    const denom = Math.sqrt((n * sx2 - sx * sx) * (n * sy2 - sy * sy));
+    return denom > 0 ? (n * sxy - sx * sy) / denom : 0;
+  }
+
+  function corrColor(r) {
+    const abs = Math.abs(r);
+    if (r < 0) return 'rgba(76, 175, 80, ' + (0.5 + abs * 0.5) + ')';
+    if (abs < 0.3) return 'rgba(76, 175, 80, 0.7)';
+    if (abs < 0.6) return 'rgba(255, 193, 7, ' + (0.6 + (abs - 0.3) * 1.3) + ')';
+    return 'rgba(244, 67, 54, ' + (0.6 + (abs - 0.6) * 1.0) + ')';
+  }
+
+  // Portfolio correlation checker
+  document.getElementById('portfolio-corr-btn').addEventListener('click', () => {
+    const raw = document.getElementById('portfolio-corr-input').value;
+    const tickers = raw.split(',').map(t => t.trim().toUpperCase()).filter(t => t.length > 0);
+    const resultDiv = document.getElementById('portfolio-corr-result');
+
+    if (tickers.length < 2) {
+      resultDiv.innerHTML = '<span style="color:#888; font-size:0.9em;">Enter at least 2 tickers separated by commas.</span>';
+      return;
+    }
+
+    const missing = tickers.filter(t => !chartDataMap[t]);
+    if (missing.length > 0) {
+      resultDiv.innerHTML = '<span style="color:#c62828; font-size:0.9em;">Not in screening data: ' + missing.join(', ') + '</span>';
+      return;
+    }
+
+    // Compute all pairwise correlations
+    const pairs = [];
+    for (let i = 0; i < tickers.length; i++) {
+      for (let j = i + 1; j < tickers.length; j++) {
+        const r = pairwiseCorrelation(tickers[i], tickers[j]);
+        pairs.push({ a: tickers[i], b: tickers[j], r });
+      }
+    }
+
+    const valid = pairs.filter(p => p.r !== null);
+    if (valid.length === 0) {
+      resultDiv.innerHTML = '<span style="color:#888; font-size:0.9em;">Not enough overlapping data to compute correlations.</span>';
+      return;
+    }
+
+    const avgCorr = valid.reduce((s, p) => s + p.r, 0) / valid.length;
+    const maxCorr = Math.max(...valid.map(p => p.r));
+    const minCorr = Math.min(...valid.map(p => p.r));
+
+    // Verdict
+    let verdict, verdictColor;
+    if (avgCorr >= 0.7) { verdict = 'Highly correlated — low diversification'; verdictColor = '#c62828'; }
+    else if (avgCorr >= 0.5) { verdict = 'Moderately correlated'; verdictColor = '#ef6c00'; }
+    else if (avgCorr >= 0.3) { verdict = 'Moderately diversified'; verdictColor = '#f9a825'; }
+    else { verdict = 'Well diversified — low correlation'; verdictColor = '#2e7d32'; }
+
+    let html = '<div style="margin-bottom:6px;"><span style="font-weight:700; font-size:1.05em; color:' + verdictColor + ';">' + verdict + '</span>';
+    html += '<span style="color:#888; margin-left:12px; font-size:0.9em;">avg ' + avgCorr.toFixed(3) + ' &nbsp;|&nbsp; range ' + minCorr.toFixed(3) + ' to ' + maxCorr.toFixed(3) + '</span></div>';
+
+    // Pair table
+    html += '<table style="width:100%; border-collapse:collapse; font-size:0.9em; margin-top:4px;">';
+    html += '<tr style="color:#888; font-size:0.8em; text-transform:uppercase; letter-spacing:0.5px;"><th style="text-align:left; padding:4px 8px;">Pair</th><th style="text-align:right; padding:4px 8px;">Correlation</th></tr>';
+    valid.sort((a, b) => b.r - a.r);
+    for (const p of valid) {
+      const color = corrColor(p.r);
+      html += '<tr style="border-top:1px solid #eee;">' +
+        '<td style="padding:4px 8px;">' + p.a + ' / ' + p.b + '</td>' +
+        '<td style="padding:4px 8px; text-align:right; color:' + color + '; font-weight:600;">' + p.r.toFixed(3) + '</td>' +
+        '</tr>';
+    }
+    const skipped = pairs.filter(p => p.r === null);
+    if (skipped.length > 0) {
+      for (const p of skipped) {
+        html += '<tr style="border-top:1px solid #eee;">' +
+          '<td style="padding:4px 8px; color:#bbb;">' + p.a + ' / ' + p.b + '</td>' +
+          '<td style="padding:4px 8px; text-align:right; color:#bbb;">insufficient data</td></tr>';
+      }
+    }
+    html += '</table>';
+    resultDiv.innerHTML = html;
+  });
+
+  document.getElementById('portfolio-corr-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('portfolio-corr-btn').click();
+  });
+
+  // Click handler for data rows
+  document.querySelectorAll('tr.data-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      const ticker = row.getAttribute('data-ticker');
+      const chartRow = document.querySelector('tr.chart-row[data-chart-for="' + ticker + '"]');
+      if (!chartRow) return;
+
+      const isVisible = chartRow.style.display !== 'none';
+      // Toggle arrow indicator
+      const arrow = row.querySelector('td:first-child span');
+      if (arrow) arrow.textContent = isVisible ? '\u25B6' : '\u25BC';
+
+      if (isVisible) {
+        chartRow.style.display = 'none';
+        return;
+      }
+
+      chartRow.style.display = '';
+
+      // Render chart if not yet done
+      if (!renderedCharts[ticker]) {
+        const cd = chartDataMap[ticker];
+        if (!cd) return;
+
+        const canvas = document.getElementById('chart-' + ticker);
+        if (!canvas) return;
+
+        // Build all datasets using numeric indices for x — avoids category/scatter misalignment
+        const eventsByClass = {};
+        for (const ev of cd.events) {
+          if (!eventsByClass[ev.classification]) eventsByClass[ev.classification] = [];
+          if (ev.idx != null && ev.idx < cd.dates.length) {
+            eventsByClass[ev.classification].push({ x: ev.idx, y: ev.y });
+          }
+        }
+
+        // Convert line and bar data to {x, y} indexed points so all datasets share the linear x scale
+        const pricePoints = cd.closes.map((v, i) => ({ x: i, y: v }));
+        const volumePoints = cd.volumes.map((v, i) => ({ x: i, y: v }));
+
+        const datasets = [{
+          label: 'Volume',
+          data: volumePoints,
+          type: 'bar',
+          backgroundColor: 'rgba(100, 100, 180, 0.25)',
+          borderColor: 'rgba(100, 100, 180, 0.4)',
+          borderWidth: 1,
+          yAxisID: 'yVol',
+          order: 2,
+        }, {
+          label: ticker + ' Close',
+          data: pricePoints,
+          borderColor: 'rgba(136, 176, 136, 0.8)',
+          backgroundColor: 'rgba(136, 176, 136, 0.1)',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: true,
+          yAxisID: 'y',
+          order: 1,
+        }];
+
+        for (const [cls, points] of Object.entries(eventsByClass)) {
+          datasets.push({
+            label: classNames[cls] || cls,
+            data: points,
+            type: 'scatter',
+            backgroundColor: classColors[cls] || '#ccc',
+            borderColor: classColors[cls] || '#ccc',
+            pointRadius: 7,
+            pointHoverRadius: 9,
+            yAxisID: 'y',
+            order: 0,
+          });
+        }
+
+        const dates = cd.dates;
+        renderedCharts[ticker] = new Chart(canvas, {
+          type: 'line',
+          data: { datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 300 },
+            plugins: {
+              title: { display: true, text: ticker + ' Price with Events', color: '#b0b0b0' },
+              legend: { labels: { color: '#909090', boxWidth: 12, font: { size: 11 } } },
+              tooltip: {
+                callbacks: {
+                  title: function(items) { return items[0] ? dates[items[0].parsed.x] || '' : ''; }
+                }
+              },
+            },
+            scales: {
+              x: {
+                type: 'linear',
+                ticks: {
+                  color: '#909090',
+                  maxTicksLimit: 12,
+                  font: { size: 10 },
+                  callback: function(val) { return dates[val] || ''; },
+                },
+                grid: { color: '#2a2a4a' },
+                min: 0,
+                max: dates.length - 1,
+              },
+              y: {
+                position: 'left',
+                ticks: { color: '#909090', font: { size: 10 } },
+                grid: { color: '#2a2a4a' },
+              },
+              yVol: {
+                position: 'right',
+                display: false,
+                beginAtZero: true,
+                max: Math.max(...(cd.volumes || [0])) * 4,
+                grid: { drawOnChartArea: false },
+              },
+            },
+          },
+        });
+
+        // Populate company summary
+        const sumEl = document.getElementById('summary-' + ticker);
+        if (sumEl && summaryMap[ticker]) {
+          sumEl.textContent = summaryMap[ticker];
+        }
+
+        // Render last-5-day DV (bars) + average IV (line) mini-chart next to summary
+        const dvIvCanvas = document.getElementById('dv-iv-chart-' + ticker);
+        const dvIvHist = ivHistoryMap[ticker];
+        if (dvIvCanvas && Array.isArray(dvIvHist) && dvIvHist.length > 0) {
+          const recent = dvIvHist.slice(-5);
+          const labels = recent.map(r => (r.date || '').slice(5));
+          const dvSeries = recent.map(r => {
+            let dv = 0;
+            for (const k of ['exp1', 'exp2', 'exp3']) {
+              const e = r[k];
+              if (!e) continue;
+              dv += (e.callDV || 0) + (e.putDV || 0);
+            }
+            return dv;
+          });
+          const ivSeries = recent.map(r => {
+            const c = combineHist(r);
+            if (!c) return null;
+            const vals = [];
+            if (c.callIV > 0) vals.push(c.callIV);
+            if (c.putIV > 0) vals.push(c.putIV);
+            if (!vals.length) return null;
+            return vals.reduce((s, v) => s + v, 0) / vals.length;
+          });
+
+          const dvIvDateMap = recent.map(r => r.date);
+          const renderStrikeBreakdown = (dateStr) => {
+            const rec = (ivHistoryMap[ticker] || []).find(r => r.date === dateStr);
+            const wrap = document.getElementById('dv-iv-strike-wrap-' + ticker);
+            const title = document.getElementById('dv-iv-strike-title-' + ticker);
+            const body = document.getElementById('dv-iv-strike-body-' + ticker);
+            if (!rec || !wrap || !body) return;
+            const exps = ['exp1', 'exp2', 'exp3'].map(k => rec[k]).filter(e => e && (e.calls || e.puts));
+            if (!exps.length) {
+              body.innerHTML = '<div style="color:#888; font-size:0.85em; padding:8px 0;">No per-strike data for ' + dateStr + ' (older snapshots stored aggregates only — newer dates will populate).</div>';
+              if (title) title.textContent = ticker + ' — ' + dateStr;
+              wrap.style.display = 'block';
+              return;
+            }
+            if (title) title.textContent = ticker + ' — ' + dateStr;
+            body.innerHTML = exps.map((_, i) => '<div style="display:inline-block; width:48%; margin-right:1%; vertical-align:top;"><div style="height:300px;"><canvas id="strike-hist-' + ticker + '-' + dateStr + '-' + i + '"></canvas></div></div>').join('');
+            wrap.style.display = 'block';
+            exps.forEach((e, i) => {
+              const cv = document.getElementById('strike-hist-' + ticker + '-' + dateStr + '-' + i);
+              if (!cv) return;
+              const strikeSet = new Set();
+              (e.calls || []).forEach(c => strikeSet.add(c.strike));
+              (e.puts || []).forEach(p => strikeSet.add(p.strike));
+              const strikes = Array.from(strikeSet).sort((a, b) => a - b);
+              const cMap = {}, pMap = {};
+              (e.calls || []).forEach(c => { cMap[c.strike] = c; });
+              (e.puts || []).forEach(p => { pMap[p.strike] = p; });
+              new Chart(cv, {
+                data: {
+                  labels: strikes.map(s => '$' + s.toFixed(s >= 100 ? 0 : s >= 1 ? 1 : 2)),
+                  datasets: [
+                    { type: 'bar', label: 'Call $Vol', data: strikes.map(s => cMap[s] ? cMap[s].dv : 0), backgroundColor: 'rgba(72,187,120,0.55)', yAxisID: 'y' },
+                    { type: 'bar', label: 'Put $Vol', data: strikes.map(s => pMap[s] ? pMap[s].dv : 0), backgroundColor: 'rgba(245,101,101,0.55)', yAxisID: 'y' },
+                    { type: 'line', label: 'Call IV', data: strikes.map(s => cMap[s] && cMap[s].iv > 0 ? cMap[s].iv : null), borderColor: 'rgba(72,187,120,0.95)', backgroundColor: 'rgba(72,187,120,0.95)', borderWidth: 2, pointRadius: 2, spanGaps: true, yAxisID: 'y1' },
+                    { type: 'line', label: 'Put IV', data: strikes.map(s => pMap[s] && pMap[s].iv > 0 ? pMap[s].iv : null), borderColor: 'rgba(245,101,101,0.95)', backgroundColor: 'rgba(245,101,101,0.95)', borderWidth: 2, pointRadius: 2, spanGaps: true, yAxisID: 'y1' },
+                  ],
+                },
+                options: {
+                  responsive: true, maintainAspectRatio: false, animation: { duration: 200 },
+                  interaction: { mode: 'index', intersect: false },
+                  plugins: {
+                    title: { display: true, text: e.label || ('Exp ' + (i + 1)), color: '#b0b0b0', font: { size: 11 } },
+                    legend: { labels: { color: '#909090', boxWidth: 10, font: { size: 9 } } },
+                  },
+                  scales: {
+                    x: { ticks: { color: '#909090', font: { size: 9 }, maxRotation: 60, minRotation: 0 }, grid: { color: '#2a2a4a' } },
+                    y: { position: 'left', beginAtZero: true, title: { display: true, text: '$Vol', color: '#909090', font: { size: 9 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : (v / 1e3).toFixed(0) + 'K'; } }, grid: { color: '#2a2a4a' } },
+                    y1: { position: 'right', title: { display: true, text: 'IV %', color: '#909090', font: { size: 9 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } }, grid: { drawOnChartArea: false } },
+                  },
+                },
+              });
+            });
+          };
+
+          const closeBtn = document.querySelector('button[data-strike-close="' + ticker + '"]');
+          if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+              const wrap = document.getElementById('dv-iv-strike-wrap-' + ticker);
+              if (wrap) wrap.style.display = 'none';
+            });
+          }
+
+          new Chart(dvIvCanvas, {
+            data: {
+              labels,
+              datasets: [
+                {
+                  type: 'bar',
+                  label: 'Option $Vol',
+                  data: dvSeries,
+                  backgroundColor: 'rgba(122,162,199,0.55)',
+                  borderColor: 'rgba(122,162,199,0.9)',
+                  borderWidth: 1,
+                  yAxisID: 'y',
+                  order: 1,
+                },
+                {
+                  type: 'line',
+                  label: 'Avg IV',
+                  data: ivSeries,
+                  borderColor: 'rgba(245,180,80,0.95)',
+                  backgroundColor: 'rgba(245,180,80,0.95)',
+                  borderWidth: 2,
+                  pointRadius: 3,
+                  spanGaps: true,
+                  tension: 0.2,
+                  yAxisID: 'y1',
+                  order: 0,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              animation: { duration: 200 },
+              interaction: { mode: 'index', intersect: false },
+              onClick: (evt, els, chart) => {
+                let idx = els && els.length ? els[0].index : null;
+                if (idx == null) {
+                  const pts = chart.getElementsAtEventForMode(evt, 'index', { intersect: false }, true);
+                  if (pts && pts.length) idx = pts[0].index;
+                }
+                if (idx == null) return;
+                const dateStr = dvIvDateMap[idx];
+                if (dateStr) renderStrikeBreakdown(dateStr);
+              },
+              plugins: {
+                title: { display: true, text: 'Last 5d Option $Vol & Avg IV (click a day for strikes)', color: '#b0b0b0', font: { size: 11 } },
+                legend: { labels: { color: '#909090', boxWidth: 10, font: { size: 9 } } },
+                tooltip: {
+                  callbacks: {
+                    label: function(ctx) {
+                      const v = ctx.raw;
+                      if (v == null) return ctx.dataset.label + ': N/A';
+                      if (ctx.dataset.yAxisID === 'y1') return ctx.dataset.label + ': ' + v.toFixed(1) + '%';
+                      return ctx.dataset.label + ': $' + (v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : (v / 1e3).toFixed(0) + 'K');
+                    },
+                  },
+                },
+              },
+              scales: {
+                x: { ticks: { color: '#909090', font: { size: 9 } }, grid: { color: '#2a2a4a' } },
+                y: {
+                  position: 'left',
+                  beginAtZero: true,
+                  title: { display: true, text: '$Vol', color: '#909090', font: { size: 9 } },
+                  ticks: {
+                    color: '#909090', font: { size: 9 },
+                    callback: function(v) { return v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : (v / 1e3).toFixed(0) + 'K'; },
+                  },
+                  grid: { color: '#2a2a4a' },
+                },
+                y1: {
+                  position: 'right',
+                  title: { display: true, text: 'Avg IV %', color: '#909090', font: { size: 9 } },
+                  ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } },
+                  grid: { drawOnChartArea: false },
+                },
+              },
+            },
+          });
+        }
+
+        // Populate news headlines
+        const newsEl = document.getElementById('news-' + ticker);
+        const news = newsMap[ticker];
+        if (newsEl && news && news.length > 0) {
+          const catColors = { technical: '#5b9bd5', fear: '#c0392b', win: '#27ae60', macro_fear: '#e07c4f', macro_win: '#2ecc71', mixed: '#999' };
+          const catLabels = { technical: 'Technical', fear: 'Fear', win: 'Win', macro_fear: 'Macro Fear', macro_win: 'Macro Win', mixed: 'Mixed' };
+          const renderHeadline = (n) => {
+            const badge = n.category ? '<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.75em;font-weight:600;color:#fff;background:' + (catColors[n.category] || '#999') + ';margin-right:6px;vertical-align:middle;">' + (catLabels[n.category] || '') + '</span>' : '';
+            return '<div style="margin-bottom:6px; font-size:0.95em; line-height:1.5;">' +
+              '<span style="color:#666; font-size:0.85em; margin-right:6px;">' + (n.date ? n.date + ' ' : '') + (n.time || '') + '</span>' +
+              badge +
+              '<a href="' + n.url + '" style="color:#7aa2c7; text-decoration:none;">' + n.headline + '</a>' +
+            '</div>';
+          };
+          const DEFAULT_SHOW = 10;
+          const shown = news.slice(0, DEFAULT_SHOW).map(renderHeadline).join('');
+          const hidden = news.slice(DEFAULT_SHOW).map(renderHeadline).join('');
+          let html = '<div>' + shown + '</div>';
+          if (hidden) {
+            const hiddenId = 'news-hidden-' + ticker;
+            const btnId = 'news-toggle-' + ticker;
+            html += '<div id="' + hiddenId + '" style="display:none;">' + hidden + '</div>';
+            html += '<button id="' + btnId + '" type="button" style="margin-top:6px; background:transparent; color:#7aa2c7; border:1px solid #445; border-radius:3px; padding:3px 10px; font-size:0.85em; cursor:pointer;">Show ' + (news.length - DEFAULT_SHOW) + ' more</button>';
+            newsEl.innerHTML = html;
+            const btn = document.getElementById(btnId);
+            const hiddenEl = document.getElementById(hiddenId);
+            btn.addEventListener('click', () => {
+              const isHidden = hiddenEl.style.display === 'none';
+              hiddenEl.style.display = isHidden ? 'block' : 'none';
+              btn.textContent = isHidden ? 'Show less' : ('Show ' + (news.length - DEFAULT_SHOW) + ' more');
+            });
+          } else {
+            newsEl.innerHTML = html;
+          }
+        }
+
+        // Render options strike charts (nearest 2 expirations side by side)
+        const od = cd.optionsStrikes;
+        if (od && od.length > 0) {
+          const optsWrap = document.getElementById('opts-wrap-' + ticker);
+          if (optsWrap) {
+            optsWrap.style.display = 'block';
+            const fmtDollar = (v) => v >= 1e6 ? '$'+(v/1e6).toFixed(1)+'M' : v >= 1e3 ? '$'+(v/1e3).toFixed(0)+'K' : '$'+v.toFixed(0);
+
+            for (let ei = 0; ei < Math.min(2, od.length); ei++) {
+              const exp = od[ei];
+              const canvas = document.getElementById('opts-chart-' + ei + '-' + ticker);
+              if (!exp || !canvas) continue;
+
+              const strikeSet = new Set();
+              exp.calls.forEach(c => strikeSet.add(c.strike));
+              exp.puts.forEach(p => strikeSet.add(p.strike));
+              const strikes = Array.from(strikeSet).sort((a, b) => a - b);
+              const strikeLabels = strikes.map(s => '$' + s.toFixed(s >= 100 ? 0 : s >= 1 ? 1 : 2));
+
+              const callMap = {};
+              exp.calls.forEach(c => { callMap[c.strike] = c; });
+              const putMap = {};
+              exp.puts.forEach(p => { putMap[p.strike] = p; });
+
+              const callDollarVol = strikes.map(s => callMap[s] ? callMap[s].dollarVol : 0);
+              const putDollarVol = strikes.map(s => putMap[s] ? putMap[s].dollarVol : 0);
+              const callDollarOI = strikes.map(s => callMap[s] ? callMap[s].dollarOI : 0);
+              const putDollarOI = strikes.map(s => putMap[s] ? putMap[s].dollarOI : 0);
+              const callIV = strikes.map(s => callMap[s] && callMap[s].iv > 0 ? callMap[s].iv : null);
+              const putIV = strikes.map(s => putMap[s] && putMap[s].iv > 0 ? putMap[s].iv : null);
+
+              // Populate weighted IV label
+              const ivLabel = document.getElementById('opts-iv-label-' + ei + '-' + ticker);
+              if (ivLabel && (exp.wCallIV > 0 || exp.wPutIV > 0)) {
+                let ivHtml = '<span style="color:rgba(72,187,120,0.9);">Call IV: ' + exp.wCallIV.toFixed(1) + '%</span>';
+                if (exp.atmCallIV > 0) ivHtml += '<span style="color:#888; font-size:0.85em;"> (ATM ' + exp.atmCallIV.toFixed(1) + '%, ' + (exp.ivSpreadCall >= 0 ? '+' : '') + exp.ivSpreadCall.toFixed(1) + ' spread, ' + (exp.deepOTMCallPct || 0).toFixed(0) + '% deep)</span>';
+                ivHtml += ' | <span style="color:rgba(245,101,101,0.9);">Put IV: ' + exp.wPutIV.toFixed(1) + '%</span>';
+                if (exp.atmPutIV > 0) ivHtml += '<span style="color:#888; font-size:0.85em;"> (ATM ' + exp.atmPutIV.toFixed(1) + '%, ' + (exp.ivSpreadPut >= 0 ? '+' : '') + exp.ivSpreadPut.toFixed(1) + ' spread, ' + (exp.deepOTMPutPct || 0).toFixed(0) + '% deep)</span>';
+                ivLabel.innerHTML = ivHtml;
+              }
+
+              new Chart(canvas, {
+                type: 'bar',
+                data: {
+                  labels: strikeLabels,
+                  datasets: [
+                    { label: 'Call $ OI', data: callDollarOI, backgroundColor: 'rgba(72, 187, 120, 0.15)', borderColor: 'rgba(72, 187, 120, 0.3)', borderWidth: 1, yAxisID: 'yDollar', stack: 'call', order: 3, barPercentage: 0.95 },
+                    { label: 'Put $ OI', data: putDollarOI, backgroundColor: 'rgba(245, 101, 101, 0.15)', borderColor: 'rgba(245, 101, 101, 0.3)', borderWidth: 1, yAxisID: 'yDollar', stack: 'put', order: 3, barPercentage: 0.95 },
+                    { label: 'Call $ Vol', data: callDollarVol, backgroundColor: 'rgba(72, 187, 120, 0.6)', borderColor: 'rgba(72, 187, 120, 0.9)', borderWidth: 1, yAxisID: 'yDollar', stack: 'call', order: 2, barPercentage: 0.6 },
+                    { label: 'Put $ Vol', data: putDollarVol, backgroundColor: 'rgba(245, 101, 101, 0.6)', borderColor: 'rgba(245, 101, 101, 0.9)', borderWidth: 1, yAxisID: 'yDollar', stack: 'put', order: 2, barPercentage: 0.6 },
+                    { label: 'Call IV', data: callIV, borderColor: 'rgba(72, 187, 120, 0.9)', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, type: 'line', yAxisID: 'yIV', order: 1, spanGaps: true },
+                    { label: 'Put IV', data: putIV, borderColor: 'rgba(245, 101, 101, 0.9)', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, type: 'line', yAxisID: 'yIV', order: 1, spanGaps: true },
+                  ],
+                },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  animation: { duration: 200 },
+                  plugins: {
+                    title: { display: true, text: 'Exp: ' + exp.label, color: '#b0b0b0', font: { size: 11 } },
+                    legend: { display: false },
+                    tooltip: {
+                      callbacks: {
+                        label: function(ctx) {
+                          if (ctx.dataset.yAxisID === 'yIV') return ctx.dataset.label + ': ' + (ctx.raw !== null ? ctx.raw.toFixed(1) + '%' : 'N/A');
+                          return ctx.dataset.label + ': ' + fmtDollar(ctx.raw);
+                        }
+                      }
+                    },
+                  },
+                  scales: {
+                    x: { stacked: true, ticks: { color: '#909090', font: { size: 8 }, maxRotation: 45 }, grid: { color: '#2a2a4a' } },
+                    yDollar: {
+                      position: 'left',
+                      stacked: false,
+                      ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return fmtDollar(v); } },
+                      grid: { color: '#2a2a4a' },
+                      beginAtZero: true,
+                    },
+                    yIV: {
+                      position: 'right',
+                      ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } },
+                      grid: { drawOnChartArea: false },
+                    },
+                  },
+                },
+              });
+            }
+
+            // IV history click handler — either label toggles the history chart
+            let ivHistChart = null;
+            const histWrap = document.getElementById('iv-history-wrap-' + ticker);
+            const histCanvas = document.getElementById('iv-history-chart-' + ticker);
+            const hist = ivHistoryMap[ticker];
+
+            function toggleHistory() {
+              if (!histWrap || !histCanvas || !hist || hist.length < 2) return;
+              if (histWrap.style.display !== 'none') {
+                histWrap.style.display = 'none';
+                return;
+              }
+              histWrap.style.display = 'block';
+              if (ivHistChart) return; // already rendered
+
+              const labels = hist.map(r => r.date);
+              const combined = hist.map(r => combineHist(r));
+
+              const callIVSeries = combined.map(c => c && c.callIV > 0 ? c.callIV : null);
+              const putIVSeries = combined.map(c => c && c.putIV > 0 ? c.putIV : null);
+              const callSpreadSeries = combined.map(c => c && c.callIV > 0 && c.atmCallIV != null ? c.callIV - c.atmCallIV : null);
+              const putSpreadSeries = combined.map(c => c && c.putIV > 0 && c.atmPutIV != null ? c.putIV - c.atmPutIV : null);
+
+              const lineBase = { type: 'line', borderWidth: 2, pointRadius: 2, fill: false, spanGaps: true, tension: 0.2 };
+              const datasets = [
+                { ...lineBase, label: 'Call IV', data: callIVSeries, borderColor: 'rgba(72,187,120,0.95)', backgroundColor: 'rgba(72,187,120,0.95)', yAxisID: 'y' },
+                { ...lineBase, label: 'Put IV', data: putIVSeries, borderColor: 'rgba(245,101,101,0.95)', backgroundColor: 'rgba(245,101,101,0.95)', yAxisID: 'y' },
+                { ...lineBase, label: 'Call Spread (vs ATM)', data: callSpreadSeries, borderColor: 'rgba(72,187,120,0.6)', backgroundColor: 'rgba(72,187,120,0.6)', borderDash: [4, 3], yAxisID: 'y1' },
+                { ...lineBase, label: 'Put Spread (vs ATM)', data: putSpreadSeries, borderColor: 'rgba(245,101,101,0.6)', backgroundColor: 'rgba(245,101,101,0.6)', borderDash: [4, 3], yAxisID: 'y1' },
+              ];
+
+              ivHistChart = new Chart(histCanvas, {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  animation: { duration: 200 },
+                  interaction: { mode: 'index', intersect: false },
+                  plugins: {
+                    title: { display: true, text: 'Weighted IV History — ' + ticker, color: '#b0b0b0', font: { size: 11 } },
+                    legend: { labels: { color: '#909090', boxWidth: 10, font: { size: 9 } } },
+                    tooltip: { callbacks: { label: function(ctx) { return ctx.dataset.label + ': ' + (ctx.raw != null ? ctx.raw.toFixed(1) + '%' : 'N/A'); } } },
+                  },
+                  scales: {
+                    x: { ticks: { color: '#909090', font: { size: 9 } }, grid: { color: '#2a2a4a' } },
+                    y: { position: 'left', title: { display: true, text: 'IV %', color: '#909090', font: { size: 10 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } }, grid: { color: '#2a2a4a' } },
+                    y1: { position: 'right', title: { display: true, text: 'Spread %', color: '#909090', font: { size: 10 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(1) + '%'; } }, grid: { drawOnChartArea: false } },
+                  },
+                },
+              });
+            }
+
+            for (let li = 0; li < 2; li++) {
+              const lbl = document.getElementById('opts-iv-label-' + li + '-' + ticker);
+              if (lbl) lbl.addEventListener('click', toggleHistory);
+            }
+          }
+        }
+
+      }
+    });
+  });
+
+  // Sorting — skip chart rows
+  const table = document.getElementById('screen-table');
+  const headers = table.querySelectorAll('th');
+  let currentCol = -1, ascending = true;
+
+  headers.forEach((th, colIdx) => {
+    th.addEventListener('click', () => {
+      if (currentCol === colIdx) {
+        ascending = !ascending;
+      } else {
+        currentCol = colIdx;
+        ascending = (colIdx === 1 || colIdx === 5);
+      }
+
+      headers.forEach(h => h.classList.remove('sorted-asc', 'sorted-desc'));
+      th.classList.add(ascending ? 'sorted-asc' : 'sorted-desc');
+
+      headers.forEach(h => h.querySelector('.sort-arrow').textContent = '');
+      th.querySelector('.sort-arrow').textContent = ascending ? ' \u25B2' : ' \u25BC';
+
+      const tbody = table.querySelector('tbody');
+      // Collect data-row + chart-row pairs
+      const pairs = [];
+      const dataRows = tbody.querySelectorAll('tr.data-row');
+      dataRows.forEach(dr => {
+        const ticker = dr.getAttribute('data-ticker');
+        const chartRow = tbody.querySelector('tr.chart-row[data-chart-for="' + ticker + '"]');
+        pairs.push({ dataRow: dr, chartRow });
+      });
+      // Also collect rows without data-row class (error/skipped tickers)
+      const allTrSet = new Set();
+      pairs.forEach(p => { allTrSet.add(p.dataRow); if (p.chartRow) allTrSet.add(p.chartRow); });
+      const otherRows = Array.from(tbody.querySelectorAll('tr')).filter(r => !allTrSet.has(r) && !r.classList.contains('chart-row'));
+      otherRows.forEach(r => pairs.push({ dataRow: r, chartRow: null }));
+
+      pairs.sort((a, b) => {
+        const aVal = a.dataRow.children[colIdx]?.getAttribute('data-v') || '';
+        const bVal = b.dataRow.children[colIdx]?.getAttribute('data-v') || '';
+        const aNum = parseFloat(aVal);
+        const bNum = parseFloat(bVal);
+
+        let cmp;
+        if (!isNaN(aNum) && !isNaN(bNum)) {
+          cmp = aNum - bNum;
+        } else {
+          cmp = aVal.localeCompare(bVal);
+        }
+        return ascending ? cmp : -cmp;
+      });
+
+      pairs.forEach(p => {
+        tbody.appendChild(p.dataRow);
+        if (p.chartRow) tbody.appendChild(p.chartRow);
+      });
+    });
+  });
+})();
+</script>
+</body></html>

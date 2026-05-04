@@ -29,6 +29,8 @@ const GLMAnalysisService = require('./src/services/glmAnalysis');
 const { screenTickers, reviseTickers } = require('./ci/ticker-screen');
 const { classifyTickerNews } = require('./src/services/newsClassifier');
 const YahooFinance = require('yahoo-finance2').default;
+const bunBridge = require('./src/services/bunBridge');
+const { JSDOM } = require('jsdom');
 
 let mainWindow;
 let database;
@@ -75,70 +77,41 @@ function getExtractionBrowserView() {
 }
 
 /**
- * Fetch news headlines from Finviz for a given ticker.
- * Uses the hidden extraction BrowserView to load the quote page and scrape the news table.
+ * Fetch news headlines from Finviz for a given ticker via direct HTTP (no BrowserView).
  * @param {string} ticker
  * @returns {Promise<Array<{date: string, time: string, headline: string, url: string}>>}
  */
 async function fetchFinvizNews(ticker) {
-  const bv = getExtractionBrowserView();
   const url = `https://finviz.com/quote.ashx?t=${encodeURIComponent(ticker)}&p=d`;
+  const html = await bunBridge.fetchHTML(url, { timeout: 15000 });
+  const { document } = new JSDOM(html).window;
 
-  // Load page and wait for finish
-  await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      bv.webContents.removeAllListeners('did-finish-load');
-      reject(new Error(`Timed out loading Finviz news for ${ticker}`));
-    }, 15000);
-
-    bv.webContents.once('did-finish-load', () => {
-      clearTimeout(timer);
-      resolve();
+  const rows = document.querySelectorAll('.body-table-news-wrapper tr, .news-table_wrapper tr, table.fullview-news-outer tr');
+  const results = [];
+  let currentDate = '';
+  for (const row of rows) {
+    const cells = row.querySelectorAll('td');
+    if (cells.length < 2) continue;
+    const dateCell = cells[0].textContent.trim();
+    const link = cells[1].querySelector('a');
+    if (!link) continue;
+    if (dateCell.includes('-')) {
+      const parts = dateCell.split(/\s+/);
+      currentDate = parts[0] || '';
+      var time = parts[1] || '';
+    } else {
+      var time = dateCell;
+    }
+    results.push({
+      date: currentDate,
+      time: time || '',
+      headline: link.textContent.trim(),
+      url: link.href || ''
     });
+  }
 
-    bv.webContents.loadURL(url).catch(err => {
-      clearTimeout(timer);
-      reject(err);
-    });
-  });
-
-  // Wait for JS-rendered content
-  await new Promise(r => setTimeout(r, 2000));
-
-  // Extract news rows from the news table
-  const headlines = await bv.webContents.executeJavaScript(`
-    (function() {
-      const rows = document.querySelectorAll('.body-table-news-wrapper tr, .news-table_wrapper tr, table.fullview-news-outer tr');
-      const results = [];
-      let currentDate = '';
-      for (const row of rows) {
-        const cells = row.querySelectorAll('td');
-        if (cells.length < 2) continue;
-        const dateCell = cells[0].innerText.trim();
-        const link = cells[1].querySelector('a');
-        if (!link) continue;
-        // Date cell shows date for first article of the day, blank for subsequent
-        if (dateCell.includes('-')) {
-          // Format like "Mar-13-26" or "Mar-13" — extract date and time
-          const parts = dateCell.split(/\\s+/);
-          currentDate = parts[0] || '';
-          var time = parts[1] || '';
-        } else {
-          var time = dateCell;
-        }
-        results.push({
-          date: currentDate,
-          time: time || '',
-          headline: link.innerText.trim(),
-          url: link.href || ''
-        });
-      }
-      return results;
-    })()
-  `);
-
-  console.log(`Finviz news: fetched ${headlines.length} headlines for ${ticker}`);
-  return headlines;
+  console.log(`Finviz news: fetched ${results.length} headlines for ${ticker}`);
+  return results;
 }
 
 /**
@@ -236,7 +209,6 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
-    fullscreen: true,
     frame: false, // Remove default title bar
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -244,6 +216,8 @@ function createWindow() {
       nodeIntegration: false
     }
   });
+
+  mainWindow.maximize();
 
   // Load the control UI
   mainWindow.loadFile('src/renderer/index.html');
@@ -1767,39 +1741,20 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
 
     const createYF = () => new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 
-    // If news is enabled, fetch Finviz headlines per ticker as stock data completes
-    // Finviz fetch is serial (shared BrowserView), queued via onTickerDone callback
-    const finvizQueue = [];
-    let finvizActive = null;
-
-    async function drainFinvizQueue() {
-      while (finvizQueue.length > 0) {
-        const entry = finvizQueue.shift();
-        if (!entry.ticker || entry.skipped || entry.error) continue;
-        try {
-          const headlines = await fetchFinvizNews(entry.ticker);
-          entry.news = headlines || [];
-        } catch (_) { entry.news = []; }
-      }
-    }
-
-    function kickFinvizQueue() {
-      if (finvizActive) return;
-      finvizActive = drainFinvizQueue().finally(() => { finvizActive = null; });
-    }
-
+    // Collect entries to fetch news for; fetched in parallel after screening completes
+    const newsFetchEntries = [];
     const onTickerDone = options.fetchNews ? (entry) => {
-      finvizQueue.push(entry);
-      kickFinvizQueue();
+      if (entry.ticker && !entry.skipped && !entry.error) newsFetchEntries.push(entry);
     } : null;
     const result = await screenTickers(priceTracker, config, createYF, onTickerDone, database);
 
-    // Wait for remaining Finviz fetches to finish
-    if (options.fetchNews) {
-      while (finvizActive || finvizQueue.length > 0) {
-        if (finvizActive) await finvizActive;
-        else kickFinvizQueue();
-      }
+    // Fetch Finviz headlines in parallel (HTTP, no BrowserView bottleneck)
+    if (options.fetchNews && newsFetchEntries.length > 0) {
+      await Promise.all(newsFetchEntries.map(async (entry) => {
+        try {
+          entry.news = await fetchFinvizNews(entry.ticker);
+        } catch (_) { entry.news = []; }
+      }));
     }
 
     // Sort allTickers: hits first (by percentile desc), then non-hits alphabetically

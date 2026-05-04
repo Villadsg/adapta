@@ -2132,17 +2132,17 @@
   {
     "ticker": "QCOM",
     "eventDate": "2026-04-30",
-    "runDate": "2026-05-01",
+    "runDate": "2026-05-04",
     "classification": "surprising_positive",
-    "gap": 13.729564997623958,
+    "gap": 13.75990543172084,
     "percentile": 100,
-    "volume": 61082400,
-    "volumeGapProduct": 838634781.0108657,
-    "rSquared": 0.2205623589105029,
-    "wCallIV": 19.3,
-    "wPutIV": 36.7,
-    "atmCallIV": 1.6,
-    "atmPutIV": 0
+    "volume": 61132700,
+    "volumeGapProduct": 841180170.7857606,
+    "rSquared": 0.21901498388477592,
+    "wCallIV": 11.4,
+    "wPutIV": 10.6,
+    "atmCallIV": 0.3,
+    "atmPutIV": 1.9
   },
   {
     "ticker": "NOW",
