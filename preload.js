@@ -80,6 +80,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   stopSpeaking: () => ipcRenderer.send('stop-speaking'),
   toggleTts: (enabled) => ipcRenderer.invoke('toggle-tts', enabled),
   onTtsStateChanged: (callback) => ipcRenderer.on('tts-state-changed', (event, data) => callback(data)),
+  listVoices: () => ipcRenderer.invoke('list-voices'),
+  saveTtsAudio: (text) => ipcRenderer.invoke('save-tts-audio', text),
 
   // Window controls
   windowMinimize: () => ipcRenderer.invoke('window-minimize'),

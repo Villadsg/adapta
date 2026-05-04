@@ -934,12 +934,24 @@ body {
   color: #a0aec0;
 }
 
-/* TTS buttons */
-.btn-stop-tts {
+/* TTS buttons in bottom bar */
+.tts-bar-divider {
+  width: 1px;
+  height: 16px;
+  background: #3a414d;
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.action-btn-sm.btn-tts-toggle {
+  background: #4db6ac;
+  color: white;
+}
+.action-btn-sm.btn-tts-toggle:hover { background: #38a599; }
+.action-btn-sm.btn-tts-toggle.tts-disabled { background: #546e7a; color: #90a4ae; }
+
+.action-btn-sm.btn-tts-stop {
   background: #ef5350;
   color: white;
 }
-.btn-stop-tts:hover { background: #e53935; }
-
-.btn-toggle-tts { background: #4db6ac; color: white; }
-.btn-toggle-tts.tts-disabled { background: #546e7a; color: #90a4ae; }
+.action-btn-sm.btn-tts-stop:hover { background: #e53935; }

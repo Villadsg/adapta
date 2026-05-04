@@ -14,7 +14,7 @@ global.fetch = function(url, opts = {}) {
   return _origFetch.call(this, url, opts);
 };
 
-const { app, BrowserWindow, BrowserView, ipcMain, globalShortcut } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, globalShortcut, Menu, dialog } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const ArticleDatabase = require('./src/services/database');
@@ -43,6 +43,7 @@ let activeTtsProcess = null;
 let ttsEnabled = true;
 const ttsPythonScript = path.join(__dirname, 'python', 'tts_speak.py');
 const ttsVoiceRef = path.join(__dirname, 'python', 'voice_ref.wav');
+const ttsVoicesDir = path.join(require('os').homedir(), 'Documents', 'adapta', 'voices');
 
 // Tab management
 const tabs = new Map(); // tabId -> BrowserView
@@ -302,19 +303,34 @@ function injectClaudeTTS(browserView) {
       window.__claudeTTSPath = currentPath;
 
       const seen = new WeakSet();
+      const seenTexts = new Set();
       const injectedAt = Date.now();
 
       function extractText(el) {
-        return (el.innerText || el.textContent || '').trim();
+        // Clone so we can remove citation/source elements before reading
+        const clone = el.cloneNode(true);
+        // Remove citation superscripts, footnotes, and source link sections
+        clone.querySelectorAll([
+          'sup',                          // superscript citation numbers
+          '[data-testid="citation"]',     // claude citation markers
+          '[data-testid="sources"]',      // sources section
+          '.citation',
+          'ol li a[href]',                // numbered source links
+        ].join(',')).forEach(n => n.remove());
+        return (clone.innerText || clone.textContent || '').trim();
       }
 
       function maybeSpeak(el) {
         if (seen.has(el)) return;
         seen.add(el);
         if (Date.now() - injectedAt < 800) return;
-        const text = extractText(el);
-        if (text.length < 20) return;
-        const capped = text
+        const raw = extractText(el);
+        if (raw.length < 20) return;
+        // Dedup by first 80 chars to catch double-firing mutations
+        const key = raw.slice(0, 80);
+        if (seenTexts.has(key)) return;
+        seenTexts.add(key);
+        const capped = raw
           .replace(/\`\`\`[\\s\\S]*?\`\`\`/g, ' [code block] ')
           .replace(/[*_\`#>]/g, '')
           .replace(/\\n{2,}/g, '. ')
@@ -361,40 +377,100 @@ function injectClaudeTTS(browserView) {
   `).catch(() => {});
 }
 
-// TTS: spawn OmniVoice Python subprocess to synthesize and play text
-function spawnOmniVoiceTTS(text) {
-  if (activeTtsProcess) {
-    activeTtsProcess.kill('SIGTERM');
-    activeTtsProcess = null;
+// Kill TTS process group (Python + aplay child)
+function killTtsProcess() {
+  const proc = activeTtsProcess;
+  activeTtsProcess = null;
+  if (!proc) return;
+  try {
+    process.kill(-proc.pid, 'SIGKILL');
+  } catch (_) {
+    try { proc.kill('SIGKILL'); } catch (_2) {}
   }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('tts-state-changed', { speaking: false });
+  }
+}
+
+// Serializes TTS requests: if a spawn is in-flight (awaiting settings), queue
+// only the latest text so we never run two at once.
+let ttsSpawning = false;
+let ttsPending = null;
+
+// TTS: spawn OmniVoice Python subprocess to synthesize and play text
+async function spawnOmniVoiceTTS(text) {
   if (!ttsEnabled || !text) return;
 
-  const child = spawn('python3', [ttsPythonScript], {
-    stdio: ['pipe', 'pipe', 'pipe']
-  });
-
-  activeTtsProcess = child;
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('tts-state-changed', { speaking: true });
+  // If already spawning, just replace the pending text and return
+  if (ttsSpawning) {
+    ttsPending = text;
+    killTtsProcess();
+    return;
   }
 
-  const fs = require('fs');
-  const payload = { text };
-  if (fs.existsSync(ttsVoiceRef)) payload.ref_audio = ttsVoiceRef;
-  child.stdin.write(JSON.stringify(payload));
-  child.stdin.end();
+  killTtsProcess();
+  ttsSpawning = true;
 
-  child.on('close', () => {
-    activeTtsProcess = null;
+  try {
+    const fs = require('fs');
+    const payload = { text };
+    const [savedVoice, savedSpeed, savedQuality] = await Promise.all([
+      database ? database.getSetting('tts_voice', null).catch(() => null) : null,
+      database ? database.getSetting('tts_speed', '1.2').catch(() => '1.2') : '1.2',
+      database ? database.getSetting('tts_quality', '16').catch(() => '16') : '16',
+    ]);
+    const voicePath = savedVoice || ttsVoiceRef;
+    if (fs.existsSync(voicePath)) payload.ref_audio = voicePath;
+    payload.speed = parseFloat(savedSpeed) || 1.2;
+    payload.num_step = parseInt(savedQuality) || 16;
+
+    // If stop was requested during the await, bail out
+    if (!ttsEnabled) { ttsSpawning = false; return; }
+
+    const child = spawn('python3', [ttsPythonScript], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      detached: true,  // own process group so we can kill the whole group
+    });
+
+    activeTtsProcess = child;
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('tts-state-changed', { speaking: false });
+      mainWindow.webContents.send('tts-state-changed', { speaking: true });
     }
-  });
 
-  child.on('error', (err) => {
-    console.error('TTS subprocess error:', err.message);
-    activeTtsProcess = null;
-  });
+    child.stdin.write(JSON.stringify(payload));
+    child.stdin.end();
+
+    child.on('close', () => {
+      if (activeTtsProcess === child) {
+        activeTtsProcess = null;
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('tts-state-changed', { speaking: false });
+        }
+      }
+      ttsSpawning = false;
+      // If a new text arrived while we were busy, speak it now
+      if (ttsPending) {
+        const next = ttsPending;
+        ttsPending = null;
+        spawnOmniVoiceTTS(next);
+      }
+    });
+
+    child.on('error', (err) => {
+      console.error('TTS subprocess error:', err.message);
+      if (activeTtsProcess === child) activeTtsProcess = null;
+      ttsSpawning = false;
+      if (ttsPending) {
+        const next = ttsPending;
+        ttsPending = null;
+        spawnOmniVoiceTTS(next);
+      }
+    });
+
+  } catch (err) {
+    console.error('TTS spawn error:', err.message);
+    ttsSpawning = false;
+  }
 }
 
 // Create a new tab
@@ -489,6 +565,11 @@ function createTab(url = 'https://simplywall.st/dashboard') {
     setTimeout(() => injectClaudeTTS(browserView), 400);
   });
 
+  // Prevent OS dark mode from bleeding into websites
+  browserView.webContents.on('did-finish-load', () => {
+    browserView.webContents.insertCSS(':root { color-scheme: light only !important; }');
+  });
+
   browserView.webContents.on('page-title-updated', (event, title) => {
     sendUrlUpdate(browserView.webContents.getURL(), title);
   });
@@ -539,6 +620,20 @@ function createTab(url = 'https://simplywall.st/dashboard') {
       `);
     }
     injectClaudeTTS(browserView);
+  });
+
+  // Right-click context menu with TTS option for selected text
+  browserView.webContents.on('context-menu', (event, params) => {
+    const selectedText = params.selectionText.trim();
+    if (!selectedText) return;
+
+    const menu = Menu.buildFromTemplate([
+      {
+        label: '🔊 Play with TTS',
+        click: () => spawnOmniVoiceTTS(selectedText),
+      },
+    ]);
+    menu.popup({ window: mainWindow });
   });
 
   // Load URL if provided
@@ -3605,26 +3700,79 @@ ipcMain.handle('get-embedding-stats', async (event) => {
 });
 
 // TTS IPC handlers
+ipcMain.handle('list-voices', () => {
+  const fs = require('fs');
+  const hasTranscript = (p) => fs.existsSync(p.replace(/\.[^.]+$/, '.txt'));
+  const voices = [{
+    label: hasTranscript(ttsVoiceRef) ? 'Default (voice_ref.wav)' : 'Default (voice_ref.wav) ⚠ missing transcript',
+    path: ttsVoiceRef
+  }];
+  if (fs.existsSync(ttsVoicesDir)) {
+    const files = fs.readdirSync(ttsVoicesDir)
+      .filter(f => /\.(wav|opus|mp3|flac)$/i.test(f))
+      .map(f => {
+        const p = path.join(ttsVoicesDir, f);
+        return { label: hasTranscript(p) ? f : `${f} ⚠ missing transcript`, path: p };
+      });
+    voices.push(...files);
+  }
+  return voices;
+});
+
+ipcMain.handle('save-tts-audio', async (event, text) => {
+  if (!text || !text.trim()) return { ok: false, error: 'empty text' };
+
+  const { filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save audio file',
+    defaultPath: 'output.mp3',
+    filters: [
+      { name: 'MP3 Audio', extensions: ['mp3'] },
+      { name: 'M4A Audio', extensions: ['m4a'] },
+    ],
+  });
+  if (!filePath) return { ok: false, error: 'cancelled' };
+
+  const fs = require('fs');
+  const [savedVoice, savedSpeed, savedQuality] = await Promise.all([
+    database ? database.getSetting('tts_voice', null).catch(() => null) : null,
+    database ? database.getSetting('tts_speed', '1.2').catch(() => '1.2') : '1.2',
+    database ? database.getSetting('tts_quality', '16').catch(() => '16') : '16',
+  ]);
+  const voicePath = savedVoice || ttsVoiceRef;
+  const payload = { text, output_file: filePath, speed: parseFloat(savedSpeed) || 1.2, num_step: parseInt(savedQuality) || 16 };
+  if (fs.existsSync(voicePath)) payload.ref_audio = voicePath;
+
+  return new Promise((resolve) => {
+    const child = spawn('python3', [ttsPythonScript], { stdio: ['pipe', 'pipe', 'pipe'], detached: true });
+    child.unref();
+    child.stdin.write(JSON.stringify(payload));
+    child.stdin.end();
+    let out = '';
+    child.stdout.on('data', d => { out += d; });
+    child.on('close', () => {
+      try { resolve(JSON.parse(out)); } catch { resolve({ ok: true }); }
+    });
+    child.on('error', (err) => resolve({ ok: false, error: err.message }));
+  });
+});
+
 ipcMain.on('speak-text', (event, text) => {
   if (typeof text !== 'string' || !text.trim()) return;
   spawnOmniVoiceTTS(text);
 });
 
 ipcMain.on('stop-speaking', () => {
-  if (activeTtsProcess) {
-    activeTtsProcess.kill('SIGTERM');
-    activeTtsProcess = null;
-  }
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('tts-state-changed', { speaking: false });
-  }
+  ttsPending = null;
+  ttsSpawning = false;
+  killTtsProcess();
 });
 
 ipcMain.handle('toggle-tts', (event, enabled) => {
   ttsEnabled = !!enabled;
-  if (!ttsEnabled && activeTtsProcess) {
-    activeTtsProcess.kill('SIGTERM');
-    activeTtsProcess = null;
+  if (!ttsEnabled) {
+    ttsPending = null;
+    ttsSpawning = false;
+    killTtsProcess();
   }
   return { ttsEnabled };
 });
@@ -3675,8 +3823,7 @@ app.whenReady().then(() => {
 
   globalShortcut.register('Escape', () => {
     if (activeTtsProcess) {
-      activeTtsProcess.kill('SIGTERM');
-      activeTtsProcess = null;
+      killTtsProcess();
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('tts-state-changed', { speaking: false });
       }
@@ -3686,10 +3833,7 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', async () => {
   // Kill any active TTS subprocess
-  if (activeTtsProcess) {
-    activeTtsProcess.kill('SIGTERM');
-    activeTtsProcess = null;
-  }
+  killTtsProcess();
 
   // Stop price polling
   if (priceTracker) {
