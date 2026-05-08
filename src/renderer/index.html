@@ -36,7 +36,7 @@
     <!-- Action buttons -->
     <div class="action-controls">
       <button id="btn-screen" class="action-btn btn-analyze-events">🔍 Screen</button>
-      <button id="btn-glm" class="action-btn btn-analyze-events">GLM</button>
+      <button id="btn-flowstate" class="action-btn btn-analyze-events">Flowstate</button>
       <button id="btn-settings" class="action-btn btn-settings">⚙️ Settings</button>
     </div>
   </div>
@@ -103,28 +103,56 @@
     </div>
   </div>
 
-  <!-- GLM Analysis Modal -->
-  <div id="glm-modal" class="modal" style="display: none;">
-    <div class="modal-content" style="max-width: 720px; max-height: 85vh; overflow-y: auto;">
-      <h3>GLM: Predict Stock Direction</h3>
-      <p>Logistic regression on event features to predict up/down over N forward days.</p>
+  <!-- Flowstate Analysis Modal -->
+  <div id="flowstate-modal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 820px; max-height: 85vh; overflow-y: auto;">
+      <h3>Flowstate: Next-Day Price Band</h3>
+      <p>IBM Granite Flowstate-R1 zero-shot forecast. Predicts next-trading-day low/median/high (price quantile band) from a window of close prices.</p>
       <div class="modal-form">
         <div class="form-row-inline">
           <div class="form-field">
-            <label for="glm-horizon">Horizon (trading days)</label>
-            <select id="glm-horizon">
-              <option value="5">5</option>
-              <option value="10" selected>10</option>
-              <option value="20">20</option>
+            <label for="flowstate-tickers">Tickers (comma-separated)</label>
+            <input id="flowstate-tickers" type="text" placeholder="AAPL, MSFT, NVDA" />
+          </div>
+          <div class="form-field">
+            <label for="flowstate-context">Context (days)</label>
+            <select id="flowstate-context">
+              <option value="256">256</option>
+              <option value="512" selected>512</option>
+              <option value="1024">1024</option>
+              <option value="2048">2048</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="flowstate-band">Quantile band</label>
+            <select id="flowstate-band">
+              <option value="0,8" selected>q10 / q90 (~80%)</option>
+              <option value="1,7">q20 / q80 (~60%)</option>
+              <option value="2,6">q30 / q70 (~40%)</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="flowstate-mode">Mode</label>
+            <select id="flowstate-mode">
+              <option value="forecast" selected>Forecast next day</option>
+              <option value="backtest">Walk-forward backtest</option>
+            </select>
+          </div>
+          <div class="form-field" id="flowstate-backtest-days-field" style="display:none;">
+            <label for="flowstate-ndays">Backtest days</label>
+            <select id="flowstate-ndays">
+              <option value="30">30</option>
+              <option value="60" selected>60</option>
+              <option value="120">120</option>
             </select>
           </div>
         </div>
       </div>
       <div class="modal-buttons">
-        <button id="glm-cancel" class="btn-modal btn-cancel">Cancel</button>
-        <button id="glm-train" class="btn-modal btn-primary">Train Model</button>
+        <button id="flowstate-cancel" class="btn-modal btn-cancel">Cancel</button>
+        <button id="flowstate-run" class="btn-modal btn-primary">Run</button>
       </div>
-      <div id="glm-results" style="margin-top: 16px; display: none;"></div>
+      <div id="flowstate-results" style="margin-top: 16px; display: none;"></div>
     </div>
   </div>
 

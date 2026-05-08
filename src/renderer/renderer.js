@@ -43,7 +43,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 // Toast notification function
-function showToast(title, message, type = 'success', duration = 3000) {
+function showToast(title, message, type = 'success', duration = 3000, options = {}) {
   const toast = document.createElement('div');
   toast.className = `toast toast-${type}`;
 
@@ -53,8 +53,12 @@ function showToast(title, message, type = 'success', duration = 3000) {
     info: 'ℹ'
   };
 
+  const iconHtml = options.spinner
+    ? '<span class="toast-spinner"></span>'
+    : `<span class="toast-icon">${icons[type] || icons.info}</span>`;
+
   toast.innerHTML = `
-    <span class="toast-icon">${icons[type] || icons.info}</span>
+    ${iconHtml}
     <div class="toast-content">
       <div class="toast-title">${title}</div>
       <div class="toast-message">${message}</div>
@@ -63,11 +67,15 @@ function showToast(title, message, type = 'success', duration = 3000) {
 
   toastContainer.appendChild(toast);
 
-  // Auto-remove after duration
-  setTimeout(() => {
+  const dismiss = () => {
+    if (!toast.isConnected) return;
     toast.classList.add('hiding');
     setTimeout(() => toast.remove(), 300);
-  }, duration);
+  };
+
+  if (duration > 0) setTimeout(dismiss, duration);
+
+  return { toast, dismiss };
 }
 
 // Tab management
@@ -1024,7 +1032,11 @@ screenRun.addEventListener('click', async () => {
   await window.electronAPI.hideModal();
 
   const tickerCount = overrideTickers ? overrideTickers.length : (superOnly ? 'super favorites' : (favoritesOnly ? 'favorites' : 'all'));
-  showToast('Screening...', `Screening ${tickerCount} ticker${tickerCount === 1 ? '' : 's'} for recent events...`, 'info', 120000);
+  const screenBtn = document.getElementById('btn-screen');
+  const screenBtnOriginal = screenBtn.textContent;
+  screenBtn.classList.add('is-loading');
+  screenBtn.disabled = true;
+  screenBtn.textContent = `Screening ${tickerCount}...`;
 
   try {
     const result = await window.electronAPI.screenTickers({ period, lookbackDays, percentileThreshold, overrideTickers, fetchNews, favoritesOnly, superOnly });
@@ -1039,126 +1051,171 @@ screenRun.addEventListener('click', async () => {
   } catch (error) {
     console.error('Screening error:', error);
     showToast('Error', error.message, 'error');
+  } finally {
+    screenBtn.classList.remove('is-loading');
+    screenBtn.disabled = false;
+    screenBtn.textContent = screenBtnOriginal;
   }
 });
 
-// ===== GLM Analysis =====
+// ===== Flowstate Analysis =====
 
-const btnGlm = document.getElementById('btn-glm');
-const glmModal = document.getElementById('glm-modal');
-const glmCancel = document.getElementById('glm-cancel');
-const glmTrain = document.getElementById('glm-train');
-const glmHorizon = document.getElementById('glm-horizon');
-const glmResults = document.getElementById('glm-results');
+const btnFlowstate = document.getElementById('btn-flowstate');
+const fsModal = document.getElementById('flowstate-modal');
+const fsCancel = document.getElementById('flowstate-cancel');
+const fsRun = document.getElementById('flowstate-run');
+const fsTickers = document.getElementById('flowstate-tickers');
+const fsContext = document.getElementById('flowstate-context');
+const fsBand = document.getElementById('flowstate-band');
+const fsMode = document.getElementById('flowstate-mode');
+const fsNDaysField = document.getElementById('flowstate-backtest-days-field');
+const fsNDays = document.getElementById('flowstate-ndays');
+const fsResults = document.getElementById('flowstate-results');
 
-btnGlm.addEventListener('click', async () => {
+btnFlowstate.addEventListener('click', async () => {
   await window.electronAPI.showModal();
-  glmModal.style.display = 'flex';
-  glmResults.style.display = 'none';
+  fsModal.style.display = 'flex';
+  fsResults.style.display = 'none';
 });
 
-glmCancel.addEventListener('click', async () => {
-  glmModal.style.display = 'none';
+fsCancel.addEventListener('click', async () => {
+  fsModal.style.display = 'none';
   await window.electronAPI.hideModal();
 });
 
-glmModal.addEventListener('click', async (e) => {
-  if (e.target === glmModal) {
-    glmModal.style.display = 'none';
+fsModal.addEventListener('click', async (e) => {
+  if (e.target === fsModal) {
+    fsModal.style.display = 'none';
     await window.electronAPI.hideModal();
   }
 });
 
-glmTrain.addEventListener('click', async () => {
-  const horizonDays = parseInt(glmHorizon.value);
-  glmTrain.disabled = true;
-  glmTrain.textContent = 'Training...';
-  glmResults.style.display = 'none';
+fsMode.addEventListener('change', () => {
+  fsNDaysField.style.display = fsMode.value === 'backtest' ? '' : 'none';
+});
+
+fsRun.addEventListener('click', async () => {
+  const tickersRaw = (fsTickers.value || '').trim();
+  if (!tickersRaw) {
+    showToast('Flowstate', 'Enter at least one ticker', 'error');
+    return;
+  }
+  const tickers = tickersRaw.split(/[,\s]+/).map(t => t.toUpperCase()).filter(Boolean);
+  const contextDays = parseInt(fsContext.value);
+  const [qLowIdx, qHighIdx] = fsBand.value.split(',').map(Number);
+  const mode = fsMode.value;
+
+  fsRun.disabled = true;
+  fsRun.textContent = 'Running...';
+  fsResults.style.display = 'none';
 
   try {
-    const result = await window.electronAPI.runGlmAnalysis({ horizonDays });
-
-    if (!result.success) {
-      showToast('GLM Error', result.error, 'error');
-      return;
+    if (mode === 'forecast') {
+      const result = await window.electronAPI.runFlowstateForecast({ tickers, contextDays, qLowIdx, qHighIdx });
+      if (!result.success) { showToast('Flowstate Error', result.error, 'error'); return; }
+      renderFlowstateForecast(result);
+    } else {
+      if (tickers.length !== 1) {
+        showToast('Flowstate', 'Backtest mode takes a single ticker', 'error');
+        return;
+      }
+      const nDays = parseInt(fsNDays.value);
+      const result = await window.electronAPI.runFlowstateBacktest({ ticker: tickers[0], contextDays, nDays, qLowIdx, qHighIdx });
+      if (!result.success) { showToast('Flowstate Error', result.error, 'error'); return; }
+      renderFlowstateBacktest(result);
     }
-
-    renderGlmResults(result);
   } catch (error) {
-    showToast('GLM Error', error.message, 'error');
+    showToast('Flowstate Error', error.message, 'error');
   } finally {
-    glmTrain.disabled = false;
-    glmTrain.textContent = 'Train Model';
+    fsRun.disabled = false;
+    fsRun.textContent = 'Run';
   }
 });
 
-function renderGlmResults(result) {
-  const { coefficients, intercept, looAccuracy, baseRate, liftOverBase, confusion, nEvents, nPositive, nNegative, horizonDays, predictions } = result;
-
-  const liftColor = liftOverBase > 0 ? '#4caf50' : liftOverBase < 0 ? '#f44336' : '#888';
-
-  let html = `
-    <div style="margin-bottom: 12px; padding: 10px; background: #f9f9f9; border-radius: 6px;">
-      <strong>Model Summary</strong> &mdash; ${nEvents} events, horizon = ${horizonDays}d<br>
-      Positive (up): ${nPositive} &nbsp;|&nbsp; Negative (down): ${nNegative}<br>
-      <strong>LOO Accuracy:</strong> ${(looAccuracy * 100).toFixed(1)}%
-      &nbsp;|&nbsp; Base rate: ${(baseRate * 100).toFixed(1)}%
-      &nbsp;|&nbsp; <span style="color: ${liftColor}; font-weight: bold;">Lift: ${liftOverBase > 0 ? '+' : ''}${(liftOverBase * 100).toFixed(1)}pp</span><br>
-      Confusion: TP=${confusion.tp} FP=${confusion.fp} TN=${confusion.tn} FN=${confusion.fn}
+function renderFlowstateForecast(result) {
+  const { forecasts, skipped, params } = result;
+  const fmt = (x, d = 2) => (x == null ? '—' : Number(x).toFixed(d));
+  const pct = (x, d = 2) => (x == null ? '—' : (Number(x) * 100).toFixed(d) + '%');
+  const skippedHtml = skipped && skipped.length
+    ? `<div style="color:#888; font-size:0.85em; margin-bottom:8px;">Skipped: ${skipped.map(s => `${s.ticker} (${s.reason})`).join(', ')}</div>`
+    : '';
+  const rows = forecasts.map(f => {
+    if (f.error) return `<tr><td><strong>${f.ticker}</strong></td><td colspan="6" style="color:#f44336;">${f.error}</td></tr>`;
+    const dirColor = f.medianReturnPct > 0 ? '#4caf50' : f.medianReturnPct < 0 ? '#f44336' : '#333';
+    return `<tr>
+      <td><strong>${f.ticker}</strong></td>
+      <td>${f.asOf}</td>
+      <td>${fmt(f.lastClose)}</td>
+      <td style="color:#f44336;">${fmt(f.low)}</td>
+      <td style="color:${dirColor}; font-weight:600;">${fmt(f.median)}</td>
+      <td style="color:#4caf50;">${fmt(f.high)}</td>
+      <td style="color:${dirColor};">${pct(f.medianReturnPct)}</td>
+      <td>${pct(f.bandPct)}</td>
+    </tr>`;
+  }).join('');
+  fsResults.innerHTML = `
+    <div style="margin-bottom: 8px; padding: 10px; background: #f9f9f9; border-radius: 6px; font-size: 0.9em;">
+      <strong>${params.model}</strong> @ ${params.revision} · ${params.device} · context=${params.contextDays}d ·
+      band=q${(params.qLowLevel*100).toFixed(0)}/q${(params.qHighLevel*100).toFixed(0)}
     </div>
-
+    ${skippedHtml}
     <table class="glm-table">
-      <thead>
-        <tr><th>Feature</th><th>Coefficient</th><th>Odds Ratio</th></tr>
-      </thead>
-      <tbody>
-        <tr style="background: #f0f0f0;"><td><em>intercept</em></td><td>${intercept.toFixed(4)}</td><td>${Math.exp(intercept).toFixed(4)}</td></tr>
-        ${coefficients.map(c => {
-          const color = c.coefficient > 0 ? '#4caf50' : c.coefficient < 0 ? '#f44336' : '#333';
-          return `<tr>
-            <td>${c.feature}</td>
-            <td style="color: ${color}; font-weight: 600;">${c.coefficient.toFixed(4)}</td>
-            <td>${c.oddsRatio.toFixed(4)}</td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table>
+      <thead><tr><th>Ticker</th><th>As of</th><th>Last close</th><th>Low</th><th>Median</th><th>High</th><th>Median Δ%</th><th>Band width</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  fsResults.style.display = 'block';
+}
 
-    <details style="margin-top: 12px;">
-      <summary style="cursor: pointer; font-weight: 600;">Per-Event Predictions (${predictions.length})</summary>
+function renderFlowstateBacktest(result) {
+  const { ticker, nDays, mae, rmse, maePct, coverage, nominalCoverage, directionalHitRate, days, qLowLevel, qHighLevel } = result;
+  const covColor = Math.abs(coverage - nominalCoverage) < 0.1 ? '#4caf50' : '#ff9800';
+  const hitColor = directionalHitRate == null ? '#888' : directionalHitRate > 0.5 ? '#4caf50' : '#f44336';
+  const fmt = (x, d = 3) => (x == null ? '—' : Number(x).toFixed(d));
+  const rows = days.map(d => {
+    const errColor = Math.abs(d.error) < (mae * 0.5) ? '#4caf50' : Math.abs(d.error) > (mae * 1.5) ? '#f44336' : '#333';
+    const bandColor = d.inBand ? '#4caf50' : '#f44336';
+    const dirOk = d.realizedDir === d.predDir;
+    return `<tr>
+      <td>${d.date}</td>
+      <td>${fmt(d.prevClose, 2)}</td>
+      <td>${fmt(d.realized, 2)}</td>
+      <td style="color:#f44336;">${fmt(d.low, 2)}</td>
+      <td>${fmt(d.median, 2)}</td>
+      <td style="color:#4caf50;">${fmt(d.high, 2)}</td>
+      <td style="color:${errColor};">${fmt(d.error, 3)}</td>
+      <td style="color:${bandColor};">${d.inBand ? '✓' : '✗'}</td>
+      <td style="color:${dirOk ? '#4caf50' : '#f44336'};">${d.predDir} / ${d.realizedDir}</td>
+    </tr>`;
+  }).join('');
+  fsResults.innerHTML = `
+    <div style="margin-bottom: 12px; padding: 10px; background: #f9f9f9; border-radius: 6px;">
+      <strong>${ticker} — ${nDays}-day walk-forward</strong><br>
+      MAE: <strong>${fmt(mae, 3)}</strong> (${(maePct * 100).toFixed(2)}% of last close) ·
+      RMSE: ${fmt(rmse, 3)} ·
+      Band coverage: <span style="color:${covColor}; font-weight:600;">${(coverage * 100).toFixed(1)}%</span> (nominal ${(nominalCoverage * 100).toFixed(0)}%, q${(qLowLevel*100).toFixed(0)}–q${(qHighLevel*100).toFixed(0)}) ·
+      Directional hit-rate: <span style="color:${hitColor}; font-weight:600;">${directionalHitRate == null ? 'n/a' : (directionalHitRate * 100).toFixed(1) + '%'}</span>
+    </div>
+    <details>
+      <summary style="cursor: pointer; font-weight: 600;">Per-day predictions (${days.length})</summary>
       <table class="glm-table" style="margin-top: 8px;">
-        <thead>
-          <tr><th>Ticker</th><th>Date</th><th>Class</th><th>Predicted</th><th>Actual</th><th>P(up)</th><th>Return</th></tr>
-        </thead>
-        <tbody>
-          ${predictions.map(p => {
-            const rowColor = p.correct ? '#e8f5e9' : '#ffebee';
-            return `<tr style="background: ${rowColor};">
-              <td><strong>${p.ticker}</strong></td>
-              <td>${p.eventDate}</td>
-              <td style="font-size: 0.85em;">${p.classification.replace('_', ' ')}</td>
-              <td>${p.predicted === 1 ? 'UP' : 'DOWN'}</td>
-              <td>${p.actual === 1 ? 'UP' : 'DOWN'}</td>
-              <td>${(p.probability * 100).toFixed(1)}%</td>
-              <td style="color: ${p.cumReturn > 0 ? '#4caf50' : '#f44336'};">${(p.cumReturn * 100).toFixed(2)}%</td>
-            </tr>`;
-          }).join('')}
-        </tbody>
+        <thead><tr><th>Date</th><th>Prev close</th><th>Realized</th><th>Low</th><th>Median</th><th>High</th><th>Err</th><th>In band</th><th>Pred / Real dir</th></tr></thead>
+        <tbody>${rows}</tbody>
       </table>
-    </details>
-  `;
-
-  glmResults.innerHTML = html;
-  glmResults.style.display = 'block';
+    </details>`;
+  fsResults.style.display = 'block';
 }
 
 // Initialize
 (async () => {
-  // Tab creation doesn't require DB — start it immediately
-  const tabPromise = createTab('https://simplywall.st/dashboard');
+  // Tab creation doesn't require DB — start it immediately.
+  // Open simplywall.st first (active by default), then claude.ai and lichess.org,
+  // and switch back to simplywall.st so it remains the focused tab on startup.
+  const simplywallTabId = await createTab('https://simplywall.st/dashboard');
+  await createTab('https://claude.ai');
+  await createTab('https://lichess.org');
+  await switchTab(simplywallTabId);
 
   // Stats require DB — wait for backend readiness
   await window.electronAPI.waitBackendReady();
-  await tabPromise;
   await updateStats();
 })();

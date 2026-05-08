@@ -252,6 +252,24 @@ body {
   background: #4a9ac9;
 }
 
+.action-btn.is-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: progress;
+  opacity: 0.85;
+}
+
+.action-btn.is-loading::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: toastSpin 0.8s linear infinite;
+}
+
 /* Save Stock News button - soft green */
 .btn-analyze {
   background: #66bb6a;
@@ -869,6 +887,20 @@ body {
 .toast-icon {
   font-size: 18px;
   flex-shrink: 0;
+}
+
+.toast-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(126, 184, 218, 0.25);
+  border-top-color: #7eb8da;
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: toastSpin 0.8s linear infinite;
+}
+
+@keyframes toastSpin {
+  to { transform: rotate(360deg); }
 }
 
 .toast-content {

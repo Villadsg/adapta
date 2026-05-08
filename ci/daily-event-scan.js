@@ -1,16 +1,19 @@
 #!/usr/bin/env node
 
 /**
- * Daily Event Scan — standalone job that checks tickers for significant
- * stock events and sends Telegram notifications when detected.
+ * Super-Favorites Scan — standalone CI job that, for each ticker in
+ * ci/screening-super-favorites.json, computes recent events + current
+ * options metrics and sends a Telegram message.
  *
- * Reuses existing service files from the Electron app.
- * Run: TWELVE_DATA_API_KEY=... node ci/daily-event-scan.js
+ * Run: TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... \
+ *      TWELVE_DATA_API_KEY=... EODHD_API_KEY=... \
+ *      node ci/daily-event-scan.js
+ *
+ * Override tickers (e.g. for manual dispatch): TICKERS=AXON,QCOM
  */
 
 require('dotenv').config();
 
-// Patch global fetch with browser UA for Yahoo Finance (same as main.js)
 const BROWSER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 const _origFetch = global.fetch;
@@ -34,262 +37,112 @@ Module._resolveFilename = function (request, parent, ...rest) {
   return originalResolveFilename.call(this, request, parent, ...rest);
 };
 
+const fs = require('fs');
 const path = require('path');
 const config = require('./config.json');
-const { sendMessage, formatEventMessage, formatScreeningMessage } = require('./telegram');
-const { screenTickers } = require('./ticker-screen');
+const { sendMessage, formatSuperFavoriteMessage } = require('./telegram');
 
 const ArticleDatabase = require('../src/services/database');
 const StockAnalysisService = require('../src/services/stockAnalysis');
 const OptionsAnalysisService = require('../src/services/optionsAnalysis');
 const IBOptionsProvider = require('../src/services/ibOptionsProvider');
-const PriceTrackingService = require('../src/services/priceTracking');
 
 const DB_PATH = path.join(__dirname, '..', 'data', 'events.db');
+const FAVORITES_PATH = path.join(__dirname, 'screening-super-favorites.json');
 
 async function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function loadTickers() {
+  if (process.env.TICKERS) {
+    return process.env.TICKERS.split(',').map((t) => t.trim()).filter(Boolean);
+  }
+  const raw = fs.readFileSync(FAVORITES_PATH, 'utf8');
+  const parsed = JSON.parse(raw);
+  if (!Array.isArray(parsed)) {
+    throw new Error(`Expected array in ${FAVORITES_PATH}`);
+  }
+  return parsed;
+}
+
 async function main() {
-  const tickers = process.env.TICKERS
-    ? process.env.TICKERS.split(',').map((t) => t.trim())
-    : config.tickers;
+  const tickers = loadTickers();
+  const { benchmark, days, minEvents, delayBetweenTickersMs } = config;
 
-  const { benchmark, days, minEvents, eventPercentileThreshold, delayBetweenTickersMs } = config;
-
-  console.log(`=== Daily Event Scan ===`);
-  console.log(`Tickers: ${tickers.join(', ')}`);
+  console.log(`=== Super-Favorites Scan ===`);
+  console.log(`Tickers (${tickers.length}): ${tickers.join(', ')}`);
   console.log(`Benchmark: ${benchmark} | Days: ${days} | Min events: ${minEvents}`);
-  console.log(`Percentile threshold: ${eventPercentileThreshold}`);
   console.log('');
 
-  // Initialize database
   const database = new ArticleDatabase(DB_PATH);
   await database.initialize();
 
-  // Initialize services
   const stockAnalyzer = new StockAnalysisService(database);
   const ibProvider = new IBOptionsProvider({ port: 4002 });
   const optionsAnalyzer = new OptionsAnalysisService(database, ibProvider);
-  const priceTracker = new PriceTrackingService(database, { useBun: false });
 
-  const detectedEvents = [];
+  const sent = [];
+  const failed = [];
 
   for (let i = 0; i < tickers.length; i++) {
     const ticker = tickers[i];
-
     if (i > 0) {
-      console.log(`  (waiting ${delayBetweenTickersMs / 1000}s before next ticker...)`);
       await sleep(delayBetweenTickersMs);
     }
-
     console.log(`\n--- ${ticker} ---`);
 
+    let events = [];
+    let optionsData = null;
+
     try {
-      // Run stock analysis
       const result = await stockAnalyzer.analyzeStock(ticker, {
         benchmark,
         days,
         minEvents,
       });
+      events = result.events || [];
+      console.log(`  Found ${events.length} events`);
+    } catch (err) {
+      console.error(`  Stock analysis failed: ${err.message}`);
+    }
 
-      // Save price bars to DB
-      console.log(`Saving ${result.data.length} price bars...`);
-      for (const bar of result.data) {
-        await database.saveStockPrice(
-          ticker,
-          bar.date.toISOString().split('T')[0],
-          { open: bar.open, high: bar.high, low: bar.low, close: bar.close, volume: bar.volume },
-          'analysis'
+    try {
+      optionsData = await optionsAnalyzer.analyzeCurrentOptions(ticker);
+      if (optionsData) {
+        console.log(
+          `  Options: ${optionsData.expirations?.length || 0} expirations, ` +
+            `wCallIV=${((optionsData.summary.avgCallIV || 0) * 100).toFixed(1)}% ` +
+            `wPutIV=${((optionsData.summary.avgPutIV || 0) * 100).toFixed(1)}%`
         );
       }
+    } catch (err) {
+      console.error(`  Options analysis failed: ${err.message}`);
+    }
 
-      // Save events to DB
-      const startDate = result.data[0].date.toISOString().split('T')[0];
-      const endDate = result.data[result.data.length - 1].date.toISOString().split('T')[0];
-      await database.saveStockEvents(ticker, result.events, benchmark, startDate, endDate);
-
-      // Get current quote
-      const currentQuote = await priceTracker.getQuoteSummary(ticker);
-
-      if (!currentQuote || !currentQuote.open || !currentQuote.previousClose || !currentQuote.volume) {
-        console.log(`  No valid quote data — skipping event signal`);
-        continue;
-      }
-
-      // Compute event signal (replicating main.js logic)
-      const gap = Math.abs(
-        ((currentQuote.open - currentQuote.previousClose) / currentQuote.previousClose) * 100
-      );
-      const todayProduct = currentQuote.volume * gap;
-
-      const allProducts = result.data
-        .map((b) => b.volumeGapProduct ?? 0)
-        .filter((p) => !isNaN(p) && p > 0)
-        .sort((a, b) => a - b);
-
-      const eventThreshold =
-        result.events.length > 0
-          ? Math.min(...result.events.map((e) => e.volumeGapProduct ?? 0))
-          : 0;
-
-      const belowCount = allProducts.filter((p) => p <= todayProduct).length;
-      const percentile = allProducts.length > 0 ? (belowCount / allProducts.length) * 100 : 0;
-
-      // Compute residual gap
-      let residualGap = null;
-      try {
-        const reg = result.stats.regression;
-        if (reg) {
-          const benchQuote = await priceTracker.getQuoteSummary(benchmark);
-          if (benchQuote && benchQuote.previousClose) {
-            const stockReturn =
-              (currentQuote.price - currentQuote.previousClose) / currentQuote.previousClose;
-            const marketReturn =
-              (benchQuote.price - benchQuote.previousClose) / benchQuote.previousClose;
-            residualGap = Math.abs(
-              (stockReturn - (reg.slope * marketReturn + reg.intercept)) * 100
-            );
-          }
-        }
-      } catch (benchErr) {
-        console.error('  Benchmark quote fetch failed (non-fatal):', benchErr.message);
-      }
-
-      // Classify
-      let classification = null;
-      if (currentQuote.previousClose && currentQuote.open) {
-        const gapNegative = currentQuote.previousClose > currentQuote.open;
-        const intradayPositive = currentQuote.price > currentQuote.open;
-        const closedBelowPrevClose = currentQuote.price < currentQuote.previousClose;
-
-        if (gapNegative) {
-          classification = intradayPositive
-            ? 'negative_anticipated'
-            : 'surprising_negative';
-        } else {
-          classification = closedBelowPrevClose
-            ? 'surprising_negative'
-            : intradayPositive
-              ? 'surprising_positive'
-              : 'positive_anticipated';
-        }
-      }
-
-      const avgEventVolume =
-        result.events.length > 0
-          ? result.events.reduce((sum, e) => sum + e.volume, 0) / result.events.length
-          : 0;
-
-      const eventSignal = {
-        gap,
-        todayProduct,
-        threshold: eventThreshold,
-        percentile,
-        residualGap,
-        isAboveThreshold: todayProduct >= eventThreshold && eventThreshold > 0,
-        classification,
-        avgEventVolume,
-      };
-
-      console.log(
-        `  Signal: gap=${gap.toFixed(2)}%, percentile=${percentile.toFixed(1)}%, ` +
-          `above_threshold=${eventSignal.isAboveThreshold}`
-      );
-
-      // Check if event detected
-      const isEvent =
-        eventSignal.isAboveThreshold || percentile > eventPercentileThreshold;
-
-      if (!isEvent) {
-        console.log(`  No event detected.`);
-        continue;
-      }
-
-      console.log(`  *** EVENT DETECTED ***`);
-
-      // Run options analysis
-      let optionsData = null;
-      try {
-        optionsData = await optionsAnalyzer.analyzeCurrentOptions(ticker);
-        if (optionsData) {
-          const historicalVolatility = stockAnalyzer.computeHistoricalVolatility(result.data);
-          const history = await optionsAnalyzer.getSnapshotHistory(ticker, days);
-          optionsData.eventAnticipation = optionsAnalyzer.computeEventAnticipation(
-            optionsData.summary,
-            optionsData.expirations,
-            historicalVolatility,
-            history
-          );
-        }
-      } catch (optErr) {
-        console.error('  Options analysis failed (non-fatal):', optErr.message);
-      }
-
-      // Send Telegram notification
-      const message = formatEventMessage(ticker, currentQuote, eventSignal, optionsData);
+    try {
+      const message = formatSuperFavoriteMessage(ticker, events, optionsData);
       console.log(`\n${message}\n`);
       await sendMessage(message);
-
-      detectedEvents.push({ ticker, eventSignal, optionsData });
+      sent.push(ticker);
     } catch (err) {
-      console.error(`  Error processing ${ticker}:`, err.message);
+      console.error(`  Telegram send failed: ${err.message}`);
+      failed.push(ticker);
     }
   }
 
-  // --- Phase 2: Broad Ticker Screening ---
-  console.log(`\n=== Phase 2: Ticker Screening ===`);
-
-  try {
-    // Filter out tickers already in the curated watchlist
-    const curatedSet = new Set(tickers.map((t) => t.toUpperCase()));
-    const screenConfig = {
-      ...config,
-      screenTickers: (config.screenTickers || []).filter(
-        (t) => !curatedSet.has(t.toUpperCase())
-      ),
-    };
-
-    const screenResult = await screenTickers(priceTracker, screenConfig);
-    const screenHits = screenResult.hits;
-
-    if (screenHits.length > 0) {
-      console.log(`\nScreening hits: ${screenHits.length}`);
-      for (const hit of screenHits) {
-        console.log(
-          `  ${hit.ticker} — ${hit.date} | gap=${hit.gap.toFixed(1)}% p=${hit.percentile.toFixed(1)}% | ${hit.classification}`
-        );
-      }
-
-      const screenMsg = formatScreeningMessage(screenHits);
-      if (screenMsg) {
-        await sendMessage(screenMsg);
-      }
-    } else {
-      console.log('No screening hits.');
-    }
-  } catch (screenErr) {
-    console.error('Screening phase failed (non-fatal):', screenErr.message);
-  }
-
-  // Summary
   console.log(`\n=== Scan Complete ===`);
-  console.log(`Tickers scanned: ${tickers.length}`);
-  console.log(`Events detected: ${detectedEvents.length}`);
-  if (detectedEvents.length > 0) {
-    console.log(
-      `Event tickers: ${detectedEvents.map((e) => e.ticker).join(', ')}`
-    );
+  console.log(`Sent: ${sent.length}/${tickers.length}`);
+  if (failed.length > 0) {
+    console.log(`Failed: ${failed.join(', ')}`);
   }
 
-  // Close database
   try {
     if (database.db) {
       database.db.close();
     }
-  } catch (e) {
-    // ignore close errors
+  } catch {
+    // ignore
   }
 }
 

@@ -30,6 +30,15 @@ class OptionsAnalysisService {
    * @returns {Promise<Object|null>} Raw options chain or null on error
    */
   async fetchOptionsChain(ticker, expirationDate, retries = 2) {
+    const result = await this.fetchOptionsChainWithSource(ticker, expirationDate, retries);
+    return result ? result.chain : null;
+  }
+
+  /**
+   * Like fetchOptionsChain, but returns { chain, source } so callers can
+   * attribute raw contracts to 'yahoo' or 'ib' (used by RunArchiver).
+   */
+  async fetchOptionsChainWithSource(ticker, expirationDate, retries = 2) {
     // Try Yahoo Finance first
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
@@ -42,7 +51,7 @@ class OptionsAnalysisService {
         // Check if Yahoo actually returned option contracts (not just quote data)
         const hasCalls = chain?.options?.[0]?.calls?.length > 0;
         const hasPuts = chain?.options?.[0]?.puts?.length > 0;
-        if (hasCalls || hasPuts) return chain;
+        if (hasCalls || hasPuts) return { chain, source: 'yahoo' };
         // Yahoo returned a chain structure but no contracts — fall through to IB
         console.log(`  Yahoo returned no option contracts for ${ticker}, trying IB...`);
         break;
@@ -65,7 +74,7 @@ class OptionsAnalysisService {
         const chain = await this.ibProvider.fetchOptionsChain(ticker, opts);
         if (chain) {
           console.log(`  [IB fallback] Got options chain for ${ticker}`);
-          return chain;
+          return { chain, source: 'ib' };
         }
       } catch (err) {
         console.error(`  [IB fallback] Failed for ${ticker}: ${err.message}`);

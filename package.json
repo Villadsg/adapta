@@ -27,7 +27,6 @@
     "dotenv": "^17.2.4",
     "duckdb": "^1.4.1",
     "jsdom": "^24.1.0",
-    "ml-logistic-regression": "^2.0.0",
     "simple-statistics": "^7.8.0",
     "yahoo-finance2": "^3.10.2"
   }

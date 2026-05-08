@@ -508,14 +508,18 @@ class StockAnalysisService {
       const gapNegative = prevClose > currentOpen;
       const intradayPositive = currentClose > currentOpen;
       const closedBelowPrevClose = currentClose < prevClose;
+      const closedAbovePrevClose = currentClose > prevClose;
 
       let classification;
 
       if (gapNegative) {
-        // Gapped down: if intraday recovered (close > open), the negative was anticipated/priced-in
-        classification = intradayPositive
-          ? 'negative_anticipated'
-          : 'surprising_negative';
+        // Gapped down: if close recovered through prev close, it's a surprising positive;
+        // if it only recovered above the open but stayed below prev close, the negative was anticipated/priced-in
+        classification = closedAbovePrevClose
+          ? 'surprising_positive'
+          : intradayPositive
+            ? 'negative_anticipated'
+            : 'surprising_negative';
       } else {
         // Gapped up, but if it fell so much that close < prev close, it's surprising negative
         if (closedBelowPrevClose) {

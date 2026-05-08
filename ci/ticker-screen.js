@@ -30,7 +30,7 @@ function linReg(points) {
   return { m, b };
 }
 
-async function screenTickers(priceTracker, config = {}, createYF = null, onTickerDone = null, database = null) {
+async function screenTickers(priceTracker, config = {}, createYF = null, onTickerDone = null, database = null, archiver = null) {
   const {
     screenTickers: tickers = [],
     screenDays = 100,
@@ -43,8 +43,12 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
 
   if (!tickers.length) {
     console.log('[Screen] No tickers configured for screening');
-    return [];
+    return { hits: [], allTickers: [], runId: null };
   }
+
+  // Start archive run (no-op if archiver is null)
+  const run = archiver ? archiver.startRun({ trigger: 'manual', config }) : null;
+  if (run) console.log(`[Screen] Archive run id: ${run.runId}`);
 
   const list = screenMaxTickers > 0 ? tickers.slice(0, screenMaxTickers) : tickers;
   console.log(`[Screen] Screening ${list.length} tickers (${screenDays}d window, ${screenLookbackDays}d lookback, p${screenPercentileThreshold})`);
@@ -60,6 +64,7 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
     });
     if (spyBars && spyBars.length > 20) {
       const valid = spyBars.filter(b => b.close != null);
+      archiver?.recordBars(run, benchmark, valid);
       marketReturns = new Map();
       for (let j = 1; j < valid.length; j++) {
         const dateStr = (valid[j].date instanceof Date
@@ -91,6 +96,7 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
       if (!bars || bars.length < 20) {
         console.log(`  [Screen] ${ticker}: skipped (only ${bars?.length ?? 0} bars)`);
         allTickers.push({ ticker, skipped: true });
+        archiver?.recordTicker(run, ticker, { status: 'skipped', bars: bars?.length ?? 0 });
         continue;
       }
 
@@ -102,8 +108,11 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
       if (validBars.length < 20) {
         console.log(`  [Screen] ${ticker}: skipped (only ${validBars.length} valid bars)`);
         allTickers.push({ ticker, skipped: true });
+        archiver?.recordTicker(run, ticker, { status: 'skipped', bars: validBars.length });
         continue;
       }
+
+      archiver?.recordBars(run, ticker, validBars);
 
       // Compute daily returns and align with market returns
       const dailyData = [];
@@ -203,10 +212,11 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
         const gapNeg = entry.bar.open < entry.prevClose;
         const intradayPos = entry.bar.close > entry.bar.open;
         const closedBelow = entry.bar.close < entry.prevClose;
+        const closedAbove = entry.bar.close > entry.prevClose;
 
         let cls;
         if (gapNeg) {
-          cls = intradayPos ? 'negative_anticipated' : 'surprising_negative';
+          cls = closedAbove ? 'surprising_positive' : intradayPos ? 'negative_anticipated' : 'surprising_negative';
         } else {
           cls = closedBelow ? 'surprising_negative' : intradayPos ? 'surprising_positive' : 'positive_anticipated';
         }
@@ -225,6 +235,8 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
           volume: entry.bar.volume,
         });
       }
+
+      archiver?.recordEvents(run, ticker, dbEvents, benchmark);
 
       // Persist bars + events to DB so GLM analysis can join event-log entries against forward
       // price returns. Without this, screening and the DB drift apart and GLM training fails.
@@ -268,12 +280,15 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
         const gapNegative = entry.bar.open < entry.prevClose;
         const intradayPositive = entry.bar.close > entry.bar.open;
         const closedBelowPrevClose = entry.bar.close < entry.prevClose;
+        const closedAbovePrevClose = entry.bar.close > entry.prevClose;
 
         let classification;
         if (gapNegative) {
-          classification = intradayPositive
-            ? 'negative_anticipated'
-            : 'surprising_negative';
+          classification = closedAbovePrevClose
+            ? 'surprising_positive'
+            : intradayPositive
+              ? 'negative_anticipated'
+              : 'surprising_negative';
         } else {
           classification = closedBelowPrevClose
             ? 'surprising_negative'
@@ -325,13 +340,29 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
         try {
           const ibProvider = new IBOptionsProvider({ port: 4002 });
           const optSvc = new OptionsAnalysisService(null, ibProvider);
-          const initialChain = await optSvc.fetchOptionsChain(ticker);
+          const initialFetch = await optSvc.fetchOptionsChainWithSource(ticker);
+          const initialChain = initialFetch?.chain;
+          const initialSource = initialFetch?.source;
           const currentPrice = initialChain?.quote?.regularMarketPrice;
           const expirationDates = initialChain?.expirationDates || [];
+
+          // Single snapshot timestamp shared across all expirations for this ticker
+          const snapshotDate = new Date().toISOString();
 
           if (currentPrice && expirationDates.length > 0) {
             const maxExp = Math.min(3, expirationDates.length);
             const results = [];
+
+            // Archive raw contracts for the initial expiration
+            archiver?.recordChain(run, {
+              ticker,
+              snapshotDate,
+              expirationDate: expirationDates[0],
+              currentPrice,
+              source: initialSource,
+              calls: initialChain.options?.[0]?.calls || [],
+              puts: initialChain.options?.[0]?.puts || [],
+            });
 
             // Dollar-volume-weighted IV for a set of contracts
             function weightedIV(contracts) {
@@ -399,11 +430,22 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
               results.push(buildExpResult(firstMetrics, expirationDates[0]));
             }
 
-            // Remaining expirations (use optSvc.fetchOptionsChain for IB fallback)
+            // Remaining expirations (use optSvc.fetchOptionsChainWithSource for IB fallback + source attribution)
             for (let ei = 1; ei < maxExp; ei++) {
               try {
-                const chain = await optSvc.fetchOptionsChain(ticker, optSvc.formatDate(expirationDates[ei]));
+                const fetched = await optSvc.fetchOptionsChainWithSource(ticker, optSvc.formatDate(expirationDates[ei]));
+                const chain = fetched?.chain;
+                const source = fetched?.source;
                 if (chain) {
+                  archiver?.recordChain(run, {
+                    ticker,
+                    snapshotDate,
+                    expirationDate: expirationDates[ei],
+                    currentPrice,
+                    source,
+                    calls: chain.options?.[0]?.calls || [],
+                    puts: chain.options?.[0]?.puts || [],
+                  });
                   const metrics = optSvc.computeExpirationMetrics(chain, currentPrice, globalLatestTradeDay);
                   if (metrics) {
                     results.push(buildExpResult(metrics, expirationDates[ei]));
@@ -429,16 +471,34 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
         entry = { ticker, rSquared, date: null, gap: 0, percentile: 0, classification: '', volume: 0, chartData, summary, marketCap, sector, industry };
       }
       allTickers.push(entry);
+      archiver?.recordTicker(run, ticker, {
+        rSquared,
+        bars: validBars.length,
+        events: dbEvents.length,
+        hits: bestHit ? 1 : 0,
+        status: 'ok',
+      });
       if (onTickerDone) onTickerDone(entry);
     } catch (err) {
       console.error(`  [Screen] ${ticker}: error — ${err.message}`);
       const entry = { ticker, error: err.message };
       allTickers.push(entry);
+      archiver?.recordTicker(run, ticker, { status: 'errored', error: err.message });
       if (onTickerDone) onTickerDone(entry);
     }
   }
 
-  return { hits, allTickers };
+  let archiveResult = null;
+  if (archiver && run) {
+    try {
+      archiveResult = await archiver.finishRun(run, { status: 'completed' });
+      console.log(`[Screen] Archive written: ${archiveResult.runId} (bars=${archiveResult.counts.bars}, chains=${archiveResult.counts.chains}, events=${archiveResult.counts.events})`);
+    } catch (archiveErr) {
+      console.error(`[Screen] Archive write failed: ${archiveErr.message}`);
+    }
+  }
+
+  return { hits, allTickers, runId: archiveResult?.runId || run?.runId || null };
 }
 
 // ~400 liquid US tickers spanning defense, biotech, clean energy,

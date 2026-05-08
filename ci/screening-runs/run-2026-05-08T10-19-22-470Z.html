@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<title>Ticker Screening Results</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 20px; background: #1a1d23; color: #eaeaea; }
+  h1 { font-size: 1.4em; margin-bottom: 4px; color: #a8b5a2; }
+  .summary { color: #a0aec0; margin-bottom: 16px; font-size: 0.95em; }
+  table { width: 100%; border-collapse: collapse; background: #262a33; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.4); }
+  #screen-table th { background: #2f3540; padding: 10px 12px; text-align: left; font-size: 0.85em; color: #a0aec0; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; user-select: none; }
+  #screen-table th:hover { color: #fff; background: #3a414d; }
+  #screen-table th .sort-arrow { font-size: 0.7em; margin-left: 3px; color: #5a6a8a; }
+  #screen-table th.sorted-asc .sort-arrow, #screen-table th.sorted-desc .sort-arrow { color: #fff; }
+  td { padding: 8px 12px; border-top: 1px solid #2e333d; font-size: 0.95em; }
+  tr.data-row:hover { background: #2c303a; }
+  tr:hover { background: #22252c; }
+  .chart-row td { border-top: none; }
+  input, textarea { background: #15171c; color: #ddd; border: 1px solid #333; }
+  input::placeholder, textarea::placeholder { color: #6a7590; }
+  /* Override inline light-theme colors used throughout the generated markup */
+  [style*="background:#fff"] { background: #262a33 !important; }
+  [style*="background: #fff"] { background: #262a33 !important; }
+  [style*="background:#f7f9fc"] { background: #22252c !important; }
+  [style*="background:#f9f9f9"] { background: #22252c !important; }
+  [style*="background:#f5f5f5"] { background: #2f3540 !important; }
+  [style*="color:#333"] { color: #eaeaea !important; }
+  [style*="color:#444"] { color: #eaeaea !important; }
+  [style*="color:#666"] { color: #a0aec0 !important; }
+  [style*="color:#888"] { color: #8a96b0 !important; }
+  [style*="color:#999"] { color: #7a8499 !important; }
+  [style*="color:#aaa"] { color: #6a7590 !important; }
+  [style*="color:#bbb"] { color: #5a6680 !important; }
+  #fav-toast { position:fixed; bottom:20px; right:20px; padding:8px 16px; border-radius:6px; font-size:0.9em; color:#fff; opacity:0; transition:opacity 0.3s; pointer-events:none; z-index:9999; }
+  #fav-toast.show { opacity:1; }
+</style></head><body>
+<div id="fav-toast"></div>
+<h1>Ticker Screening Results</h1>
+<p class="summary">1 hit out of 1 tickers screened &mdash; 5d lookback, p92 threshold</p>
+<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.95em;">
+  <span style="color:#666; font-weight:600;">Avg Weighted IV (1 tickers):</span>
+  <span style="color:rgba(72,187,120,0.9); font-weight:bold; margin-left:10px;">Call 6.1%</span>
+  <span style="color:rgba(245,101,101,0.9); font-weight:bold; margin-left:10px;">Put 9.0%</span>
+  <span style="color:#999; margin-left:16px;">|</span>
+  <span style="color:#666; font-weight:600; margin-left:16px;">Avg ATM IV:</span>
+  <span style="color:rgba(72,187,120,0.7); font-weight:bold; margin-left:10px;">Call 1.5%</span>
+  <span style="color:rgba(245,101,101,0.7); font-weight:bold; margin-left:10px;">Put 0.0%</span>
+</div>
+<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.92em;">
+    <div style="color:#666; font-weight:600; margin-bottom:4px;">Pre-Event IV Profile <span style="color:#999; font-weight:normal; font-size:0.9em;">(avg percentile rank of each pre-event snapshot within that ticker's own point-in-time history; 50 = neutral, &gt;60 = elevated, &lt;40 = suppressed)</span></div>
+    <div style="color:#aaa; font-size:0.78em; margin-bottom:6px;">Requires ≥10 history records before the event date. (n) = events contributing.</div>
+    <table style="border-collapse:collapse;">
+      <thead><tr style="color:#888; font-size:0.8em; text-transform:uppercase;">
+        <th style="padding:4px 10px; text-align:left;">Classification</th>
+        <th style="padding:4px 10px; text-align:right;">Call IV</th>
+        <th style="padding:4px 10px; text-align:right;">Put IV</th>
+        <th style="padding:4px 10px; text-align:right;">C Spr</th>
+        <th style="padding:4px 10px; text-align:right;">P Spr</th>
+      </tr></thead>
+      <tbody><tr>
+      <td style="padding:6px 10px; font-weight:bold; color:#4caf50;">Surprising +</td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#d32f2f; font-weight:600;">p68</span> <span style="color:#aaa; font-size:0.85em;">(91)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p65</span> <span style="color:#aaa; font-size:0.85em;">(83)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p56</span> <span style="color:#aaa; font-size:0.85em;">(89)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p56</span> <span style="color:#aaa; font-size:0.85em;">(89)</span></td>
+    </tr><tr>
+      <td style="padding:6px 10px; font-weight:bold; color:#8bc34a;">Anticipated +</td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#d32f2f; font-weight:600;">p96</span> <span style="color:#aaa; font-size:0.85em;">(9)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#d32f2f; font-weight:600;">p94</span> <span style="color:#aaa; font-size:0.85em;">(7)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p46</span> <span style="color:#aaa; font-size:0.85em;">(8)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#0277bd; font-weight:600;">p44</span> <span style="color:#aaa; font-size:0.85em;">(8)</span></td>
+    </tr><tr>
+      <td style="padding:6px 10px; font-weight:bold; color:#ff9800;">Anticipated -</td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p63</span> <span style="color:#aaa; font-size:0.85em;">(11)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p62</span> <span style="color:#aaa; font-size:0.85em;">(10)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#1565c0; font-weight:600;">p31</span> <span style="color:#aaa; font-size:0.85em;">(10)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p48</span> <span style="color:#aaa; font-size:0.85em;">(10)</span></td>
+    </tr><tr>
+      <td style="padding:6px 10px; font-weight:bold; color:#f44336;">Surprising -</td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p61</span> <span style="color:#aaa; font-size:0.85em;">(67)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p57</span> <span style="color:#aaa; font-size:0.85em;">(64)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#0277bd; font-weight:600;">p45</span> <span style="color:#aaa; font-size:0.85em;">(52)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p58</span> <span style="color:#aaa; font-size:0.85em;">(52)</span></td>
+    </tr></tbody>
+    </table>
+  </div>
+<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.92em;">
+    <div style="color:#666; font-weight:600; margin-bottom:4px;">IV Profile by Daily Return Bucket <span style="color:#999; font-weight:normal; font-size:0.9em;">(median split on next-day return; average IV/spread ranks from the day before — tests if high rank precedes high vs low next-day return)</span></div>
+    <table style="border-collapse:collapse;">
+      <thead><tr style="color:#888; font-size:0.8em; text-transform:uppercase;">
+        <th style="padding:4px 10px; text-align:left;">Bucket</th>
+        <th style="padding:4px 10px; text-align:right;">Call IV</th>
+        <th style="padding:4px 10px; text-align:right;">Put IV</th>
+        <th style="padding:4px 10px; text-align:right;">C Spr</th>
+        <th style="padding:4px 10px; text-align:right;">P Spr</th>
+      </tr></thead>
+      <tbody><tr>
+    <td style="padding:6px 10px; font-weight:bold; color:#1565c0;">Low Returns <span style="color:#999; font-weight:normal; font-size:0.85em;">[-31.7% … +0.1%]</span> <span style="color:#aaa; font-size:0.85em;">n=551</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p60</span> <span style="color:#aaa; font-size:0.85em;">(536)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p60</span> <span style="color:#aaa; font-size:0.85em;">(507)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p48</span> <span style="color:#aaa; font-size:0.85em;">(546)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p48</span> <span style="color:#aaa; font-size:0.85em;">(546)</span></td>
+  </tr><tr>
+    <td style="padding:6px 10px; font-weight:bold; color:#d32f2f;">High Returns <span style="color:#999; font-weight:normal; font-size:0.85em;">[+0.1% … +39.9%]</span> <span style="color:#aaa; font-size:0.85em;">n=552</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#d32f2f; font-weight:600;">p69</span> <span style="color:#aaa; font-size:0.85em;">(542)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#d32f2f; font-weight:600;">p67</span> <span style="color:#aaa; font-size:0.85em;">(516)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#0277bd; font-weight:600;">p42</span> <span style="color:#aaa; font-size:0.85em;">(548)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#0277bd; font-weight:600;">p44</span> <span style="color:#aaa; font-size:0.85em;">(548)</span></td>
+  </tr></tbody>
+    </table>
+  </div>
+<div id="portfolio-corr-box" style="margin-bottom:14px; padding:12px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.95em;">
+  <div style="color:#666; font-weight:600; margin-bottom:6px;">Portfolio Correlation Check</div>
+  <div style="display:flex; align-items:center; gap:10px;">
+    <input id="portfolio-corr-input" type="text" placeholder="e.g. AAPL, MSFT, NVDA" style="flex:1; padding:7px 10px; border:1px solid #ddd; border-radius:6px; font-size:0.95em; outline:none;" />
+    <button id="portfolio-corr-btn" style="padding:7px 16px; border:none; border-radius:6px; background:#5b8cb8; color:#fff; font-size:0.9em; cursor:pointer;">Check</button>
+  </div>
+  <div id="portfolio-corr-result" style="margin-top:8px;"></div>
+</div>
+
+<table id="screen-table">
+<thead><tr>
+  <th style="width:28px; text-align:center; padding:4px;"><span class="sort-arrow"></span></th>
+  <th>Ticker<span class="sort-arrow"></span></th>
+  <th>Sector<span class="sort-arrow"></span></th>
+  <th>Date<span class="sort-arrow"></span></th>
+  <th>Gap %<span class="sort-arrow"></span></th>
+  <th>Percentile<span class="sort-arrow"></span></th>
+  <th>Classification<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Volume<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">R&sup2; (SPY)<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Mkt Cap<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Opt $ Vol<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Call IV<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Weighted OTM IV minus ATM IV. (pN) = self-history rank, [sN] = sector rank">C Spr<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Put IV<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Weighted OTM IV minus ATM IV. (pN) = self-history rank, [sN] = sector rank">P Spr<span class="sort-arrow"></span></th>
+</tr></thead>
+<tbody><tr class="data-row" data-ticker="AAON" style=" cursor:pointer;">
+      <td style="text-align:center; width:28px; padding:4px;" data-v="2"><span class="fav-star" data-ticker="AAON" style="cursor:pointer; font-size:1.1em; color:#e53935;" title="Super favorite (click to clear)">★</span></td>
+      <td data-v="AAON" style="font-weight:bold;">AAON <span style="font-size:0.7em;color:#aaa;">▶</span></td>
+      <td data-v="Industrials" style="font-size:0.82em; color:#888;">Industrials</td>
+      <td data-v="2026-05-07">2026-05-07</td>
+      <td data-v="31.458031375193514">31.46%</td>
+      <td data-v="100">100.0%</td>
+      <td data-v="positive_anticipated" style="color:#8bc34a; font-weight:bold;">Anticipated +</td>
+      <td data-v="7696000" style="text-align:right;">7.7M</td>
+      <td data-v="0.10199378103749934" style="text-align:right;">0.102</td>
+      <td data-v="10578299904" style="text-align:right;">10.6B</td>
+      <td data-v="27552" style="text-align:right;">$28K</td>
+      <td data-v="6.1" style="text-align:right; color:rgba(72,187,120,0.9);">6.1% <span style="color:#888; font-size:0.78em;">(p10)</span></td>
+      <td data-v="4.5" style="text-align:right; color:rgba(72,187,120,0.7); font-size:0.88em;">+4.5 <span style="color:#888; font-size:0.78em;">(p81)</span> <span style="color:#6a8; font-size:0.78em;">[s81]</span></td>
+      <td data-v="9" style="text-align:right; color:rgba(245,101,101,0.9);">9.0% <span style="color:#888; font-size:0.78em;">(p0)</span></td>
+      <td data-v="9" style="text-align:right; color:rgba(245,101,101,0.7); font-size:0.88em;">+9.0 <span style="color:#888; font-size:0.78em;">(p40)</span> <span style="color:#6a8; font-size:0.78em;">[s40]</span></td>
+    </tr>
+    <tr class="chart-row" data-chart-for="AAON" style="display:none;">
+      <td colspan="15" style="padding:0; background:#1a1d23;">
+        <div style="display:flex; gap:12px; align-items:stretch; margin:12px 20px 8px;">
+          <div id="summary-AAON" style="flex:0 1 78ch; padding:14px 18px; background:#262a33; border-left:3px solid #4a5a8a; border-radius:6px; color:#cdd5e0; font-size:0.98em; line-height:1.65; max-height:200px; overflow-y:auto;"></div>
+          <div style="flex:1 1 0; min-width:280px; height:200px; background:#262a33; border-radius:6px; padding:6px 10px;">
+            <canvas id="dv-iv-chart-AAON"></canvas>
+          </div>
+        </div>
+        <div id="dv-iv-strike-wrap-AAON" style="display:none; margin:0 20px 8px; padding:10px 14px; background:#262a33; border-left:3px solid #7aa2c7; border-radius:6px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span id="dv-iv-strike-title-AAON" style="color:#cdd5e0; font-size:0.92em;"></span>
+            <button type="button" data-strike-close="AAON" style="background:transparent; color:#888; border:1px solid #444; border-radius:3px; padding:2px 8px; font-size:0.8em; cursor:pointer;">close</button>
+          </div>
+          <div id="dv-iv-strike-body-AAON"></div>
+        </div>
+        <div style="padding:6px 20px 8px; display:flex; gap:8px; align-items:flex-start;">
+          <label style="color:#aaa; font-size:0.82em; padding-top:6px; min-width:48px;">Notes</label>
+          <textarea class="ticker-note" data-ticker="AAON" placeholder="Add a note about AAON..." style="flex:1; min-height:42px; padding:6px 8px; border:1px solid #333; border-radius:4px; background:#15171c; color:#ddd; font-size:0.88em; font-family:inherit; resize:vertical;"></textarea>
+          <span class="note-status" data-ticker="AAON" style="color:#888; font-size:0.78em; padding-top:8px; min-width:54px;"></span>
+        </div>
+        <div style="padding:12px 16px; height:480px;">
+          <canvas id="chart-AAON"></canvas>
+        </div>
+        <div id="opts-wrap-AAON" style="display:none; padding:8px 16px 4px;">
+          <div style="display:flex; gap:8px;">
+            <div style="flex:1; min-width:0;">
+              <div id="opts-iv-label-0-AAON" style="color:#aaa; font-size:0.82em; padding:2px 4px; cursor:pointer; user-select:none;" title="Click for historical weighted IV"></div>
+              <div style="height:360px;"><canvas id="opts-chart-0-AAON"></canvas></div>
+            </div>
+            <div style="flex:1; min-width:0;">
+              <div id="opts-iv-label-1-AAON" style="color:#aaa; font-size:0.82em; padding:2px 4px; cursor:pointer; user-select:none;" title="Click for historical weighted IV"></div>
+              <div style="height:360px;"><canvas id="opts-chart-1-AAON"></canvas></div>
+            </div>
+          </div>
+          <div id="iv-history-wrap-AAON" style="display:none; padding:8px 0; height:420px;">
+            <canvas id="iv-history-chart-AAON"></canvas>
+          </div>
+        </div>
+        <div id="news-AAON" style="padding:4px 20px 14px;"></div>
+      </td>
+    </tr></tbody>
+</table>
+
+<script>
+(function() {
+  const chartDataMap = {"AAON":{"dates":["2025-12-22","2025-12-23","2025-12-24","2025-12-26","2025-12-29","2025-12-30","2025-12-31","2026-01-02","2026-01-05","2026-01-06","2026-01-07","2026-01-08","2026-01-09","2026-01-12","2026-01-13","2026-01-14","2026-01-15","2026-01-16","2026-01-20","2026-01-21","2026-01-22","2026-01-23","2026-01-26","2026-01-27","2026-01-28","2026-01-29","2026-01-30","2026-02-02","2026-02-03","2026-02-04","2026-02-05","2026-02-06","2026-02-09","2026-02-10","2026-02-11","2026-02-12","2026-02-13","2026-02-17","2026-02-18","2026-02-19","2026-02-20","2026-02-23","2026-02-24","2026-02-25","2026-02-26","2026-02-27","2026-03-02","2026-03-03","2026-03-04","2026-03-05","2026-03-06","2026-03-09","2026-03-10","2026-03-11","2026-03-12","2026-03-13","2026-03-16","2026-03-17","2026-03-18","2026-03-19","2026-03-20","2026-03-23","2026-03-24","2026-03-25","2026-03-26","2026-03-27","2026-03-30","2026-03-31","2026-04-01","2026-04-02","2026-04-06","2026-04-07","2026-04-08","2026-04-09","2026-04-10","2026-04-13","2026-04-14","2026-04-15","2026-04-16","2026-04-17","2026-04-20","2026-04-21","2026-04-22","2026-04-23","2026-04-24","2026-04-27","2026-04-28","2026-04-29","2026-04-30","2026-05-01","2026-05-04","2026-05-05","2026-05-06","2026-05-07"],"closes":[75.08000183105469,75.25,75.79000091552734,75.7699966430664,75.69999694824219,78.62000274658203,76.25,79.19000244140625,81.4800033569336,81.66999816894531,77.61000061035156,79.80999755859375,83.31999969482422,85.37000274658203,84.5,87.83999633789062,90.04000091552734,94.08000183105469,91.73999786376953,95.63999938964844,96.58000183105469,94.45999908447266,93.47000122070312,91.86000061035156,91.22000122070312,93.30999755859375,91.05999755859375,90.08000183105469,93.37000274658203,95.23999786376953,92.88999938964844,96.43000030517578,98.80999755859375,99.02999877929688,102.72000122070312,101.61000061035156,101.04000091552734,102.77999877929688,102.27999877929688,101.0199966430664,102.30000305175781,101.0999984741211,100.94999694824219,99.05000305175781,98.88999938964844,101.19999694824219,104.7300033569336,95.33000183105469,95.97000122070312,92.4000015258789,88.33000183105469,90.33000183105469,90.54000091552734,91.51000213623047,87.05999755859375,83.9000015258789,81.55999755859375,79.5,78.55000305175781,80.05000305175781,80.01000213623047,80.29000091552734,84.01000213623047,87.83000183105469,83.4000015258789,81.4800033569336,78.22000122070312,82.75,83.6500015258789,81.36000061035156,81.25,80.87999725341797,87.37000274658203,90.7699966430664,93.16999816894531,93.54000091552734,93.80999755859375,92.5999984741211,91.4800033569336,93.9800033569336,97.9000015258789,95.73999786376953,96.86000061035156,98.70999908447266,99.58999633789062,91.63999938964844,88.08000183105469,86.47000122070312,93.30999755859375,93.58999633789062,91.9000015258789,93.66000366210938,98.30000305175781,129.25],"volumes":[915300,689500,563100,358400,864700,1375600,1197600,1350400,1243400,1894600,1050100,1042400,832900,969000,741500,1078400,894100,1836400,1090600,721400,675700,606900,504100,778400,695500,1065900,1023500,1166300,1066800,1168900,874500,1152200,761100,620600,1484700,792900,1115500,612500,1011600,599600,519100,451500,602600,1124500,1075600,1256900,1682400,1658900,915000,1357400,673500,825000,613500,597100,762100,769100,821300,1174900,881900,888800,957900,653800,646500,913800,716200,548900,691800,914100,725400,630300,642200,497300,838000,561100,484800,585400,789400,1414700,780300,2149300,623800,640700,669500,623500,933300,1567700,782800,568200,710500,491200,514600,1306200,2118000,7696000],"events":[{"idx":5,"y":78.62000274658203,"classification":"surprising_positive"},{"idx":10,"y":77.61000061035156,"classification":"surprising_negative"},{"idx":17,"y":94.08000183105469,"classification":"surprising_positive"},{"idx":28,"y":93.37000274658203,"classification":"surprising_positive"},{"idx":46,"y":104.7300033569336,"classification":"positive_anticipated"},{"idx":47,"y":95.33000183105469,"classification":"surprising_negative"},{"idx":85,"y":91.63999938964844,"classification":"surprising_negative"},{"idx":93,"y":129.25,"classification":"positive_anticipated"}],"optionsStrikes":[{"label":"2026-05-15","calls":[],"puts":[{"strike":70,"dollarVol":10,"dollarOI":0,"iv":50.0005},{"strike":75,"dollarVol":171,"dollarOI":0,"iv":50.0005},{"strike":80,"dollarVol":8,"dollarOI":0,"iv":50.0005},{"strike":90,"dollarVol":152,"dollarOI":0,"iv":50.0005},{"strike":95,"dollarVol":84,"dollarOI":0,"iv":50.0005}],"wCallIV":0,"wPutIV":50,"atmCallIV":1.6,"atmPutIV":50,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":7748296,"atmPutDV":0,"ivSpreadCall":-1.6,"ivSpreadPut":0,"deepOTMCallPct":0,"deepOTMPutPct":100},{"label":"2026-06-18","calls":[{"strike":140,"dollarVol":10860,"dollarOI":0,"iv":6.250937500000001}],"puts":[{"strike":75,"dollarVol":325,"dollarOI":0,"iv":25.00075},{"strike":80,"dollarVol":25,"dollarOI":0,"iv":25.00075}],"wCallIV":6.3,"wPutIV":25,"atmCallIV":0.4,"atmPutIV":25,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":282096,"atmPutDV":0,"ivSpreadCall":5.9,"ivSpreadPut":0,"deepOTMCallPct":0,"deepOTMPutPct":100},{"label":"2026-07-17","calls":[{"strike":140,"dollarVol":919,"dollarOI":0,"iv":3.12596875}],"puts":[{"strike":60,"dollarVol":1260,"dollarOI":0,"iv":25.00075},{"strike":65,"dollarVol":720,"dollarOI":0,"iv":25.00075},{"strike":70,"dollarVol":260,"dollarOI":0,"iv":25.00075},{"strike":80,"dollarVol":854.9999999999999,"dollarOI":0,"iv":25.00075},{"strike":85,"dollarVol":400,"dollarOI":0,"iv":25.00075},{"strike":100,"dollarVol":180,"dollarOI":0,"iv":12.500875},{"strike":105,"dollarVol":250,"dollarOI":0,"iv":12.500875},{"strike":115,"dollarVol":0,"dollarOI":0,"iv":6.250937500000001},{"strike":120,"dollarVol":1757.9999999999998,"dollarOI":0,"iv":3.12596875},{"strike":125,"dollarVol":9315,"dollarOI":0,"iv":1.5634843750000003}],"wCallIV":3.1,"wPutIV":7.5,"atmCallIV":0.4,"atmPutIV":1.6,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":403944,"atmPutDV":0,"ivSpreadCall":2.7,"ivSpreadPut":5.9,"deepOTMCallPct":0,"deepOTMPutPct":26.2}]}};
+  const summaryMap = {"AAON":"AAON, Inc., together with its subsidiaries, engages in engineering, manufacturing, marketing, and selling air conditioning and heating equipment in the United States and Canada. The company operates through three segments: AAON Oklahoma, AAON Coil Products, and BASX. It offers rooftop units, data center cooling solutions, cleanroom systems, packaged outdoor mechanical rooms, air handling units, makeup air units, energy recovery units, condensing units, geothermal/water-source heat pumps, coils, and controls. The company markets and sells its products to retail, manufacturing, educational, lodging, supermarket, data centers, medical and pharmaceutical, and other commercial industries. It sells its products through a network of independent manufacturer representative organizations and internal sales force, as well as online. AAON, Inc. was incorporated in 1987 and is headquartered in Tulsa, Oklahoma."};
+  const newsMap = {"AAON":[{"date":"May-07-26","time":"04:43PM","headline":"AAON, Inc. Q1 2026 Earnings Call Summary","url":"https://finance.yahoo.com/m/db6e86ea-8447-371b-8a8a-65bef3b3e64a/aaon%2C-inc.-q1-2026-earnings.html","category":"mixed"},{"date":"May-07-26","time":"11:06AM","headline":"Record Backlog and Raised 2026 Guidance Put AAONs Data Center Growth Story in Focus","url":"https://finance.yahoo.com/m/0bd9303a-4b48-3828-ac3f-253ee197038b/record-backlog-and-raised.html","category":"win"},{"date":"May-07-26","time":"07:09AM","headline":"Aaon: Q1 Earnings Snapshot","url":"https://finance.yahoo.com/markets/stocks/articles/aaon-q1-earnings-snapshot-110955928.html","category":"mixed"},{"date":"May-07-26","time":"07:00AM","headline":"AAON Reports First Quarter 2026 Results with Record Sales and Backlog, Robust Earnings Growth, and Raises Full-Year Guidance","url":"/news/351810/aaon-reports-first-quarter-2026-results-with-record-sales-and-backlog-robust-earnings-growth-and-raises-full-year-guidance","category":"win"},{"date":"Apr-23-26","time":"08:00AM","headline":"AAON Announces First Quarter 2026 Conference Call and Webcast","url":"/news/347066/aaon-announces-first-quarter-2026-conference-call-and-webcast","category":"win"},{"date":"Apr-02-26","time":"08:00AM","headline":"AAON Announces CFO Transition and Strengthens Executive Leadership Team","url":"/news/342077/aaon-announces-cfo-transition-and-strengthens-executive-leadership-team","category":"win"},{"date":"Mar-05-26","time":"01:17PM","headline":"AAON Announces Quarterly Cash Dividend","url":"/news/331300/aaon-announces-quarterly-cash-dividend","category":"mixed"},{"date":"Mar-03-26","time":"10:00AM","headline":"AAON Passes DOE's Commercial Building HVAC Technology Challenge with Simultaneous Dual Fuel Technology","url":"/news/328300/aaon-passes-does-commercial-building-hvac-technology-challenge-with-simultaneous-dual-fuel-technology","category":"mixed"},{"date":"Mar-02-26","time":"04:01PM","headline":"AAON Inc (AAON) Q4 2025 Earnings Call Highlights: Robust Sales Growth Amid Operational Challenges","url":"https://finance.yahoo.com/news/aaon-inc-aaon-q4-2025-210103271.html","category":"win"},{"date":"Mar-02-26","time":"03:30PM","headline":"AAON (AAON) Stock Trades Up, Here Is Why","url":"/news/327478/aaon-aaon-stock-trades-up-here-is-why","category":"technical"},{"date":"Mar-02-26","time":"01:19PM","headline":"Palantir, Energy Stocks Rally, Cruise Lines Tumble On US And Israeli-Iran War: What's Moving Markets Monday?","url":"/news/327399/palantir-energy-stocks-rally-cruise-lines-tumble-on-us-and-israeli-iran-war-whats-moving-markets-monday","category":"technical"},{"date":"Mar-02-26","time":"12:32PM","headline":"AAON, Inc. Q4 2025 Earnings Call Summary","url":"https://finance.yahoo.com/m/3c5503b2-0ffe-38f8-b0c9-64ca985c4f13/aaon%2C-inc.-q4-2025-earnings.html","category":"mixed"},{"date":"Mar-02-26","time":"10:37AM","headline":"AAON Q4 Earnings Call Highlights","url":"https://finance.yahoo.com/m/2f12087a-336c-30fe-a319-b82fc80b2ffc/aaon-q4-earnings-call.html","category":"mixed"},{"date":"Mar-02-26","time":"08:20AM","headline":"Aaon (AAON) Misses Q4 Earnings Estimates","url":"/news/326908/aaon-aaon-misses-q4-earnings-estimates","category":"mixed"},{"date":"Mar-02-26","time":"07:23AM","headline":"Aaon: Q4 Earnings Snapshot","url":"https://finance.yahoo.com/news/aaon-q4-earnings-snapshot-122341901.html","category":"mixed"},{"date":"Mar-02-26","time":"07:11AM","headline":"AAON's (NASDAQ:AAON) Q4 CY2025 Sales Beat Estimates","url":"/news/326706/aaons-nasdaq-aaon-q4-cy2025-sales-beat-estimates","category":"win"},{"date":"Mar-02-26","time":"07:00AM","headline":"AAON Reports Fourth Quarter and Full Year 2025 Results","url":"/news/326641/aaon-reports-fourth-quarter-and-full-year-2025-results","category":"win"},{"date":"Mar-02-26","time":"04:25AM","headline":"Is Trane Technologies Stock Outperforming the S&P 500?","url":"https://finance.yahoo.com/m/f0206287-2fdc-3165-b0ce-c2cece08609a/is-trane-technologies-stock.html","category":"technical"},{"date":"Feb-24-26","time":"09:55PM","headline":"SPX Technologies (SPXC) Beats Q4 Earnings and Revenue Estimates","url":"/news/321161/spx-technologies-spxc-beats-q4-earnings-and-revenue-estimates","category":"mixed"},{"date":"Feb-23-26","time":"05:16AM","headline":"AAON, Inc. (AAON) Touts Robust Product Portfolio for Data Center Opportunities","url":"/news/318261/aaon-inc-aaon-touts-robust-product-portfolio-for-data-center-opportunities","category":"mixed"},{"date":"Feb-19-26","time":"07:20AM","headline":"AAON (AAON) Fell Despite Solid Results","url":"/news/315470/aaon-aaon-fell-despite-solid-results","category":"mixed"},{"date":"Feb-18-26","time":"08:00AM","headline":"AAON Announces Fourth Quarter and Full Year 2025 Conference Call and Webcast","url":"/news/314039/aaon-announces-fourth-quarter-and-full-year-2025-conference-call-and-webcast","category":"win"},{"date":"Feb-17-26","time":"11:54AM","headline":"Quanta is Set to Report Q4 Earnings: Here's What Investors Must Know","url":"/news/313156/quanta-is-set-to-report-q4-earnings-heres-what-investors-must-know","category":"technical"},{"date":"Feb-16-26","time":"10:46AM","headline":"4 Construction Stocks Poised to Deliver an Earnings Beat This Season","url":"/news/311873/4-construction-stocks-poised-to-deliver-an-earnings-beat-this-season","category":"mixed"},{"date":"Feb-15-26","time":"11:32PM","headline":"1 Small-Cap Stock with Exciting Potential and 2 Facing Headwinds","url":"/news/311554/1-small-cap-stock-with-exciting-potential-and-2-facing-headwinds","category":"win"},{"date":"Feb-12-26","time":"11:37PM","headline":"3 Profitable Stocks with Open Questions","url":"/news/311065/3-profitable-stocks-with-open-questions","category":"technical"},{"date":"Feb-12-26","time":"01:22PM","headline":"Great Lakes Dredge & Dock to Report Q4 Earnings: Here's What to Expect","url":"/news/309683/great-lakes-dredge-dock-to-report-q4-earnings-heres-what-to-expect","category":"mixed"},{"date":"Feb-09-26","time":"09:06AM","headline":"Martin Marietta to Report Q4 Earnings: What to Expect This Season?","url":"/news/304368/martin-marietta-to-report-q4-earnings-what-to-expect-this-season","category":"technical"},{"date":"Feb-05-26","time":"08:14AM","headline":"Masco to Report Q4 Earnings: Here's What Investors Must Know","url":"/news/301347/masco-to-report-q4-earnings-heres-what-investors-must-know","category":"technical"},{"date":"Feb-05-26","time":"07:10AM","headline":"Carrier Global (CARR) Q4 Earnings and Revenues Miss Estimates","url":"/news/301176/carrier-global-carr-q4-earnings-and-revenues-miss-estimates","category":"mixed"},{"date":"Feb-02-26","time":"11:03PM","headline":"3 Reasons AAON is Risky and 1 Stock to Buy Instead","url":"/news/296709/3-reasons-aaon-is-risky-and-1-stock-to-buy-instead","category":"technical"},{"date":"Feb-01-26","time":"11:41PM","headline":"3 Volatile Stocks Walking a Fine Line","url":"/news/295075/3-volatile-stocks-walking-a-fine-line","category":"technical"},{"date":"Jan-28-26","time":"12:41PM","headline":"Here's What Investors Must Know Ahead of Weyerhaeuser's Q4 Earnings","url":"/news/290605/heres-what-investors-must-know-ahead-of-weyerhaeusers-q4-earnings","category":"technical"},{"date":"Jan-28-26","time":"09:21AM","headline":"PulteGroup Gears to Report Q4 Earnings: Here's What to Expect","url":"/news/290156/pultegroup-gears-to-report-q4-earnings-heres-what-to-expect","category":"technical"},{"date":"Jan-27-26","time":"09:21AM","headline":"Here's What Investors Must Know Ahead of United Rentals' Q4 Earnings","url":"/news/288452/heres-what-investors-must-know-ahead-of-united-rentals-q4-earnings","category":"technical"},{"date":"Jan-20-26","time":"09:16AM","headline":"D.R. Horton's Q1 Earnings & Revenues Beat, Net Sales Orders Up Y/Y","url":"/news/281193/dr-hortons-q1-earnings-revenues-beat-net-sales-orders-up-yy","category":"win"},{"date":"Jan-06-26","time":"10:34PM","headline":"HVAC and Water Systems Stocks Q3 Highlights: AAON (NASDAQ:AAON)","url":"/news/269430/hvac-and-water-systems-stocks-q3-highlights-aaon-nasdaq-aaon","category":"technical"},{"date":"Jan-02-26","time":"08:48AM","headline":"Do Options Traders Know Something About AAON Stock We Don't?","url":"/news/266021/do-options-traders-know-something-about-aaon-stock-we-dont","category":"technical"},{"date":"Dec-29-25","time":"03:05PM","headline":"AAON Activates Accordion Feature on Credit Facility to Support Growth","url":"/news/263865/aaon-activates-accordion-feature-on-credit-facility-to-support-growth","category":"win"},{"date":"Dec-26-25","time":"08:23AM","headline":"Can Mechanical & Electrical Strength Support Comfort Systems in 2026?","url":"/news/262436/can-mechanical-electrical-strength-support-comfort-systems-in-2026","category":"macro_win"},{"date":"Dec-19-25","time":"10:23AM","headline":"Does Comfort Systems' Cash Strength Reinforce Financial Stability?","url":"/news/258701/does-comfort-systems-cash-strength-reinforce-financial-stability","category":"technical"},{"date":"Dec-19-25","time":"07:42AM","headline":"HVAC Revenues Are Contracting. We Compared Three Manufacturers to Find the Winner.","url":"https://finance.yahoo.com/m/f388c0d2-eb4d-3c9d-b9ea-65fa6a2f2019/hvac-revenues-are.html","category":"mixed"},{"date":"Dec-12-25","time":"10:24AM","headline":"Is Comfort Systems Positioned for Long-Term Pharma Project Demand?","url":"/news/252996/is-comfort-systems-positioned-for-long-term-pharma-project-demand","category":"mixed"},{"date":"Dec-11-25","time":"11:33PM","headline":"3 of Wall Street's Favorite Stocks Walking a Fine Line","url":"/news/252853/3-of-wall-streets-favorite-stocks-walking-a-fine-line","category":"technical"},{"date":"Dec-10-25","time":"11:29AM","headline":"William Blair Touts AAON, Inc. (AAON) Growth Prospects, Asserts Buy Rating","url":"/news/250846/william-blair-touts-aaon-inc-aaon-growth-prospects-asserts-buy-rating","category":"technical"},{"date":"Dec-01-25","time":"11:32PM","headline":"3 High-Flying Stocks We Find Risky","url":"/news/242868/3-high-flying-stocks-we-find-risky","category":"technical"},{"date":"Dec-01-25","time":"11:38AM","headline":"AAON Announces Promotion of Doug Wichman to EVP & General Manager Role","url":"/news/242323/aaon-announces-promotion-of-doug-wichman-to-evp-general-manager-role","category":"win"},{"date":"Dec-01-25","time":"05:59AM","headline":"1 Cash-Burning Stock with Impressive Fundamentals and 2 We Avoid","url":"/news/241790/1-cash-burning-stock-with-impressive-fundamentals-and-2-we-avoid","category":"mixed"},{"date":"Nov-20-25","time":"04:45PM","headline":"AAON, FTAI Aviation, Hubbell, MYR Group, and Allient Shares Plummet, What You Need To Know","url":"/news/235523/aaon-ftai-aviation-hubbell-myr-group-and-allient-shares-plummet-what-you-need-to-know","category":"fear"},{"date":"Nov-13-25","time":"12:35AM","headline":"The Top 5 Analyst Questions From AAON's Q3 Earnings Call","url":"/news/228523/the-top-5-analyst-questions-from-aaons-q3-earnings-call","category":"technical"},{"date":"Nov-12-25","time":"01:08PM","headline":"AAON Announces Quarterly Cash Dividend","url":"/news/227745/aaon-announces-quarterly-cash-dividend","category":"mixed"},{"date":"Nov-12-25","time":"08:40AM","headline":"What Makes AAON (AAON) an Investment Choice?","url":"/news/227244/what-makes-aaon-aaon-an-investment-choice","category":"mixed"},{"date":"Nov-11-25","time":"11:33PM","headline":"3 Unpopular Stocks We're Skeptical Of","url":"/news/226845/3-unpopular-stocks-were-skeptical-of","category":"technical"},{"date":"Nov-07-25","time":"09:40AM","headline":"AAON Q3 Deep Dive: Data Center Demand and Capacity Expansion Drive Growth Amid Margin Pressures","url":"/news/223062/aaon-q3-deep-dive-data-center-demand-and-capacity-expansion-drive-growth-amid-margin-pressures","category":"mixed"},{"date":"Nov-06-25","time":"01:55PM","headline":"Why Is AAON (AAON) Stock Rocketing Higher Today","url":"/news/221707/why-is-aaon-aaon-stock-rocketing-higher-today","category":"win"},{"date":"Nov-06-25","time":"08:15AM","headline":"Aaon (AAON) Surpasses Q3 Earnings and Revenue Estimates","url":"/news/221054/aaon-aaon-surpasses-q3-earnings-and-revenue-estimates","category":"mixed"},{"date":"Nov-06-25","time":"07:41AM","headline":"AAON (NASDAQ:AAON) Reports Strong Q3, Stock Jumps 10%","url":"/news/220788/aaon-nasdaq-aaon-reports-strong-q3-stock-jumps-10","category":"win"},{"date":"Nov-06-25","time":"07:12AM","headline":"Aaon: Q3 Earnings Snapshot","url":"https://finance.yahoo.com/news/aaon-q3-earnings-snapshot-121235703.html","category":"technical"},{"date":"Nov-06-25","time":"07:00AM","headline":"AAON Reports Strong Third Quarter 2025 Results Driven by Operational Improvements and Share Gains","url":"/news/220591/aaon-reports-strong-third-quarter-2025-results-driven-by-operational-improvements-and-share-gains","category":"win"},{"date":"Nov-04-25","time":"10:26PM","headline":"AAON (AAON) Q3 Earnings Report Preview: What To Look For","url":"/news/218159/aaon-aaon-q3-earnings-report-preview-what-to-look-for","category":"technical"},{"date":"Nov-04-25","time":"03:55PM","headline":"AAON, EMCOR, Caterpillar, WESCO, and Quanex Stocks Trade Down, What You Need To Know","url":"/news/217562/aaon-emcor-caterpillar-wesco-and-quanex-stocks-trade-down-what-you-need-to-know","category":"technical"},{"date":"Oct-31-25","time":"03:21PM","headline":"AAON (AAON) Stock Trades Down, Here Is Why","url":"/news/213808/aaon-aaon-stock-trades-down-here-is-why","category":"technical"},{"date":"Oct-31-25","time":"01:11PM","headline":"Martin Marietta to Report Q3 Earnings: What to Expect This Season?","url":"/news/213708/martin-marietta-to-report-q3-earnings-what-to-expect-this-season","category":"technical"},{"date":"Oct-30-25","time":"05:01PM","headline":"AAON Welcomes Roberto Giacomelli as Senior Vice President of Operations","url":"/news/212334/aaon-welcomes-roberto-giacomelli-as-senior-vice-president-of-operations","category":"win"},{"date":"Oct-30-25","time":"10:00AM","headline":"Aaon (AAON) Expected to Beat Earnings Estimates: Should You Buy?","url":"/news/211615/aaon-aaon-expected-to-beat-earnings-estimates-should-you-buy","category":"technical"},{"date":"Oct-30-25","time":"07:15AM","headline":"Trane Technologies (TT) Surpasses Q3 Earnings Estimates","url":"/news/210955/trane-technologies-tt-surpasses-q3-earnings-estimates","category":"technical"},{"date":"Oct-29-25","time":"01:37PM","headline":"5 Construction Stocks Set to Carve a Beat in This Earnings Season","url":"/news/209739/5-construction-stocks-set-to-carve-a-beat-in-this-earnings-season","category":"technical"},{"date":"Oct-29-25","time":"07:00AM","headline":"AAON Announces Third Quarter 2025 Conference Call And Webcast","url":"/news/208615/aaon-announces-third-quarter-2025-conference-call-and-webcast","category":"win"},{"date":"Oct-28-25","time":"08:00AM","headline":"AAON Leads the Industry with Lab-Tested, Field-Proven Heat Pumps While Other Manufacturers Remain in Development","url":"/news/206679/aaon-leads-the-industry-with-lab-tested-field-proven-heat-pumps-while-other-manufacturers-remain-in-development","category":"mixed"},{"date":"Oct-24-25","time":"09:55AM","headline":"After Golden Cross, Aaon (AAON)'s Technical Outlook is Bright","url":"/news/203875/after-golden-cross-aaon-aaons-technical-outlook-is-bright","category":"technical"},{"date":"Oct-23-25","time":"12:38AM","headline":"1 Industrials Stock Worth Your Attention and 2 We Brush Off","url":"/news/201572/1-industrials-stock-worth-your-attention-and-2-we-brush-off","category":"mixed"},{"date":"Oct-20-25","time":"06:35PM","headline":"AAON, Regal Rexnord, RXO, Universal Logistics, and Tutor Perini Shares Are Soaring, What You Need To Know","url":"/news/198046/aaon-regal-rexnord-rxo-universal-logistics-and-tutor-perini-shares-are-soaring-what-you-need-to-know","category":"mixed"},{"date":"Oct-20-25","time":"09:24AM","headline":"Several Positive Drivers Boosted AAON (AAON) in Q3","url":"/news/197407/several-positive-drivers-boosted-aaon-aaon-in-q3","category":"win"},{"date":"Oct-07-25","time":"12:04AM","headline":"AAON (AAON): Buy, Sell, or Hold Post Q2 Earnings?","url":"/news/185377/aaon-aaon-buy-sell-or-hold-post-q2-earnings","category":"technical"},{"date":"Sep-30-25","time":"12:50PM","headline":"AAON (AAON) Stock Is Up, What You Need To Know","url":"/news/179856/aaon-aaon-stock-is-up-what-you-need-to-know","category":"mixed"},{"date":"Sep-19-25","time":"04:06PM","headline":"AAON (AAON) Stock Trades Up, Here Is Why","url":"/news/171160/aaon-aaon-stock-trades-up-here-is-why","category":"technical"},{"date":"Sep-18-25","time":"12:10PM","headline":"AAON, 3D Systems, Comfort Systems, Sterling, and Custom Truck One Source Shares Are Soaring, What You Need To Know","url":"/news/170070/aaon-3d-systems-comfort-systems-sterling-and-custom-truck-one-source-shares-are-soaring-what-you-need-to-know","category":"mixed"},{"date":"Sep-11-25","time":"08:00AM","headline":"AAON To Present at D.A. Davidson's Diversified Industrials & Services Conference on September 18, 2025","url":"/news/163511/aaon-to-present-at-da-davidsons-diversified-industrials-services-conference-on-september-18-2025","category":"win"},{"date":"Sep-10-25","time":"11:39AM","headline":"FIX Stock Soars 119% in 6 Months: Is It Still Worth Buying?","url":"/news/162808/fix-stock-soars-119-in-6-months-is-it-still-worth-buying","category":"mixed"},{"date":"Aug-21-25","time":"11:32PM","headline":"HVAC and Water Systems Stocks Q2 Highlights: AAON (NASDAQ:AAON)","url":"/news/147707/hvac-and-water-systems-stocks-q2-highlights-aaon-nasdaq-aaon","category":"technical"},{"date":"Aug-18-25","time":"01:32AM","headline":"The Top 5 Analyst Questions From AAON's Q2 Earnings Call","url":"/news/142777/the-top-5-analyst-questions-from-aaons-q2-earnings-call","category":"technical"},{"date":"Aug-14-25","time":"08:00AM","headline":"AAON Announces Quarterly Cash Dividend","url":"/news/140505/aaon-announces-quarterly-cash-dividend","category":"mixed"},{"date":"Aug-12-25","time":"12:14PM","headline":"AAON (AAON) Tumbles 10.49% as Earnings Disappoint","url":"/news/137059/aaon-aaon-tumbles-1049-as-earnings-disappoint","category":"mixed"},{"date":"Aug-12-25","time":"10:00AM","headline":"3 Small-Cap Stocks with Questionable Fundamentals","url":"/news/136824/3-small-cap-stocks-with-questionable-fundamentals","category":"technical"},{"date":"Aug-12-25","time":"07:22AM","headline":"Company News for Aug 12, 2025","url":"/news/136582/company-news-for-aug-12-2025","category":"mixed"},{"date":"Aug-12-25","time":"03:29AM","headline":"AAON Q2 Deep Dive: ERP Challenges Weigh on Results, Data Center Strength Remains","url":"/news/136296/aaon-q2-deep-dive-erp-challenges-weigh-on-results-data-center-strength-remains","category":"win"},{"date":"Aug-12-25","time":"03:04AM","headline":"AAON Inc (AAON) Q2 2025 Earnings Call Highlights: Navigating Challenges and Capitalizing on ...","url":"https://finance.yahoo.com/news/aaon-inc-aaon-q2-2025-070454464.html","category":"mixed"},{"date":"Aug-11-25","time":"12:30PM","headline":"Why AAON (AAON) Shares Are Plunging Today","url":"/news/135439/why-aaon-aaon-shares-are-plunging-today","category":"technical"},{"date":"Aug-11-25","time":"08:15AM","headline":"Aaon (AAON) Q2 Earnings and Revenues Miss Estimates","url":"/news/135039/aaon-aaon-q2-earnings-and-revenues-miss-estimates","category":"mixed"},{"date":"Aug-11-25","time":"07:24AM","headline":"AAON (NASDAQ:AAON) Reports Sales Below Analyst Estimates In Q2 Earnings, Stock Drops 15.6%","url":"/news/134937/aaon-nasdaq-aaon-reports-sales-below-analyst-estimates-in-q2-earnings-stock-drops-156","category":"mixed"},{"date":"Aug-11-25","time":"07:13AM","headline":"Aaon: Q2 Earnings Snapshot","url":"https://finance.yahoo.com/news/aaon-q2-earnings-snapshot-111335630.html","category":"mixed"},{"date":"Aug-11-25","time":"07:00AM","headline":"AAON Reports Second Quarter 2025 Results","url":"/news/134702/aaon-reports-second-quarter-2025-results","category":"mixed"},{"date":"Aug-09-25","time":"11:04PM","headline":"AAON (AAON) Reports Q2: Everything You Need To Know Ahead Of Earnings","url":"/news/134443/aaon-aaon-reports-q2-everything-you-need-to-know-ahead-of-earnings","category":"technical"},{"date":"Aug-08-25","time":"09:17AM","headline":"Earnings To Watch: AAON Inc (AAON) Reports Q2 2025 Result","url":"https://finance.yahoo.com/news/earnings-watch-aaon-inc-aaon-131738022.html","category":"technical"},{"date":"Aug-07-25","time":"08:50AM","headline":"Construction Partners (ROAD) Misses Q3 Earnings Estimates","url":"/news/131856/construction-partners-road-misses-q3-earnings-estimates","category":"fear"},{"date":"Jul-30-25","time":"07:20AM","headline":"Trane Technologies (TT) Tops Q2 Earnings Estimates","url":"/news/120553/trane-technologies-tt-tops-q2-earnings-estimates","category":"technical"},{"date":"Jul-25-25","time":"08:42AM","headline":"AAON (AAON) Shares Fell After Its Investor Day. Here's Why","url":"/news/115360/aaon-aaon-shares-fell-after-its-investor-day-heres-why","category":"mixed"},{"date":"Jul-24-25","time":"11:48PM","headline":"Sidoti Upgrades AAON (AAON) to Buy Despite Investor Day Selloff","url":"/news/115113/sidoti-upgrades-aaon-aaon-to-buy-despite-investor-day-selloff","category":"technical"},{"date":"Jul-24-25","time":"05:35PM","headline":"Comfort Systems (FIX) Q2 Earnings and Revenues Surpass Estimates","url":"/news/114898/comfort-systems-fix-q2-earnings-and-revenues-surpass-estimates","category":"mixed"},{"date":"Jul-24-25","time":"09:09AM","headline":"AAON, Inc. (AAON): A Bull Case Theory","url":"/news/113820/aaon-inc-aaon-a-bull-case-theory","category":"technical"}]};
+  const ivHistoryMap = {"AAON":[{"date":"2026-04-10","sector":"Industrials","exp1":{"label":"2026-04-17","callIV":0,"putIV":81.6,"atmCallIV":65.7,"atmPutIV":65.9,"deepOTMCallPct":0,"deepOTMPutPct":100,"dv":185},"exp2":{"label":"2026-05-15","callIV":0,"putIV":0,"atmCallIV":61.7,"atmPutIV":62.5,"deepOTMCallPct":0,"deepOTMPutPct":0,"dv":0},"exp3":{"label":"2026-07-17","callIV":0,"putIV":0,"atmCallIV":57.3,"atmPutIV":62.9,"deepOTMCallPct":0,"deepOTMPutPct":0,"dv":0}},{"date":"2026-04-11","sector":"Industrials","exp1":{"label":"2026-04-17","callIV":0,"putIV":95.4,"atmCallIV":69.8,"atmPutIV":59.8,"deepOTMCallPct":0,"deepOTMPutPct":100,"dv":267},"exp2":{"label":"2026-05-15","callIV":64.1,"putIV":79,"atmCallIV":60.5,"atmPutIV":65.9,"deepOTMCallPct":0,"deepOTMPutPct":100,"dv":524.0000000000001},"exp3":{"label":"2026-07-17","callIV":0,"putIV":0,"atmCallIV":55.6,"atmPutIV":61.5,"deepOTMCallPct":0,"deepOTMPutPct":0,"dv":0}},{"date":"2026-04-12","sector":"Industrials","exp1":{"label":"2026-04-17","callIV":0,"putIV":103.1,"atmCallIV":58.8,"atmPutIV":64.7,"deepOTMCallPct":0,"deepOTMPutPct":100,"dv":267},"exp2":{"label":"2026-05-15","callIV":65,"putIV":80.2,"atmCallIV":61.3,"atmPutIV":66.9,"deepOTMCallPct":0,"deepOTMPutPct":100,"dv":524.0000000000001},"exp3":{"label":"2026-07-17","callIV":0,"putIV":0,"atmCallIV":55.9,"atmPutIV":61.8,"deepOTMCallPct":0,"deepOTMPutPct":0,"dv":0}},{"date":"2026-04-14","sector":"Industrials","exp1":{"label":"2026-04-17","callIV":3.1,"putIV":26.5,"atmCallIV":2.2,"atmPutIV":3.7,"deepOTMCallPct":0,"deepOTMPutPct":42,"dv":588},"exp2":{"label":"2026-05-15","callIV":4.2,"putIV":12.5,"atmCallIV":1.1,"atmPutIV":6.3,"deepOTMCallPct":0,"deepOTMPutPct":100,"dv":1611},"exp3":{"label":"2026-07-17","callIV":0,"putIV":0,"atmCallIV":0.6,"atmPutIV":21.5,"deepOTMCallPct":0,"deepOTMPutPct":0,"dv":0}},{"date":"2026-04-15","sector":"Industrials","exp1":{"label":"2026-04-17","callIV":0,"putIV":0,"atmCallIV":3.1,"atmPutIV":3,"deepOTMCallPct":0,"deepOTMPutPct":0,"dv":0},"exp2":{"label":"2026-05-15","callIV":9,"putIV":9.5,"atmCallIV":1.6,"atmPutIV":6.3,"deepOTMCallPct":44.7,"deepOTMPutPct":52.1,"dv":2420},"exp3":{"label":"2026-07-17","callIV":0,"putIV":0,"atmCallIV":0.8,"atmPutIV":17.8,"deepOTMCallPct":0,"deepOTMPutPct":0,"dv":0}},{"date":"2026-04-16","sector":"Industrials","exp1":{"label":"2026-04-17","callIV":0,"putIV":185.5,"atmCallIV":67,"atmPutIV":80.7,"atmBandCallIV":62.5,"atmBandPutIV":0,"atmCallDV":225,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":100,"callDV":0,"putDV":100,"dv":100},"exp2":{"label":"2026-05-15","callIV":65.1,"putIV":65.9,"atmCallIV":68.6,"atmPutIV":69.2,"atmBandCallIV":69.8,"atmBandPutIV":0,"atmCallDV":6750,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":100,"callDV":1260.0000000000002,"putDV":152,"dv":1412.0000000000002},"exp3":{"label":"2026-07-17","callIV":0,"putIV":0,"atmCallIV":57.9,"atmPutIV":65.8,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":0,"dv":0}},{"date":"2026-04-17","sector":"Industrials","exp1":{"label":"2026-04-17","callIV":74,"putIV":0,"atmCallIV":92.3,"atmPutIV":60.7,"atmBandCallIV":132.1,"atmBandPutIV":0,"atmCallDV":6348,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":20,"putDV":0,"dv":20},"exp2":{"label":"2026-05-15","callIV":63.7,"putIV":0,"atmCallIV":70.3,"atmPutIV":75.1,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":696,"putDV":0,"dv":696},"exp3":{"label":"2026-07-17","callIV":0,"putIV":0,"atmCallIV":62,"atmPutIV":53.2,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":0,"dv":0}},{"date":"2026-04-18","sector":"Industrials","exp1":{"label":"2026-05-15","callIV":70,"putIV":0,"atmCallIV":71.5,"atmPutIV":69.4,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":59.7,"deepOTMPutPct":0,"callDV":1426,"putDV":0,"dv":1426},"exp2":{"label":"2026-07-17","callIV":0,"putIV":56.1,"atmCallIV":59.6,"atmPutIV":59,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":4880,"dv":4880},"exp3":{"label":"2026-10-16","callIV":57.1,"putIV":55.6,"atmCallIV":57.3,"atmPutIV":51.3,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":100,"deepOTMPutPct":100,"callDV":8040.000000000001,"putDV":4774,"dv":12814}},{"date":"2026-04-20","sector":"Industrials","exp1":{"label":"2026-05-15","callIV":65.4,"putIV":84,"atmCallIV":71.4,"atmPutIV":80.7,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":100,"callDV":2010,"putDV":6783,"dv":8793},"exp2":{"label":"2026-06-18","callIV":0,"putIV":0,"atmCallIV":57.9,"atmPutIV":0,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":0,"dv":0},"exp3":{"label":"2026-07-17","callIV":0,"putIV":0,"atmCallIV":55.6,"atmPutIV":55.3,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":0,"dv":0}},{"date":"2026-04-21","sector":"Industrials","exp1":{"label":"2026-05-15","callIV":61.8,"putIV":81.3,"atmCallIV":76.2,"atmPutIV":67.9,"atmBandCallIV":76.2,"atmBandPutIV":0,"atmCallDV":906,"atmPutDV":0,"deepOTMCallPct":100,"deepOTMPutPct":100,"callDV":3300,"putDV":1560.0000000000002,"dv":4860},"exp2":{"label":"2026-06-18","callIV":0,"putIV":0,"atmCallIV":62.9,"atmPutIV":62.4,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":0,"dv":0},"exp3":{"label":"2026-07-17","callIV":57.6,"putIV":0,"atmCallIV":57.8,"atmPutIV":54.2,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":38.3,"deepOTMPutPct":0,"callDV":1756,"putDV":0,"dv":1756}},{"date":"2026-04-22","sector":"Industrials","exp1":{"label":"2026-05-15","callIV":73.9,"putIV":76.9,"atmCallIV":76.7,"atmPutIV":79.7,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":100,"callDV":23400,"putDV":6698,"dv":30098},"exp2":{"label":"2026-06-18","callIV":0,"putIV":0,"atmCallIV":61.1,"atmPutIV":66.5,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":0,"dv":0},"exp3":{"label":"2026-07-17","callIV":55.5,"putIV":0,"atmCallIV":58.5,"atmPutIV":54.4,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":44.4,"deepOTMPutPct":0,"callDV":2880,"putDV":0,"dv":2880}},{"date":"2026-04-23","sector":"Industrials","dailyReturn":1.9099715697538224,"exp1":{"label":"2026-05-15","callIV":0,"putIV":0,"atmCallIV":69.2,"atmPutIV":78.1,"atmBandCallIV":69.2,"atmBandPutIV":0,"atmCallDV":3000,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":0,"dv":0},"exp2":{"label":"2026-06-18","callIV":0,"putIV":0,"atmCallIV":62.7,"atmPutIV":66.6,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":0,"dv":0},"exp3":{"label":"2026-07-17","callIV":0,"putIV":0,"atmCallIV":56.5,"atmPutIV":55,"atmBandCallIV":56.5,"atmBandPutIV":0,"atmCallDV":3300,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":0,"dv":0}},{"date":"2026-04-24","sector":"Industrials","dailyReturn":1.813393711001377,"exp1":{"label":"2026-05-15","callIV":0,"putIV":98.6,"atmCallIV":67.3,"atmPutIV":82.7,"atmBandCallIV":67.3,"atmBandPutIV":0,"atmCallDV":3000,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":100,"callDV":0,"putDV":25,"dv":25},"exp2":{"label":"2026-06-18","callIV":0,"putIV":0,"atmCallIV":61.4,"atmPutIV":66.9,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":0,"dv":0},"exp3":{"label":"2026-07-17","callIV":0,"putIV":0,"atmCallIV":55.9,"atmPutIV":59.3,"atmBandCallIV":55.9,"atmBandPutIV":0,"atmCallDV":3300,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":0,"dv":0}},{"date":"2026-04-26","sector":"Industrials","dailyReturn":0.891497580366602,"exp1":{"label":"2026-05-15","callIV":0,"putIV":108.5,"atmCallIV":79.5,"atmPutIV":86.1,"atmBandCallIV":79.5,"atmBandPutIV":0,"atmCallDV":800,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":100,"callDV":0,"putDV":600,"dv":600},"exp2":{"label":"2026-06-18","callIV":0,"putIV":0,"atmCallIV":67,"atmPutIV":66.8,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":0,"dv":0},"exp3":{"label":"2026-07-17","callIV":0,"putIV":58.2,"atmCallIV":62.4,"atmPutIV":57,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":650,"dv":650}},{"date":"2026-04-27","sector":"Industrials","dailyReturn":-5.8037945494910925,"exp1":{"label":"2026-05-15","callIV":78.2,"putIV":0,"atmCallIV":91.8,"atmPutIV":74.7,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":100,"deepOTMPutPct":0,"callDV":180,"putDV":0,"dv":180},"exp2":{"label":"2026-06-18","callIV":0,"putIV":0,"atmCallIV":70.3,"atmPutIV":55.9,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":0,"dv":0},"exp3":{"label":"2026-07-17","callIV":0,"putIV":0,"atmCallIV":66.4,"atmPutIV":51.4,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":0,"dv":0}},{"date":"2026-04-28","sector":"Industrials","dailyReturn":-7.982726418895833,"exp1":{"label":"2026-05-15","callIV":9.3,"putIV":12.5,"atmCallIV":1,"atmPutIV":6.3,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":42.1,"deepOTMPutPct":100,"callDV":15540,"putDV":190,"dv":15730},"exp2":{"label":"2026-06-18","callIV":6.3,"putIV":0,"atmCallIV":1,"atmPutIV":6.3,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":100,"deepOTMPutPct":0,"callDV":1377,"putDV":0,"dv":1377},"exp3":{"label":"2026-07-17","callIV":0,"putIV":0,"atmCallIV":0.5,"atmPutIV":0.5,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":0,"dv":0}},{"date":"2026-04-29","sector":"Industrials","dailyReturn":-0.4938750896289263,"exp1":{"label":"2026-05-15","callIV":76.1,"putIV":92.8,"atmCallIV":90.3,"atmPutIV":88.8,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":100,"deepOTMPutPct":100,"callDV":15000,"putDV":166,"dv":15166,"calls":[{"strike":100,"dv":3600,"iv":8181.2},{"strike":105,"dv":11400,"iv":7431.7}],"puts":[{"strike":75,"dv":166,"iv":9284.7}]},"exp2":{"label":"2026-06-18","callIV":60,"putIV":0,"atmCallIV":68.3,"atmPutIV":60.7,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":100,"deepOTMPutPct":0,"callDV":470,"putDV":0,"dv":470,"calls":[{"strike":100,"dv":470,"iv":6001}],"puts":[]},"exp3":{"label":"2026-07-17","callIV":0,"putIV":0,"atmCallIV":65.1,"atmPutIV":55.8,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":0,"dv":0,"calls":[],"puts":[]}},{"date":"2026-04-30","sector":"Industrials","dailyReturn":5.747659477901314,"exp1":{"label":"2026-05-15","callIV":77.3,"putIV":0,"atmCallIV":75.6,"atmPutIV":96,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":100,"deepOTMPutPct":0,"callDV":60,"putDV":0,"dv":60,"calls":[{"strike":120,"dv":60,"iv":7729.5}],"puts":[]},"exp2":{"label":"2026-06-18","callIV":0,"putIV":0,"atmCallIV":56.6,"atmPutIV":71.4,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":0,"dv":0,"calls":[],"puts":[]},"exp3":{"label":"2026-07-17","callIV":0,"putIV":0,"atmCallIV":56.9,"atmPutIV":64.7,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":0,"dv":0,"calls":[],"puts":[]}},{"date":"2026-05-01","sector":"Industrials","dailyReturn":0.30007371838269586,"exp1":{"label":"2026-05-15","callIV":89.5,"putIV":93.2,"atmCallIV":94.3,"atmPutIV":93.2,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0.8,"deepOTMPutPct":0,"callDV":224799.99999999997,"putDV":3250,"dv":228049.99999999997,"calls":[{"strike":95,"dv":1950,"iv":9169.9},{"strike":100,"dv":221020,"iv":8947.8},{"strike":105,"dv":1560,"iv":8737.8},{"strike":120,"dv":270,"iv":9580.1}],"puts":[{"strike":85,"dv":3250,"iv":9318.9}]},"exp2":{"label":"2026-06-18","callIV":0,"putIV":0,"atmCallIV":70.5,"atmPutIV":67.5,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":0,"dv":0,"calls":[],"puts":[]},"exp3":{"label":"2026-07-17","callIV":0,"putIV":0,"atmCallIV":65.3,"atmPutIV":59.2,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":0,"dv":0,"calls":[],"puts":[]}},{"date":"2026-05-03","sector":"Industrials","dailyReturn":0.30007371838269586,"exp1":{"label":"2026-05-15","callIV":96.1,"putIV":100.1,"atmCallIV":101.2,"atmPutIV":100.1,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0.8,"deepOTMPutPct":0,"callDV":224799.99999999997,"putDV":3250,"dv":228049.99999999997,"calls":[{"strike":95,"dv":1950,"iv":9848.6},{"strike":100,"dv":221020,"iv":9611.8},{"strike":105,"dv":1560,"iv":9384.8},{"strike":120,"dv":270,"iv":10293}],"puts":[{"strike":85,"dv":3250,"iv":10009.8}]},"exp2":{"label":"2026-06-18","callIV":0,"putIV":0,"atmCallIV":72,"atmPutIV":69,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":0,"dv":0,"calls":[],"puts":[]},"exp3":{"label":"2026-07-17","callIV":0,"putIV":0,"atmCallIV":66.1,"atmPutIV":60,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":0,"putDV":0,"dv":0,"calls":[],"puts":[]}},{"date":"2026-05-04","sector":"Industrials","dailyReturn":-1.8057430047440994,"exp1":{"label":"2026-05-15","callIV":96.5,"putIV":0,"atmCallIV":104.8,"atmPutIV":93.2,"atmBandCallIV":104,"atmBandPutIV":0,"atmCallDV":14826,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":2728,"putDV":0,"dv":2728,"calls":[{"strike":100,"dv":2728,"iv":9648.4}],"puts":[]},"exp2":{"label":"2026-06-18","callIV":68.8,"putIV":0,"atmCallIV":72.5,"atmPutIV":65.2,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":100,"deepOTMPutPct":0,"callDV":6000,"putDV":0,"dv":6000,"calls":[{"strike":105,"dv":6000,"iv":6879.9}],"puts":[]},"exp3":{"label":"2026-07-17","callIV":57.5,"putIV":0,"atmCallIV":64.9,"atmPutIV":58.5,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":100,"deepOTMPutPct":0,"callDV":2090,"putDV":0,"dv":2090,"calls":[{"strike":115,"dv":2090,"iv":5747.1}],"puts":[]}},{"date":"2026-05-05","sector":"Industrials","dailyReturn":1.9151274287355204,"exp1":{"label":"2026-05-15","callIV":110.4,"putIV":120.3,"atmCallIV":115,"atmPutIV":109.4,"atmBandCallIV":111.9,"atmBandPutIV":0,"atmCallDV":15698,"atmPutDV":0,"deepOTMCallPct":0.1,"deepOTMPutPct":100,"callDV":495850,"putDV":180,"dv":496030,"calls":[{"strike":100,"dv":495380,"iv":11042.5},{"strike":110,"dv":470,"iv":10146.5}],"puts":[{"strike":70,"dv":180,"iv":12031.3}]},"exp2":{"label":"2026-06-18","callIV":70.5,"putIV":0,"atmCallIV":72.8,"atmPutIV":72,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":0,"callDV":700,"putDV":0,"dv":700,"calls":[{"strike":100,"dv":700,"iv":7050.8}],"puts":[]},"exp3":{"label":"2026-07-17","callIV":12.5,"putIV":0,"atmCallIV":66.5,"atmPutIV":63.5,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":100,"deepOTMPutPct":0,"callDV":276,"putDV":0,"dv":276,"calls":[{"strike":130,"dv":276,"iv":1250.1}],"puts":[]}},{"date":"2026-05-06","sector":"Industrials","dailyReturn":4.954088413649692,"exp1":{"label":"2026-05-15","callIV":123.3,"putIV":137,"atmCallIV":123.7,"atmPutIV":105.5,"atmBandCallIV":127.6,"atmBandPutIV":0,"atmCallDV":16150,"atmPutDV":0,"deepOTMCallPct":33.5,"deepOTMPutPct":100,"callDV":831748,"putDV":3867,"dv":835615,"calls":[{"strike":100,"dv":43660,"iv":12194.9},{"strike":105,"dv":509400,"iv":12426.8},{"strike":110,"dv":125440,"iv":12478.1},{"strike":115,"dv":33300,"iv":12336.5},{"strike":120,"dv":119948,"iv":11821.3}],"puts":[{"strike":70,"dv":60,"iv":13828.2},{"strike":75,"dv":1155,"iv":15517.6},{"strike":80,"dv":2080,"iv":12954.1},{"strike":85,"dv":572,"iv":12695.3}]},"exp2":{"label":"2026-06-18","callIV":73.3,"putIV":75.8,"atmCallIV":78.1,"atmPutIV":77.8,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":52,"deepOTMPutPct":100,"callDV":2038,"putDV":307,"dv":2345,"calls":[{"strike":100,"dv":978,"iv":7799.1},{"strike":130,"dv":550,"iv":6845.7},{"strike":140,"dv":510,"iv":6962.9}],"puts":[{"strike":80,"dv":307,"iv":7578.1}]},"exp3":{"label":"2026-07-17","callIV":66.2,"putIV":0,"atmCallIV":71.1,"atmPutIV":65.5,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":0,"atmPutDV":0,"deepOTMCallPct":79.7,"deepOTMPutPct":0,"callDV":5537,"putDV":0,"dv":5537,"calls":[{"strike":100,"dv":1123,"iv":6999.5},{"strike":110,"dv":3950,"iv":6547.9},{"strike":130,"dv":464,"iv":6359.9}],"puts":[]}},{"date":"2026-05-07","sector":"Industrials","dailyReturn":31.48524515502417,"exp1":{"label":"2026-05-15","callIV":0,"putIV":131.1,"atmCallIV":69.8,"atmPutIV":103.3,"atmBandCallIV":100.8,"atmBandPutIV":0,"atmCallDV":7730296,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":100,"callDV":0,"putDV":341,"dv":341,"calls":[],"puts":[{"strike":70,"dv":10,"iv":18925.8},{"strike":75,"dv":171,"iv":13125},{"strike":80,"dv":8,"iv":12578.2},{"strike":90,"dv":152,"iv":12734.4}]},"exp2":{"label":"2026-06-18","callIV":57.4,"putIV":85.1,"atmCallIV":60.8,"atmPutIV":87.8,"atmBandCallIV":63.3,"atmBandPutIV":0,"atmCallDV":271056,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":100,"callDV":10860,"putDV":350,"dv":11210,"calls":[{"strike":140,"dv":10860,"iv":5743.5}],"puts":[{"strike":75,"dv":325,"iv":8418},{"strike":80,"dv":25,"iv":9707}]},"exp3":{"label":"2026-07-17","callIV":56.8,"putIV":63.5,"atmCallIV":57.5,"atmPutIV":58.2,"atmBandCallIV":60.2,"atmBandPutIV":0,"atmCallDV":116364,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":24.9,"callDV":919,"putDV":14748,"dv":15667,"calls":[{"strike":140,"dv":919,"iv":5676.9}],"puts":[{"strike":60,"dv":1260,"iv":8945.3},{"strike":65,"dv":720,"iv":7412.1},{"strike":70,"dv":260,"iv":9345.7},{"strike":80,"dv":855,"iv":7732},{"strike":85,"dv":400,"iv":6997.1},{"strike":100,"dv":180,"iv":5803.3},{"strike":120,"dv":1758,"iv":5695.2},{"strike":125,"dv":9315,"iv":5817.9}]}},{"date":"2026-05-08","sector":"Industrials","dailyReturn":31.48524515502417,"exp1":{"label":"2026-05-15","callIV":0,"putIV":50,"atmCallIV":1.6,"atmPutIV":50,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":7748296,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":100,"callDV":0,"putDV":425,"dv":425,"calls":[],"puts":[{"strike":70,"dv":10,"iv":5000.1},{"strike":75,"dv":171,"iv":5000.1},{"strike":80,"dv":8,"iv":5000.1},{"strike":90,"dv":152,"iv":5000.1},{"strike":95,"dv":84,"iv":5000.1}]},"exp2":{"label":"2026-06-18","callIV":6.3,"putIV":25,"atmCallIV":0.4,"atmPutIV":25,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":282096,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":100,"callDV":10860,"putDV":350,"dv":11210,"calls":[{"strike":140,"dv":10860,"iv":625.1}],"puts":[{"strike":75,"dv":325,"iv":2500.1},{"strike":80,"dv":25,"iv":2500.1}]},"exp3":{"label":"2026-07-17","callIV":3.1,"putIV":7.5,"atmCallIV":0.4,"atmPutIV":1.6,"atmBandCallIV":0,"atmBandPutIV":0,"atmCallDV":403944,"atmPutDV":0,"deepOTMCallPct":0,"deepOTMPutPct":26.2,"callDV":919,"putDV":14998,"dv":15917,"calls":[{"strike":140,"dv":919,"iv":312.6}],"puts":[{"strike":60,"dv":1260,"iv":2500.1},{"strike":65,"dv":720,"iv":2500.1},{"strike":70,"dv":260,"iv":2500.1},{"strike":80,"dv":855,"iv":2500.1},{"strike":85,"dv":400,"iv":2500.1},{"strike":100,"dv":180,"iv":1250.1},{"strike":105,"dv":250,"iv":1250.1},{"strike":115,"dv":0,"iv":625.1},{"strike":120,"dv":1758,"iv":312.6},{"strike":125,"dv":9315,"iv":156.3}]}}]};
+  // Combine IV from a saved history record (exp1/exp2/exp3), weighted by dv if available.
+  // Single-pool combine of a history record across expirations;
+  // old records fall back to legacy combined DV + single-strike ATM.
+  function combineHist(record) {
+    const exps = [];
+    for (const key of ['exp1', 'exp2', 'exp3']) {
+      const e = record[key];
+      if (!e || (e.callIV <= 0 && e.putIV <= 0)) continue;
+      exps.push(e);
+    }
+    if (exps.length === 0) return null;
+
+    function pool(valueFn, weightFn) {
+      var vals = [];
+      for (var i = 0; i < exps.length; i++) {
+        var v = valueFn(exps[i]);
+        if (v == null) continue;
+        var w = weightFn(exps[i]);
+        vals.push({ v: v, w: w > 0 ? w : 0 });
+      }
+      if (vals.length === 0) return null;
+      var sumW = 0, sumVW = 0;
+      for (var j = 0; j < vals.length; j++) { sumW += vals[j].w; sumVW += vals[j].v * vals[j].w; }
+      if (sumW > 0) return sumVW / sumW;
+      var sumV = 0;
+      for (var k = 0; k < vals.length; k++) sumV += vals[k].v;
+      return sumV / vals.length;
+    }
+    function legacyDV(e) { return e.dv || 0; }
+
+    var callIV = pool(
+      function(e) { return e.callIV > 0 ? e.callIV : null; },
+      function(e) { return e.callDV != null ? e.callDV : legacyDV(e); }
+    ) || 0;
+    var putIV = pool(
+      function(e) { return e.putIV > 0 ? e.putIV : null; },
+      function(e) { return e.putDV != null ? e.putDV : legacyDV(e); }
+    ) || 0;
+    var atmCallIV = pool(
+      function(e) { return (e.atmBandCallIV != null && e.atmBandCallIV > 0) ? e.atmBandCallIV : (e.atmCallIV != null ? e.atmCallIV : null); },
+      function(e) { return e.atmCallDV != null ? e.atmCallDV : legacyDV(e); }
+    );
+    var atmPutIV = pool(
+      function(e) { return (e.atmBandPutIV != null && e.atmBandPutIV > 0) ? e.atmBandPutIV : (e.atmPutIV != null ? e.atmPutIV : null); },
+      function(e) { return e.atmPutDV != null ? e.atmPutDV : legacyDV(e); }
+    );
+
+    return { callIV: callIV, putIV: putIV, atmCallIV: atmCallIV, atmPutIV: atmPutIV };
+  }
+  // Favorite star click handler
+  let favToastTimer = null;
+  function showFavToast(msg, success) {
+    const el = document.getElementById('fav-toast');
+    el.textContent = msg;
+    el.style.background = success ? '#4caf50' : '#f44336';
+    el.classList.add('show');
+    clearTimeout(favToastTimer);
+    favToastTimer = setTimeout(() => el.classList.remove('show'), 1500);
+  }
+
+  // Ticker notes: debounced autosave
+  const noteTimers = {};
+  document.querySelectorAll('.ticker-note').forEach(ta => {
+    const ticker = ta.getAttribute('data-ticker');
+    const statusEl = document.querySelector('.note-status[data-ticker="' + ticker + '"]');
+    const save = async () => {
+      if (!window.electronAPI || !window.electronAPI.saveNote) return;
+      if (statusEl) statusEl.textContent = 'saving…';
+      try {
+        await window.electronAPI.saveNote(ticker, ta.value);
+        if (statusEl) {
+          statusEl.textContent = 'saved';
+          setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 1200);
+        }
+        // Update note indicator next to ticker
+        const row = document.querySelector('tr.data-row[data-ticker="' + ticker + '"]');
+        if (row) {
+          const cell = row.children[1];
+          if (cell) {
+            const existing = cell.querySelector('span[title="Has note"]');
+            const hasText = ta.value.trim().length > 0;
+            if (hasText && !existing) {
+              const span = document.createElement('span');
+              span.setAttribute('title', 'Has note');
+              span.style.fontSize = '0.75em';
+              span.textContent = ' 📝';
+              cell.appendChild(span);
+            } else if (!hasText && existing) {
+              existing.remove();
+            }
+          }
+        }
+      } catch (err) {
+        if (statusEl) statusEl.textContent = 'failed';
+      }
+    };
+    ta.addEventListener('input', () => {
+      clearTimeout(noteTimers[ticker]);
+      noteTimers[ticker] = setTimeout(save, 700);
+    });
+    ta.addEventListener('blur', () => {
+      clearTimeout(noteTimers[ticker]);
+      save();
+    });
+    ta.addEventListener('click', (e) => e.stopPropagation());
+  });
+
+  document.querySelectorAll('.fav-star').forEach(star => {
+    star.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const ticker = star.getAttribute('data-ticker');
+      if (!ticker || !window.electronAPI || !window.electronAPI.toggleFavorite) return;
+      if (star.dataset.busy) return;
+      star.dataset.busy = '1';
+      try {
+        const result = await window.electronAPI.toggleFavorite(ticker);
+        const supers = result.superFavorites || [];
+        const favs = result.favorites || [];
+        const isSuper = supers.includes(ticker);
+        const isFav = !isSuper && favs.includes(ticker);
+        const level = isSuper ? 2 : (isFav ? 1 : 0);
+        star.textContent = level > 0 ? '\u2605' : '\u2606';
+        star.style.color = isSuper ? '#e53935' : (isFav ? '#f5c518' : '#ccc');
+        star.title = isSuper ? 'Super favorite (click to clear)' : (isFav ? 'Favorite (click to make super)' : 'Click to favorite');
+        star.closest('td').setAttribute('data-v', String(level));
+        const msg = isSuper ? ticker + ' is now a super favorite \u2B50' : (isFav ? ticker + ' added to favorites' : ticker + ' removed from favorites');
+        showFavToast(msg, true);
+      } catch (err) {
+        showFavToast('Failed to update ' + ticker, false);
+      }
+      delete star.dataset.busy;
+    });
+  });
+
+  const classColors = {
+    surprising_positive: '#4caf50',
+    positive_anticipated: '#8bc34a',
+    negative_anticipated: '#ff9800',
+    surprising_negative: '#f44336',
+  };
+  const classNames = {
+    surprising_positive: 'Surprising +',
+    positive_anticipated: 'Anticipated +',
+    negative_anticipated: 'Anticipated -',
+    surprising_negative: 'Surprising -',
+  };
+
+  const renderedCharts = {};
+
+  function pairwiseCorrelation(tickerA, tickerB) {
+    const cdA = chartDataMap[tickerA];
+    const cdB = chartDataMap[tickerB];
+    if (!cdA || !cdB || !cdA.dates || !cdB.dates) return null;
+
+    const dateIdxA = {};
+    for (let i = 0; i < cdA.dates.length; i++) dateIdxA[cdA.dates[i]] = i;
+
+    const retA = [], retB = [];
+    let prevIdxA = -1, prevIdxB = -1;
+    for (let j = 0; j < cdB.dates.length; j++) {
+      const idxA = dateIdxA[cdB.dates[j]];
+      if (idxA == null) continue;
+      if (prevIdxA >= 0 && prevIdxB >= 0 && idxA === prevIdxA + 1 && j === prevIdxB + 1) {
+        if (cdA.closes[prevIdxA] > 0 && cdB.closes[prevIdxB] > 0) {
+          retA.push(Math.log(cdA.closes[idxA] / cdA.closes[prevIdxA]));
+          retB.push(Math.log(cdB.closes[j] / cdB.closes[prevIdxB]));
+        }
+      }
+      prevIdxA = idxA;
+      prevIdxB = j;
+    }
+
+    if (retA.length < 20) return null;
+
+    const n = retA.length;
+    let sx = 0, sy = 0, sxy = 0, sx2 = 0, sy2 = 0;
+    for (let k = 0; k < n; k++) {
+      sx += retA[k]; sy += retB[k];
+      sxy += retA[k] * retB[k];
+      sx2 += retA[k] * retA[k];
+      sy2 += retB[k] * retB[k];
+    }
+    const denom = Math.sqrt((n * sx2 - sx * sx) * (n * sy2 - sy * sy));
+    return denom > 0 ? (n * sxy - sx * sy) / denom : 0;
+  }
+
+  function corrColor(r) {
+    const abs = Math.abs(r);
+    if (r < 0) return 'rgba(76, 175, 80, ' + (0.5 + abs * 0.5) + ')';
+    if (abs < 0.3) return 'rgba(76, 175, 80, 0.7)';
+    if (abs < 0.6) return 'rgba(255, 193, 7, ' + (0.6 + (abs - 0.3) * 1.3) + ')';
+    return 'rgba(244, 67, 54, ' + (0.6 + (abs - 0.6) * 1.0) + ')';
+  }
+
+  // Portfolio correlation checker
+  document.getElementById('portfolio-corr-btn').addEventListener('click', () => {
+    const raw = document.getElementById('portfolio-corr-input').value;
+    const tickers = raw.split(',').map(t => t.trim().toUpperCase()).filter(t => t.length > 0);
+    const resultDiv = document.getElementById('portfolio-corr-result');
+
+    if (tickers.length < 2) {
+      resultDiv.innerHTML = '<span style="color:#888; font-size:0.9em;">Enter at least 2 tickers separated by commas.</span>';
+      return;
+    }
+
+    const missing = tickers.filter(t => !chartDataMap[t]);
+    if (missing.length > 0) {
+      resultDiv.innerHTML = '<span style="color:#c62828; font-size:0.9em;">Not in screening data: ' + missing.join(', ') + '</span>';
+      return;
+    }
+
+    // Compute all pairwise correlations
+    const pairs = [];
+    for (let i = 0; i < tickers.length; i++) {
+      for (let j = i + 1; j < tickers.length; j++) {
+        const r = pairwiseCorrelation(tickers[i], tickers[j]);
+        pairs.push({ a: tickers[i], b: tickers[j], r });
+      }
+    }
+
+    const valid = pairs.filter(p => p.r !== null);
+    if (valid.length === 0) {
+      resultDiv.innerHTML = '<span style="color:#888; font-size:0.9em;">Not enough overlapping data to compute correlations.</span>';
+      return;
+    }
+
+    const avgCorr = valid.reduce((s, p) => s + p.r, 0) / valid.length;
+    const maxCorr = Math.max(...valid.map(p => p.r));
+    const minCorr = Math.min(...valid.map(p => p.r));
+
+    // Verdict
+    let verdict, verdictColor;
+    if (avgCorr >= 0.7) { verdict = 'Highly correlated — low diversification'; verdictColor = '#c62828'; }
+    else if (avgCorr >= 0.5) { verdict = 'Moderately correlated'; verdictColor = '#ef6c00'; }
+    else if (avgCorr >= 0.3) { verdict = 'Moderately diversified'; verdictColor = '#f9a825'; }
+    else { verdict = 'Well diversified — low correlation'; verdictColor = '#2e7d32'; }
+
+    let html = '<div style="margin-bottom:6px;"><span style="font-weight:700; font-size:1.05em; color:' + verdictColor + ';">' + verdict + '</span>';
+    html += '<span style="color:#888; margin-left:12px; font-size:0.9em;">avg ' + avgCorr.toFixed(3) + ' &nbsp;|&nbsp; range ' + minCorr.toFixed(3) + ' to ' + maxCorr.toFixed(3) + '</span></div>';
+
+    // Pair table
+    html += '<table style="width:100%; border-collapse:collapse; font-size:0.9em; margin-top:4px;">';
+    html += '<tr style="color:#888; font-size:0.8em; text-transform:uppercase; letter-spacing:0.5px;"><th style="text-align:left; padding:4px 8px;">Pair</th><th style="text-align:right; padding:4px 8px;">Correlation</th></tr>';
+    valid.sort((a, b) => b.r - a.r);
+    for (const p of valid) {
+      const color = corrColor(p.r);
+      html += '<tr style="border-top:1px solid #eee;">' +
+        '<td style="padding:4px 8px;">' + p.a + ' / ' + p.b + '</td>' +
+        '<td style="padding:4px 8px; text-align:right; color:' + color + '; font-weight:600;">' + p.r.toFixed(3) + '</td>' +
+        '</tr>';
+    }
+    const skipped = pairs.filter(p => p.r === null);
+    if (skipped.length > 0) {
+      for (const p of skipped) {
+        html += '<tr style="border-top:1px solid #eee;">' +
+          '<td style="padding:4px 8px; color:#bbb;">' + p.a + ' / ' + p.b + '</td>' +
+          '<td style="padding:4px 8px; text-align:right; color:#bbb;">insufficient data</td></tr>';
+      }
+    }
+    html += '</table>';
+    resultDiv.innerHTML = html;
+  });
+
+  document.getElementById('portfolio-corr-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('portfolio-corr-btn').click();
+  });
+
+  // Click handler for data rows
+  document.querySelectorAll('tr.data-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      const ticker = row.getAttribute('data-ticker');
+      const chartRow = document.querySelector('tr.chart-row[data-chart-for="' + ticker + '"]');
+      if (!chartRow) return;
+
+      const isVisible = chartRow.style.display !== 'none';
+      // Toggle arrow indicator
+      const arrow = row.querySelector('td:first-child span');
+      if (arrow) arrow.textContent = isVisible ? '\u25B6' : '\u25BC';
+
+      if (isVisible) {
+        chartRow.style.display = 'none';
+        return;
+      }
+
+      chartRow.style.display = '';
+
+      // Render chart if not yet done
+      if (!renderedCharts[ticker]) {
+        const cd = chartDataMap[ticker];
+        if (!cd) return;
+
+        const canvas = document.getElementById('chart-' + ticker);
+        if (!canvas) return;
+
+        // Build all datasets using numeric indices for x — avoids category/scatter misalignment
+        const eventsByClass = {};
+        for (const ev of cd.events) {
+          if (!eventsByClass[ev.classification]) eventsByClass[ev.classification] = [];
+          if (ev.idx != null && ev.idx < cd.dates.length) {
+            eventsByClass[ev.classification].push({ x: ev.idx, y: ev.y });
+          }
+        }
+
+        // Convert line and bar data to {x, y} indexed points so all datasets share the linear x scale
+        const pricePoints = cd.closes.map((v, i) => ({ x: i, y: v }));
+        const volumePoints = cd.volumes.map((v, i) => ({ x: i, y: v }));
+
+        const datasets = [{
+          label: 'Volume',
+          data: volumePoints,
+          type: 'bar',
+          backgroundColor: 'rgba(100, 100, 180, 0.25)',
+          borderColor: 'rgba(100, 100, 180, 0.4)',
+          borderWidth: 1,
+          yAxisID: 'yVol',
+          order: 2,
+        }, {
+          label: ticker + ' Close',
+          data: pricePoints,
+          borderColor: 'rgba(136, 176, 136, 0.8)',
+          backgroundColor: 'rgba(136, 176, 136, 0.1)',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: true,
+          yAxisID: 'y',
+          order: 1,
+        }];
+
+        for (const [cls, points] of Object.entries(eventsByClass)) {
+          datasets.push({
+            label: classNames[cls] || cls,
+            data: points,
+            type: 'scatter',
+            backgroundColor: classColors[cls] || '#ccc',
+            borderColor: classColors[cls] || '#ccc',
+            pointRadius: 7,
+            pointHoverRadius: 9,
+            yAxisID: 'y',
+            order: 0,
+          });
+        }
+
+        const dates = cd.dates;
+        renderedCharts[ticker] = new Chart(canvas, {
+          type: 'line',
+          data: { datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 300 },
+            plugins: {
+              title: { display: true, text: ticker + ' Price with Events', color: '#b0b0b0' },
+              legend: { labels: { color: '#909090', boxWidth: 12, font: { size: 11 } } },
+              tooltip: {
+                callbacks: {
+                  title: function(items) { return items[0] ? dates[items[0].parsed.x] || '' : ''; }
+                }
+              },
+            },
+            scales: {
+              x: {
+                type: 'linear',
+                ticks: {
+                  color: '#909090',
+                  maxTicksLimit: 12,
+                  font: { size: 10 },
+                  callback: function(val) { return dates[val] || ''; },
+                },
+                grid: { color: '#2a2a4a' },
+                min: 0,
+                max: dates.length - 1,
+              },
+              y: {
+                position: 'left',
+                ticks: { color: '#909090', font: { size: 10 } },
+                grid: { color: '#2a2a4a' },
+              },
+              yVol: {
+                position: 'right',
+                display: false,
+                beginAtZero: true,
+                max: Math.max(...(cd.volumes || [0])) * 4,
+                grid: { drawOnChartArea: false },
+              },
+            },
+          },
+        });
+
+        // Populate company summary
+        const sumEl = document.getElementById('summary-' + ticker);
+        if (sumEl && summaryMap[ticker]) {
+          sumEl.textContent = summaryMap[ticker];
+        }
+
+        // Render last-5-day DV (bars) + average IV (line) mini-chart next to summary
+        const dvIvCanvas = document.getElementById('dv-iv-chart-' + ticker);
+        const dvIvHist = ivHistoryMap[ticker];
+        if (dvIvCanvas && Array.isArray(dvIvHist) && dvIvHist.length > 0) {
+          const recent = dvIvHist.slice(-5);
+          const labels = recent.map(r => (r.date || '').slice(5));
+          const dvSeries = recent.map(r => {
+            let dv = 0;
+            for (const k of ['exp1', 'exp2', 'exp3']) {
+              const e = r[k];
+              if (!e) continue;
+              dv += (e.callDV || 0) + (e.putDV || 0);
+            }
+            return dv;
+          });
+          const ivSeries = recent.map(r => {
+            const c = combineHist(r);
+            if (!c) return null;
+            const vals = [];
+            if (c.callIV > 0) vals.push(c.callIV);
+            if (c.putIV > 0) vals.push(c.putIV);
+            if (!vals.length) return null;
+            return vals.reduce((s, v) => s + v, 0) / vals.length;
+          });
+
+          const dvIvDateMap = recent.map(r => r.date);
+          const renderStrikeBreakdown = (dateStr) => {
+            const rec = (ivHistoryMap[ticker] || []).find(r => r.date === dateStr);
+            const wrap = document.getElementById('dv-iv-strike-wrap-' + ticker);
+            const title = document.getElementById('dv-iv-strike-title-' + ticker);
+            const body = document.getElementById('dv-iv-strike-body-' + ticker);
+            if (!rec || !wrap || !body) return;
+            const exps = ['exp1', 'exp2', 'exp3'].map(k => rec[k]).filter(e => e && (e.calls || e.puts));
+            if (!exps.length) {
+              body.innerHTML = '<div style="color:#888; font-size:0.85em; padding:8px 0;">No per-strike data for ' + dateStr + ' (older snapshots stored aggregates only — newer dates will populate).</div>';
+              if (title) title.textContent = ticker + ' — ' + dateStr;
+              wrap.style.display = 'block';
+              return;
+            }
+            if (title) title.textContent = ticker + ' — ' + dateStr;
+            body.innerHTML = exps.map((_, i) => '<div style="display:inline-block; width:48%; margin-right:1%; vertical-align:top;"><div style="height:300px;"><canvas id="strike-hist-' + ticker + '-' + dateStr + '-' + i + '"></canvas></div></div>').join('');
+            wrap.style.display = 'block';
+            exps.forEach((e, i) => {
+              const cv = document.getElementById('strike-hist-' + ticker + '-' + dateStr + '-' + i);
+              if (!cv) return;
+              const strikeSet = new Set();
+              (e.calls || []).forEach(c => strikeSet.add(c.strike));
+              (e.puts || []).forEach(p => strikeSet.add(p.strike));
+              const strikes = Array.from(strikeSet).sort((a, b) => a - b);
+              const cMap = {}, pMap = {};
+              (e.calls || []).forEach(c => { cMap[c.strike] = c; });
+              (e.puts || []).forEach(p => { pMap[p.strike] = p; });
+              new Chart(cv, {
+                data: {
+                  labels: strikes.map(s => '$' + s.toFixed(s >= 100 ? 0 : s >= 1 ? 1 : 2)),
+                  datasets: [
+                    { type: 'bar', label: 'Call $Vol', data: strikes.map(s => cMap[s] ? cMap[s].dv : 0), backgroundColor: 'rgba(72,187,120,0.55)', yAxisID: 'y' },
+                    { type: 'bar', label: 'Put $Vol', data: strikes.map(s => pMap[s] ? pMap[s].dv : 0), backgroundColor: 'rgba(245,101,101,0.55)', yAxisID: 'y' },
+                    { type: 'line', label: 'Call IV', data: strikes.map(s => cMap[s] && cMap[s].iv > 0 ? cMap[s].iv : null), borderColor: 'rgba(72,187,120,0.95)', backgroundColor: 'rgba(72,187,120,0.95)', borderWidth: 2, pointRadius: 2, spanGaps: true, yAxisID: 'y1' },
+                    { type: 'line', label: 'Put IV', data: strikes.map(s => pMap[s] && pMap[s].iv > 0 ? pMap[s].iv : null), borderColor: 'rgba(245,101,101,0.95)', backgroundColor: 'rgba(245,101,101,0.95)', borderWidth: 2, pointRadius: 2, spanGaps: true, yAxisID: 'y1' },
+                  ],
+                },
+                options: {
+                  responsive: true, maintainAspectRatio: false, animation: { duration: 200 },
+                  interaction: { mode: 'index', intersect: false },
+                  plugins: {
+                    title: { display: true, text: e.label || ('Exp ' + (i + 1)), color: '#b0b0b0', font: { size: 11 } },
+                    legend: { labels: { color: '#909090', boxWidth: 10, font: { size: 9 } } },
+                  },
+                  scales: {
+                    x: { ticks: { color: '#909090', font: { size: 9 }, maxRotation: 60, minRotation: 0 }, grid: { color: '#2a2a4a' } },
+                    y: { position: 'left', beginAtZero: true, title: { display: true, text: '$Vol', color: '#909090', font: { size: 9 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : (v / 1e3).toFixed(0) + 'K'; } }, grid: { color: '#2a2a4a' } },
+                    y1: { position: 'right', title: { display: true, text: 'IV %', color: '#909090', font: { size: 9 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } }, grid: { drawOnChartArea: false } },
+                  },
+                },
+              });
+            });
+          };
+
+          const closeBtn = document.querySelector('button[data-strike-close="' + ticker + '"]');
+          if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+              const wrap = document.getElementById('dv-iv-strike-wrap-' + ticker);
+              if (wrap) wrap.style.display = 'none';
+            });
+          }
+
+          new Chart(dvIvCanvas, {
+            data: {
+              labels,
+              datasets: [
+                {
+                  type: 'bar',
+                  label: 'Option $Vol',
+                  data: dvSeries,
+                  backgroundColor: 'rgba(122,162,199,0.55)',
+                  borderColor: 'rgba(122,162,199,0.9)',
+                  borderWidth: 1,
+                  yAxisID: 'y',
+                  order: 1,
+                },
+                {
+                  type: 'line',
+                  label: 'Avg IV',
+                  data: ivSeries,
+                  borderColor: 'rgba(245,180,80,0.95)',
+                  backgroundColor: 'rgba(245,180,80,0.95)',
+                  borderWidth: 2,
+                  pointRadius: 3,
+                  spanGaps: true,
+                  tension: 0.2,
+                  yAxisID: 'y1',
+                  order: 0,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              animation: { duration: 200 },
+              interaction: { mode: 'index', intersect: false },
+              onClick: (evt, els, chart) => {
+                let idx = els && els.length ? els[0].index : null;
+                if (idx == null) {
+                  const pts = chart.getElementsAtEventForMode(evt, 'index', { intersect: false }, true);
+                  if (pts && pts.length) idx = pts[0].index;
+                }
+                if (idx == null) return;
+                const dateStr = dvIvDateMap[idx];
+                if (dateStr) renderStrikeBreakdown(dateStr);
+              },
+              plugins: {
+                title: { display: true, text: 'Last 5d Option $Vol & Avg IV (click a day for strikes)', color: '#b0b0b0', font: { size: 11 } },
+                legend: { labels: { color: '#909090', boxWidth: 10, font: { size: 9 } } },
+                tooltip: {
+                  callbacks: {
+                    label: function(ctx) {
+                      const v = ctx.raw;
+                      if (v == null) return ctx.dataset.label + ': N/A';
+                      if (ctx.dataset.yAxisID === 'y1') return ctx.dataset.label + ': ' + v.toFixed(1) + '%';
+                      return ctx.dataset.label + ': $' + (v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : (v / 1e3).toFixed(0) + 'K');
+                    },
+                  },
+                },
+              },
+              scales: {
+                x: { ticks: { color: '#909090', font: { size: 9 } }, grid: { color: '#2a2a4a' } },
+                y: {
+                  position: 'left',
+                  beginAtZero: true,
+                  title: { display: true, text: '$Vol', color: '#909090', font: { size: 9 } },
+                  ticks: {
+                    color: '#909090', font: { size: 9 },
+                    callback: function(v) { return v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : (v / 1e3).toFixed(0) + 'K'; },
+                  },
+                  grid: { color: '#2a2a4a' },
+                },
+                y1: {
+                  position: 'right',
+                  title: { display: true, text: 'Avg IV %', color: '#909090', font: { size: 9 } },
+                  ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } },
+                  grid: { drawOnChartArea: false },
+                },
+              },
+            },
+          });
+        }
+
+        // Populate news headlines
+        const newsEl = document.getElementById('news-' + ticker);
+        const news = newsMap[ticker];
+        if (newsEl && news && news.length > 0) {
+          const catColors = { technical: '#5b9bd5', fear: '#c0392b', win: '#27ae60', macro_fear: '#e07c4f', macro_win: '#2ecc71', mixed: '#999' };
+          const catLabels = { technical: 'Technical', fear: 'Fear', win: 'Win', macro_fear: 'Macro Fear', macro_win: 'Macro Win', mixed: 'Mixed' };
+          const renderHeadline = (n) => {
+            const badge = n.category ? '<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.75em;font-weight:600;color:#fff;background:' + (catColors[n.category] || '#999') + ';margin-right:6px;vertical-align:middle;">' + (catLabels[n.category] || '') + '</span>' : '';
+            return '<div style="margin-bottom:6px; font-size:0.95em; line-height:1.5;">' +
+              '<span style="color:#666; font-size:0.85em; margin-right:6px;">' + (n.date ? n.date + ' ' : '') + (n.time || '') + '</span>' +
+              badge +
+              '<a href="' + n.url + '" target="_blank" rel="noopener" style="color:#7aa2c7; text-decoration:none;">' + n.headline + '</a>' +
+            '</div>';
+          };
+          const DEFAULT_SHOW = 10;
+          const shown = news.slice(0, DEFAULT_SHOW).map(renderHeadline).join('');
+          const hidden = news.slice(DEFAULT_SHOW).map(renderHeadline).join('');
+          let html = '<div>' + shown + '</div>';
+          if (hidden) {
+            const hiddenId = 'news-hidden-' + ticker;
+            const btnId = 'news-toggle-' + ticker;
+            html += '<div id="' + hiddenId + '" style="display:none;">' + hidden + '</div>';
+            html += '<button id="' + btnId + '" type="button" style="margin-top:6px; background:transparent; color:#7aa2c7; border:1px solid #445; border-radius:3px; padding:3px 10px; font-size:0.85em; cursor:pointer;">Show ' + (news.length - DEFAULT_SHOW) + ' more</button>';
+            newsEl.innerHTML = html;
+            const btn = document.getElementById(btnId);
+            const hiddenEl = document.getElementById(hiddenId);
+            btn.addEventListener('click', () => {
+              const isHidden = hiddenEl.style.display === 'none';
+              hiddenEl.style.display = isHidden ? 'block' : 'none';
+              btn.textContent = isHidden ? 'Show less' : ('Show ' + (news.length - DEFAULT_SHOW) + ' more');
+            });
+          } else {
+            newsEl.innerHTML = html;
+          }
+        }
+
+        // Render options strike charts (nearest 2 expirations side by side)
+        const od = cd.optionsStrikes;
+        if (od && od.length > 0) {
+          const optsWrap = document.getElementById('opts-wrap-' + ticker);
+          if (optsWrap) {
+            optsWrap.style.display = 'block';
+            const fmtDollar = (v) => v >= 1e6 ? '$'+(v/1e6).toFixed(1)+'M' : v >= 1e3 ? '$'+(v/1e3).toFixed(0)+'K' : '$'+v.toFixed(0);
+
+            for (let ei = 0; ei < Math.min(2, od.length); ei++) {
+              const exp = od[ei];
+              const canvas = document.getElementById('opts-chart-' + ei + '-' + ticker);
+              if (!exp || !canvas) continue;
+
+              const strikeSet = new Set();
+              exp.calls.forEach(c => strikeSet.add(c.strike));
+              exp.puts.forEach(p => strikeSet.add(p.strike));
+              const strikes = Array.from(strikeSet).sort((a, b) => a - b);
+              const strikeLabels = strikes.map(s => '$' + s.toFixed(s >= 100 ? 0 : s >= 1 ? 1 : 2));
+
+              const callMap = {};
+              exp.calls.forEach(c => { callMap[c.strike] = c; });
+              const putMap = {};
+              exp.puts.forEach(p => { putMap[p.strike] = p; });
+
+              const callDollarVol = strikes.map(s => callMap[s] ? callMap[s].dollarVol : 0);
+              const putDollarVol = strikes.map(s => putMap[s] ? putMap[s].dollarVol : 0);
+              const callDollarOI = strikes.map(s => callMap[s] ? callMap[s].dollarOI : 0);
+              const putDollarOI = strikes.map(s => putMap[s] ? putMap[s].dollarOI : 0);
+              const callIV = strikes.map(s => callMap[s] && callMap[s].iv > 0 ? callMap[s].iv : null);
+              const putIV = strikes.map(s => putMap[s] && putMap[s].iv > 0 ? putMap[s].iv : null);
+
+              // Populate weighted IV label
+              const ivLabel = document.getElementById('opts-iv-label-' + ei + '-' + ticker);
+              if (ivLabel && (exp.wCallIV > 0 || exp.wPutIV > 0)) {
+                let ivHtml = '<span style="color:rgba(72,187,120,0.9);">Call IV: ' + exp.wCallIV.toFixed(1) + '%</span>';
+                if (exp.atmCallIV > 0) ivHtml += '<span style="color:#888; font-size:0.85em;"> (ATM ' + exp.atmCallIV.toFixed(1) + '%, ' + (exp.ivSpreadCall >= 0 ? '+' : '') + exp.ivSpreadCall.toFixed(1) + ' spread, ' + (exp.deepOTMCallPct || 0).toFixed(0) + '% deep)</span>';
+                ivHtml += ' | <span style="color:rgba(245,101,101,0.9);">Put IV: ' + exp.wPutIV.toFixed(1) + '%</span>';
+                if (exp.atmPutIV > 0) ivHtml += '<span style="color:#888; font-size:0.85em;"> (ATM ' + exp.atmPutIV.toFixed(1) + '%, ' + (exp.ivSpreadPut >= 0 ? '+' : '') + exp.ivSpreadPut.toFixed(1) + ' spread, ' + (exp.deepOTMPutPct || 0).toFixed(0) + '% deep)</span>';
+                ivLabel.innerHTML = ivHtml;
+              }
+
+              new Chart(canvas, {
+                type: 'bar',
+                data: {
+                  labels: strikeLabels,
+                  datasets: [
+                    { label: 'Call $ OI', data: callDollarOI, backgroundColor: 'rgba(72, 187, 120, 0.15)', borderColor: 'rgba(72, 187, 120, 0.3)', borderWidth: 1, yAxisID: 'yDollar', stack: 'call', order: 3, barPercentage: 0.95 },
+                    { label: 'Put $ OI', data: putDollarOI, backgroundColor: 'rgba(245, 101, 101, 0.15)', borderColor: 'rgba(245, 101, 101, 0.3)', borderWidth: 1, yAxisID: 'yDollar', stack: 'put', order: 3, barPercentage: 0.95 },
+                    { label: 'Call $ Vol', data: callDollarVol, backgroundColor: 'rgba(72, 187, 120, 0.6)', borderColor: 'rgba(72, 187, 120, 0.9)', borderWidth: 1, yAxisID: 'yDollar', stack: 'call', order: 2, barPercentage: 0.6 },
+                    { label: 'Put $ Vol', data: putDollarVol, backgroundColor: 'rgba(245, 101, 101, 0.6)', borderColor: 'rgba(245, 101, 101, 0.9)', borderWidth: 1, yAxisID: 'yDollar', stack: 'put', order: 2, barPercentage: 0.6 },
+                    { label: 'Call IV', data: callIV, borderColor: 'rgba(72, 187, 120, 0.9)', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, type: 'line', yAxisID: 'yIV', order: 1, spanGaps: true },
+                    { label: 'Put IV', data: putIV, borderColor: 'rgba(245, 101, 101, 0.9)', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, type: 'line', yAxisID: 'yIV', order: 1, spanGaps: true },
+                  ],
+                },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  animation: { duration: 200 },
+                  plugins: {
+                    title: { display: true, text: 'Exp: ' + exp.label, color: '#b0b0b0', font: { size: 11 } },
+                    legend: { display: false },
+                    tooltip: {
+                      callbacks: {
+                        label: function(ctx) {
+                          if (ctx.dataset.yAxisID === 'yIV') return ctx.dataset.label + ': ' + (ctx.raw !== null ? ctx.raw.toFixed(1) + '%' : 'N/A');
+                          return ctx.dataset.label + ': ' + fmtDollar(ctx.raw);
+                        }
+                      }
+                    },
+                  },
+                  scales: {
+                    x: { stacked: true, ticks: { color: '#909090', font: { size: 8 }, maxRotation: 45 }, grid: { color: '#2a2a4a' } },
+                    yDollar: {
+                      position: 'left',
+                      stacked: false,
+                      ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return fmtDollar(v); } },
+                      grid: { color: '#2a2a4a' },
+                      beginAtZero: true,
+                    },
+                    yIV: {
+                      position: 'right',
+                      ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } },
+                      grid: { drawOnChartArea: false },
+                    },
+                  },
+                },
+              });
+            }
+
+            // IV history click handler — either label toggles the history chart
+            let ivHistChart = null;
+            const histWrap = document.getElementById('iv-history-wrap-' + ticker);
+            const histCanvas = document.getElementById('iv-history-chart-' + ticker);
+            const hist = ivHistoryMap[ticker];
+
+            function toggleHistory() {
+              if (!histWrap || !histCanvas || !hist || hist.length < 2) return;
+              if (histWrap.style.display !== 'none') {
+                histWrap.style.display = 'none';
+                return;
+              }
+              histWrap.style.display = 'block';
+              if (ivHistChart) return; // already rendered
+
+              const labels = hist.map(r => r.date);
+              const combined = hist.map(r => combineHist(r));
+
+              const callIVSeries = combined.map(c => c && c.callIV > 0 ? c.callIV : null);
+              const putIVSeries = combined.map(c => c && c.putIV > 0 ? c.putIV : null);
+              const callSpreadSeries = combined.map(c => c && c.callIV > 0 && c.atmCallIV != null ? c.callIV - c.atmCallIV : null);
+              const putSpreadSeries = combined.map(c => c && c.putIV > 0 && c.atmPutIV != null ? c.putIV - c.atmPutIV : null);
+
+              const lineBase = { type: 'line', borderWidth: 2, pointRadius: 2, fill: false, spanGaps: true, tension: 0.2 };
+              const datasets = [
+                { ...lineBase, label: 'Call IV', data: callIVSeries, borderColor: 'rgba(72,187,120,0.95)', backgroundColor: 'rgba(72,187,120,0.95)', yAxisID: 'y' },
+                { ...lineBase, label: 'Put IV', data: putIVSeries, borderColor: 'rgba(245,101,101,0.95)', backgroundColor: 'rgba(245,101,101,0.95)', yAxisID: 'y' },
+                { ...lineBase, label: 'Call Spread (vs ATM)', data: callSpreadSeries, borderColor: 'rgba(72,187,120,0.6)', backgroundColor: 'rgba(72,187,120,0.6)', borderDash: [4, 3], yAxisID: 'y1' },
+                { ...lineBase, label: 'Put Spread (vs ATM)', data: putSpreadSeries, borderColor: 'rgba(245,101,101,0.6)', backgroundColor: 'rgba(245,101,101,0.6)', borderDash: [4, 3], yAxisID: 'y1' },
+              ];
+
+              ivHistChart = new Chart(histCanvas, {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  animation: { duration: 200 },
+                  interaction: { mode: 'index', intersect: false },
+                  plugins: {
+                    title: { display: true, text: 'Weighted IV History — ' + ticker, color: '#b0b0b0', font: { size: 11 } },
+                    legend: { labels: { color: '#909090', boxWidth: 10, font: { size: 9 } } },
+                    tooltip: { callbacks: { label: function(ctx) { return ctx.dataset.label + ': ' + (ctx.raw != null ? ctx.raw.toFixed(1) + '%' : 'N/A'); } } },
+                  },
+                  scales: {
+                    x: { ticks: { color: '#909090', font: { size: 9 } }, grid: { color: '#2a2a4a' } },
+                    y: { position: 'left', title: { display: true, text: 'IV %', color: '#909090', font: { size: 10 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } }, grid: { color: '#2a2a4a' } },
+                    y1: { position: 'right', title: { display: true, text: 'Spread %', color: '#909090', font: { size: 10 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(1) + '%'; } }, grid: { drawOnChartArea: false } },
+                  },
+                },
+              });
+            }
+
+            for (let li = 0; li < 2; li++) {
+              const lbl = document.getElementById('opts-iv-label-' + li + '-' + ticker);
+              if (lbl) lbl.addEventListener('click', toggleHistory);
+            }
+          }
+        }
+
+      }
+    });
+  });
+
+  // Sorting — skip chart rows
+  const table = document.getElementById('screen-table');
+  const headers = table.querySelectorAll('th');
+  let currentCol = -1, ascending = true;
+
+  headers.forEach((th, colIdx) => {
+    th.addEventListener('click', () => {
+      if (currentCol === colIdx) {
+        ascending = !ascending;
+      } else {
+        currentCol = colIdx;
+        ascending = (colIdx === 1 || colIdx === 5);
+      }
+
+      headers.forEach(h => h.classList.remove('sorted-asc', 'sorted-desc'));
+      th.classList.add(ascending ? 'sorted-asc' : 'sorted-desc');
+
+      headers.forEach(h => h.querySelector('.sort-arrow').textContent = '');
+      th.querySelector('.sort-arrow').textContent = ascending ? ' \u25B2' : ' \u25BC';
+
+      const tbody = table.querySelector('tbody');
+      // Collect data-row + chart-row pairs
+      const pairs = [];
+      const dataRows = tbody.querySelectorAll('tr.data-row');
+      dataRows.forEach(dr => {
+        const ticker = dr.getAttribute('data-ticker');
+        const chartRow = tbody.querySelector('tr.chart-row[data-chart-for="' + ticker + '"]');
+        pairs.push({ dataRow: dr, chartRow });
+      });
+      // Also collect rows without data-row class (error/skipped tickers)
+      const allTrSet = new Set();
+      pairs.forEach(p => { allTrSet.add(p.dataRow); if (p.chartRow) allTrSet.add(p.chartRow); });
+      const otherRows = Array.from(tbody.querySelectorAll('tr')).filter(r => !allTrSet.has(r) && !r.classList.contains('chart-row'));
+      otherRows.forEach(r => pairs.push({ dataRow: r, chartRow: null }));
+
+      pairs.sort((a, b) => {
+        const aVal = a.dataRow.children[colIdx]?.getAttribute('data-v') || '';
+        const bVal = b.dataRow.children[colIdx]?.getAttribute('data-v') || '';
+        const aNum = parseFloat(aVal);
+        const bNum = parseFloat(bVal);
+
+        let cmp;
+        if (!isNaN(aNum) && !isNaN(bNum)) {
+          cmp = aNum - bNum;
+        } else {
+          cmp = aVal.localeCompare(bVal);
+        }
+        return ascending ? cmp : -cmp;
+      });
+
+      pairs.forEach(p => {
+        tbody.appendChild(p.dataRow);
+        if (p.chartRow) tbody.appendChild(p.chartRow);
+      });
+    });
+  });
+})();
+</script>
+</body></html>

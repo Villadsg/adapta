@@ -113,4 +113,79 @@ function formatScreeningMessage(hits) {
   return lines.join('\n');
 }
 
-module.exports = { sendMessage, formatEventMessage, formatScreeningMessage };
+function formatDollar(n) {
+  if (!n || !isFinite(n)) return '$0';
+  if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
+  if (n >= 1e3) return `$${(n / 1e3).toFixed(1)}K`;
+  return `$${n.toFixed(0)}`;
+}
+
+function formatPct(n, digits = 1) {
+  if (n === null || n === undefined || !isFinite(n)) return 'n/a';
+  return `${(n * 100).toFixed(digits)}%`;
+}
+
+function formatSuperFavoriteMessage(ticker, events, optionsData) {
+  const lines = [];
+  lines.push(`<b>⭐ ${ticker}</b>`);
+  lines.push('');
+
+  const recent = (events || []).slice(0, 3);
+  if (recent.length === 0) {
+    lines.push('<b>Recent events:</b> none');
+  } else {
+    lines.push('<b>Recent events:</b>');
+    for (const ev of recent) {
+      const pct = ev.residualReturn != null ? (ev.residualReturn * 100) : null;
+      const pctStr = pct == null ? '?' : `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
+      lines.push(`  • ${ev.dateStr} · ${ev.classification || '?'} · ${pctStr}`);
+    }
+  }
+
+  lines.push('');
+  lines.push('<b>Options</b>');
+
+  if (!optionsData || !optionsData.summary) {
+    lines.push('unavailable');
+    return lines.join('\n');
+  }
+
+  const s = optionsData.summary;
+  const expirations = optionsData.expirations || [];
+
+  // Per-expiration ATM IVs aren't on the summary; average across expirations.
+  const atmCallIVs = expirations.map((e) => e.atmCallIV).filter((v) => v && isFinite(v));
+  const atmPutIVs = expirations.map((e) => e.atmPutIV).filter((v) => v && isFinite(v));
+  const avgAtmCallIV = atmCallIVs.length
+    ? atmCallIVs.reduce((a, b) => a + b, 0) / atmCallIVs.length
+    : null;
+  const avgAtmPutIV = atmPutIVs.length
+    ? atmPutIVs.reduce((a, b) => a + b, 0) / atmPutIVs.length
+    : null;
+
+  const wCallIV = s.avgCallIV || null;
+  const wPutIV = s.avgPutIV || null;
+
+  const skewCall = wCallIV != null && avgAtmCallIV != null ? (wCallIV - avgAtmCallIV) : null;
+  const skewPut = wPutIV != null && avgAtmPutIV != null ? (wPutIV - avgAtmPutIV) : null;
+
+  lines.push(`Weighted OTM IV: call ${formatPct(wCallIV)} / put ${formatPct(wPutIV)}`);
+  lines.push(
+    `ATM→OTM skew: call ${skewCall == null ? 'n/a' : `${skewCall >= 0 ? '+' : ''}${(skewCall * 100).toFixed(1)}pp`}` +
+      ` / put ${skewPut == null ? 'n/a' : `${skewPut >= 0 ? '+' : ''}${(skewPut * 100).toFixed(1)}pp`}`
+  );
+  const callDV = s.totalCallDollarVolume || 0;
+  const putDV = s.totalPutDollarVolume || 0;
+  const ratio = putDV > 0 ? (callDV / putDV).toFixed(2) : '∞';
+  lines.push(`Dollar volume: call ${formatDollar(callDV)} / put ${formatDollar(putDV)} (C/P ${ratio})`);
+
+  return lines.join('\n');
+}
+
+module.exports = {
+  sendMessage,
+  formatEventMessage,
+  formatScreeningMessage,
+  formatSuperFavoriteMessage,
+};

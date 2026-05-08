@@ -19,13 +19,14 @@ const path = require('path');
 const { spawn } = require('child_process');
 const ArticleDatabase = require('./src/services/database');
 const PriceTrackingService = require('./src/services/priceTracking');
+const RunArchiver = require('./src/services/runArchiver');
 const StockAnalysisService = require('./src/services/stockAnalysis');
 const OptionsAnalysisService = require('./src/services/optionsAnalysis');
 const IBOptionsProvider = require('./src/services/ibOptionsProvider');
 const articleExtractor = require('./src/services/articleExtractor');
 const newsScraper = require('./src/services/newsScraper');
 const ChronosHoldPeriodService = require('./src/services/chronosHoldPeriod');
-const GLMAnalysisService = require('./src/services/glmAnalysis');
+const FlowstateAnalysisService = require('./src/services/flowstateAnalysis');
 const { screenTickers, reviseTickers } = require('./ci/ticker-screen');
 const { classifyTickerNews } = require('./src/services/newsClassifier');
 const YahooFinance = require('yahoo-finance2').default;
@@ -38,7 +39,8 @@ let priceTracker;
 let stockAnalyzer;
 let optionsAnalyzer;
 let chronosHoldService;
-let glmAnalyzer;
+let flowstateAnalyzer;
+let runArchiver;
 
 // TTS state
 let activeTtsProcess = null;
@@ -1550,9 +1552,11 @@ ipcMain.handle('analyze-stock-events', async (event, ticker, options = {}) => {
           const gapNegative = currentQuote.previousClose > currentQuote.open;
           const intradayPositive = currentQuote.price > currentQuote.open;
           const closedBelowPrevClose = currentQuote.price < currentQuote.previousClose;
+          const closedAbovePrevClose = currentQuote.price > currentQuote.previousClose;
 
           if (gapNegative) {
-            classification = intradayPositive ? 'negative_anticipated' : 'surprising_negative';
+            classification = closedAbovePrevClose ? 'surprising_positive'
+              : intradayPositive ? 'negative_anticipated' : 'surprising_negative';
           } else {
             classification = closedBelowPrevClose ? 'surprising_negative'
               : intradayPositive ? 'surprising_positive' : 'positive_anticipated';
@@ -1746,7 +1750,7 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
     const onTickerDone = options.fetchNews ? (entry) => {
       if (entry.ticker && !entry.skipped && !entry.error) newsFetchEntries.push(entry);
     } : null;
-    const result = await screenTickers(priceTracker, config, createYF, onTickerDone, database);
+    const result = await screenTickers(priceTracker, config, createYF, onTickerDone, database, runArchiver);
 
     // Fetch Finviz headlines in parallel (HTTP, no BrowserView bottleneck)
     if (options.fetchNews && newsFetchEntries.length > 0) {
@@ -2027,7 +2031,9 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
 
     const runsDir = path.join(__dirname, 'ci', 'screening-runs');
     fs.mkdirSync(runsDir, { recursive: true });
-    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    // Use the archiver's runId so the HTML pairs with its parquet sidecars
+    // (run-<runId>.html / .run.json / .bars.parquet / .chains.parquet / .events.parquet).
+    const ts = result.runId || new Date().toISOString().replace(/[:.]/g, '-');
     const snapshotPath = path.join(runsDir, `run-${ts}.html`);
     fs.writeFileSync(snapshotPath, html, 'utf-8');
 
@@ -2167,17 +2173,41 @@ ipcMain.handle('list-screening-runs', async () => {
   }
 });
 
-// GLM Analysis — logistic regression on event features
-ipcMain.handle('run-glm-analysis', async (event, options = {}) => {
+// Flowstate Analysis — IBM Granite Flowstate-R1 next-day price forecast
+ipcMain.handle('run-flowstate-forecast', async (event, options = {}) => {
   try {
-    const horizonDays = options.horizonDays || 10;
-    console.log(`\n[GLM] Training logistic regression with horizon=${horizonDays} days...`);
-    const result = await glmAnalyzer.trainModel(horizonDays);
-    const hNote = result.horizonDays !== result.requestedHorizon ? ` (fell back from ${result.requestedHorizon}d)` : '';
-    console.log(`[GLM] Done. horizon=${result.horizonDays}d${hNote}, LOO accuracy: ${(result.looAccuracy * 100).toFixed(1)}% (n=${result.nEvents}: ${result.nEventSamples} events + ${result.nNonEventSamples} non-events)`);
+    const tickers = Array.isArray(options.tickers) ? options.tickers : [options.ticker].filter(Boolean);
+    if (tickers.length === 0) throw new Error('No tickers provided');
+    console.log(`\n[Flowstate] Forecasting next-day band for ${tickers.length} ticker(s)...`);
+    const result = await flowstateAnalyzer.forecastNextDay(tickers, {
+      contextDays: options.contextDays,
+      scaleFactor: options.scaleFactor,
+      qLowIdx: options.qLowIdx,
+      qHighIdx: options.qHighIdx,
+    });
+    console.log(`[Flowstate] Done. ${result.forecasts.length} forecast(s), ${result.skipped.length} skipped.`);
     return { success: true, ...result };
   } catch (error) {
-    console.error('GLM analysis error:', error);
+    console.error('Flowstate forecast error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('run-flowstate-backtest', async (event, options = {}) => {
+  try {
+    if (!options.ticker) throw new Error('ticker is required');
+    console.log(`\n[Flowstate] Walk-forward backtest for ${options.ticker} (${options.nDays || 60}d)...`);
+    const result = await flowstateAnalyzer.walkForwardBacktest(options.ticker, {
+      contextDays: options.contextDays,
+      nDays: options.nDays,
+      scaleFactor: options.scaleFactor,
+      qLowIdx: options.qLowIdx,
+      qHighIdx: options.qHighIdx,
+    });
+    console.log(`[Flowstate] Backtest done. n=${result.nDays}, MAE=${result.mae.toFixed(3)}, coverage=${(result.coverage * 100).toFixed(1)}% (nominal ${(result.nominalCoverage * 100).toFixed(0)}%), hit-rate=${result.directionalHitRate ? (result.directionalHitRate * 100).toFixed(1) + '%' : 'n/a'}`);
+    return { success: true, ...result };
+  } catch (error) {
+    console.error('Flowstate backtest error:', error);
     return { success: false, error: error.message };
   }
 });
@@ -3367,7 +3397,7 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
             return '<div style="margin-bottom:6px; font-size:0.95em; line-height:1.5;">' +
               '<span style="color:#666; font-size:0.85em; margin-right:6px;">' + (n.date ? n.date + ' ' : '') + (n.time || '') + '</span>' +
               badge +
-              '<a href="' + n.url + '" style="color:#7aa2c7; text-decoration:none;">' + n.headline + '</a>' +
+              '<a href="' + n.url + '" target="_blank" rel="noopener" style="color:#7aa2c7; text-decoration:none;">' + n.headline + '</a>' +
             '</div>';
           };
           const DEFAULT_SHOW = 10;
@@ -3753,7 +3783,11 @@ async function initBackend() {
   const ibProvider = new IBOptionsProvider({ port: 4002 });
   optionsAnalyzer = new OptionsAnalysisService(database, ibProvider);
   chronosHoldService = new ChronosHoldPeriodService(database);
-  glmAnalyzer = new GLMAnalysisService(database);
+  flowstateAnalyzer = new FlowstateAnalysisService(database);
+  runArchiver = new RunArchiver({
+    database,
+    outputDir: path.join(__dirname, 'ci', 'screening-runs'),
+  });
 
   priceTracker.setOptionsAnalyzer(optionsAnalyzer);
 

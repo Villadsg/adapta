@@ -1,3 +1,5 @@
 torch
 chronos-forecasting
 numpy
+granite-tsfm
+safetensors

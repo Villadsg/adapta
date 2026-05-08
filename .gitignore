@@ -37,8 +37,9 @@ out/
 # Electron specific
 # (allow package-lock.json for reproducible builds)
 
-# Python virtual environment
+# Python virtual environments
 python/venv/
+python/venv-*/
 
 # Bun
 bun.lockb
