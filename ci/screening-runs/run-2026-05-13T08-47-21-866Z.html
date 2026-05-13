@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<title>Ticker Screening Results</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 20px; background: #1a1d23; color: #eaeaea; }
+  h1 { font-size: 1.4em; margin-bottom: 4px; color: #a8b5a2; }
+  .summary { color: #a0aec0; margin-bottom: 16px; font-size: 0.95em; }
+  table { width: 100%; border-collapse: collapse; background: #262a33; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.4); }
+  #screen-table th { background: #2f3540; padding: 10px 12px; text-align: left; font-size: 0.85em; color: #a0aec0; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; user-select: none; }
+  #screen-table th:hover { color: #fff; background: #3a414d; }
+  #screen-table th .sort-arrow { font-size: 0.7em; margin-left: 3px; color: #5a6a8a; }
+  #screen-table th.sorted-asc .sort-arrow, #screen-table th.sorted-desc .sort-arrow { color: #fff; }
+  td { padding: 8px 12px; border-top: 1px solid #2e333d; font-size: 0.95em; }
+  tr.data-row:hover { background: #2c303a; }
+  tr:hover { background: #22252c; }
+  .chart-row td { border-top: none; }
+  input, textarea { background: #15171c; color: #ddd; border: 1px solid #333; }
+  input::placeholder, textarea::placeholder { color: #6a7590; }
+  /* Override inline light-theme colors used throughout the generated markup */
+  [style*="background:#fff"] { background: #262a33 !important; }
+  [style*="background: #fff"] { background: #262a33 !important; }
+  [style*="background:#f7f9fc"] { background: #22252c !important; }
+  [style*="background:#f9f9f9"] { background: #22252c !important; }
+  [style*="background:#f5f5f5"] { background: #2f3540 !important; }
+  [style*="color:#333"] { color: #eaeaea !important; }
+  [style*="color:#444"] { color: #eaeaea !important; }
+  [style*="color:#666"] { color: #a0aec0 !important; }
+  [style*="color:#888"] { color: #8a96b0 !important; }
+  [style*="color:#999"] { color: #7a8499 !important; }
+  [style*="color:#aaa"] { color: #6a7590 !important; }
+  [style*="color:#bbb"] { color: #5a6680 !important; }
+  #fav-toast { position:fixed; bottom:20px; right:20px; padding:8px 16px; border-radius:6px; font-size:0.9em; color:#fff; opacity:0; transition:opacity 0.3s; pointer-events:none; z-index:9999; }
+  #fav-toast.show { opacity:1; }
+</style></head><body>
+<div id="fav-toast"></div>
+<h1>Ticker Screening Results</h1>
+<p class="summary">0 hits out of 1 tickers screened &mdash; 5d lookback, p92 threshold</p>
+<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.95em;">
+  <span style="color:#666; font-weight:600;">Avg Weighted IV (1 tickers):</span>
+  <span style="color:rgba(72,187,120,0.9); font-weight:bold; margin-left:10px;">Call 25.8%</span>
+  <span style="color:rgba(245,101,101,0.9); font-weight:bold; margin-left:10px;">Put 25.1%</span>
+  <span style="color:#999; margin-left:16px;">|</span>
+  <span style="color:#666; font-weight:600; margin-left:16px;">Avg ATM IV:</span>
+  <span style="color:rgba(72,187,120,0.7); font-weight:bold; margin-left:10px;">Call 0.0%</span>
+  <span style="color:rgba(245,101,101,0.7); font-weight:bold; margin-left:10px;">Put 0.8%</span>
+</div>
+<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.92em;">
+    <div style="color:#666; font-weight:600; margin-bottom:4px;">Pre-Event IV Profile <span style="color:#999; font-weight:normal; font-size:0.9em;">(avg percentile rank of each pre-event snapshot within that ticker's own point-in-time history; 50 = neutral, &gt;60 = elevated, &lt;40 = suppressed)</span></div>
+    <div style="color:#aaa; font-size:0.78em; margin-bottom:6px;">Requires ≥10 history records before the event date. (n) = events contributing.</div>
+    <table style="border-collapse:collapse;">
+      <thead><tr style="color:#888; font-size:0.8em; text-transform:uppercase;">
+        <th style="padding:4px 10px; text-align:left;">Classification</th>
+        <th style="padding:4px 10px; text-align:right;">Call IV</th>
+        <th style="padding:4px 10px; text-align:right;">Put IV</th>
+        <th style="padding:4px 10px; text-align:right;">C Spr</th>
+        <th style="padding:4px 10px; text-align:right;">P Spr</th>
+      </tr></thead>
+      <tbody><tr>
+      <td style="padding:6px 10px; font-weight:bold; color:#4caf50;">Surprising +</td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#d32f2f; font-weight:600;">p68</span> <span style="color:#aaa; font-size:0.85em;">(102)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#d32f2f; font-weight:600;">p66</span> <span style="color:#aaa; font-size:0.85em;">(94)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p55</span> <span style="color:#aaa; font-size:0.85em;">(100)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p53</span> <span style="color:#aaa; font-size:0.85em;">(100)</span></td>
+    </tr><tr>
+      <td style="padding:6px 10px; font-weight:bold; color:#8bc34a;">Anticipated +</td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#d32f2f; font-weight:600;">p96</span> <span style="color:#aaa; font-size:0.85em;">(12)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#d32f2f; font-weight:600;">p96</span> <span style="color:#aaa; font-size:0.85em;">(10)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p50</span> <span style="color:#aaa; font-size:0.85em;">(11)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p47</span> <span style="color:#aaa; font-size:0.85em;">(11)</span></td>
+    </tr><tr>
+      <td style="padding:6px 10px; font-weight:bold; color:#ff9800;">Anticipated -</td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#d32f2f; font-weight:600;">p69</span> <span style="color:#aaa; font-size:0.85em;">(13)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#d32f2f; font-weight:600;">p69</span> <span style="color:#aaa; font-size:0.85em;">(12)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#0277bd; font-weight:600;">p35</span> <span style="color:#aaa; font-size:0.85em;">(12)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p45</span> <span style="color:#aaa; font-size:0.85em;">(12)</span></td>
+    </tr><tr>
+      <td style="padding:6px 10px; font-weight:bold; color:#f44336;">Surprising -</td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p64</span> <span style="color:#aaa; font-size:0.85em;">(80)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p61</span> <span style="color:#aaa; font-size:0.85em;">(76)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#0277bd; font-weight:600;">p42</span> <span style="color:#aaa; font-size:0.85em;">(65)</span></td>
+      <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p56</span> <span style="color:#aaa; font-size:0.85em;">(65)</span></td>
+    </tr></tbody>
+    </table>
+  </div>
+<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.92em;">
+    <div style="color:#666; font-weight:600; margin-bottom:4px;">IV Profile by Daily Return Bucket <span style="color:#999; font-weight:normal; font-size:0.9em;">(median split on next-day return; average IV/spread ranks from the day before — tests if high rank precedes high vs low next-day return)</span></div>
+    <table style="border-collapse:collapse;">
+      <thead><tr style="color:#888; font-size:0.8em; text-transform:uppercase;">
+        <th style="padding:4px 10px; text-align:left;">Bucket</th>
+        <th style="padding:4px 10px; text-align:right;">Call IV</th>
+        <th style="padding:4px 10px; text-align:right;">Put IV</th>
+        <th style="padding:4px 10px; text-align:right;">C Spr</th>
+        <th style="padding:4px 10px; text-align:right;">P Spr</th>
+      </tr></thead>
+      <tbody><tr>
+    <td style="padding:6px 10px; font-weight:bold; color:#1565c0;">Low Returns <span style="color:#999; font-weight:normal; font-size:0.85em;">[-31.7% … +0.0%]</span> <span style="color:#aaa; font-size:0.85em;">n=676</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p59</span> <span style="color:#aaa; font-size:0.85em;">(661)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p59</span> <span style="color:#aaa; font-size:0.85em;">(632)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p47</span> <span style="color:#aaa; font-size:0.85em;">(673)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#666; font-weight:600;">p48</span> <span style="color:#aaa; font-size:0.85em;">(673)</span></td>
+  </tr><tr>
+    <td style="padding:6px 10px; font-weight:bold; color:#d32f2f;">High Returns <span style="color:#999; font-weight:normal; font-size:0.85em;">[+0.0% … +39.9%]</span> <span style="color:#aaa; font-size:0.85em;">n=677</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#d32f2f; font-weight:600;">p65</span> <span style="color:#aaa; font-size:0.85em;">(663)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#ef6c00; font-weight:600;">p63</span> <span style="color:#aaa; font-size:0.85em;">(639)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#0277bd; font-weight:600;">p43</span> <span style="color:#aaa; font-size:0.85em;">(673)</span></td>
+    <td style="padding:6px 10px; text-align:right;"><span style="color:#0277bd; font-weight:600;">p44</span> <span style="color:#aaa; font-size:0.85em;">(673)</span></td>
+  </tr></tbody>
+    </table>
+  </div>
+<div id="portfolio-corr-box" style="margin-bottom:14px; padding:12px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.95em;">
+  <div style="color:#666; font-weight:600; margin-bottom:6px;">Portfolio Correlation Check</div>
+  <div style="display:flex; align-items:center; gap:10px;">
+    <input id="portfolio-corr-input" type="text" placeholder="e.g. AAPL, MSFT, NVDA" style="flex:1; padding:7px 10px; border:1px solid #ddd; border-radius:6px; font-size:0.95em; outline:none;" />
+    <button id="portfolio-corr-btn" style="padding:7px 16px; border:none; border-radius:6px; background:#5b8cb8; color:#fff; font-size:0.9em; cursor:pointer;">Check</button>
+  </div>
+  <div id="portfolio-corr-result" style="margin-top:8px;"></div>
+</div>
+
+<div id="tag-filter-bar" style="margin:8px 0 6px; min-height:22px; font-size:0.82em; color:#888; display:none;">
+  Filter: <span id="tag-filter-active"></span>
+  <a href="#" id="tag-filter-clear" style="margin-left:8px; color:#7aa2c7; text-decoration:none;">clear</a>
+</div>
+<table id="screen-table">
+<thead><tr>
+  <th style="width:28px; text-align:center; padding:4px;"><span class="sort-arrow"></span></th>
+  <th>Ticker<span class="sort-arrow"></span></th>
+  <th>Sector<span class="sort-arrow"></span></th>
+  <th>Tags<span class="sort-arrow"></span></th>
+  <th>Date<span class="sort-arrow"></span></th>
+  <th>Gap %<span class="sort-arrow"></span></th>
+  <th>Percentile<span class="sort-arrow"></span></th>
+  <th>Classification<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Volume<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">R&sup2; (SPY)<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Mkt Cap<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Opt $ Vol<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Call IV<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Weighted OTM IV minus ATM IV. (pN) = self-history rank, [sN] = sector rank, {tN} = top-tag cohort rank">C Spr<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Put IV<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Weighted OTM IV minus ATM IV. (pN) = self-history rank, [sN] = sector rank, {tN} = top-tag cohort rank">P Spr<span class="sort-arrow"></span></th>
+</tr></thead>
+<tbody><tr class="data-row" data-ticker="ONDS" data-tags="guidance_raise analyst_downgrade_wave" style="color:#aaa; cursor:pointer;">
+      <td style="text-align:center; width:28px; padding:4px;" data-v="2"><span class="fav-star" data-ticker="ONDS" style="cursor:pointer; font-size:1.1em; color:#e53935;" title="Super favorite (click to clear)">★</span></td>
+      <td data-v="ONDS" style="font-weight:bold;">ONDS <span style="font-size:0.7em;color:#aaa;">▶</span></td>
+      <td data-v="Technology" style="font-size:0.82em; color:#888;">Technology</td>
+      <td data-v="guidance_raise" style="font-size:0.82em; max-width:240px;"><span class="event-tag" data-tag="guidance_raise" title="score 0.809 · Ondas Stock Rises After Preliminary Q4 Results Top Company Guidance" style="display:inline-block; margin:1px 3px 1px 0; padding:1px 6px; background:#2c3a4a; color:#cdd5e0; border:1px solid #3d4f63; border-radius:8px; font-size:0.74em; cursor:pointer; white-space:nowrap;">Guidance raised</span><span class="event-tag" data-tag="analyst_downgrade_wave" title="score 0.794 · Stock Market Today: Stock futures trim gains on report Iran rejects cease-fire plan" style="display:inline-block; margin:1px 3px 1px 0; padding:1px 6px; background:#2c3a4a; color:#cdd5e0; border:1px solid #3d4f63; border-radius:8px; font-size:0.74em; cursor:pointer; white-space:nowrap;">Analyst downgrades</span></td>
+      <td data-v="zzz"></td>
+      <td data-v="0"></td>
+      <td data-v="0"></td>
+      <td data-v="zzz" style="color:#ccc; font-weight:bold;"></td>
+      <td data-v="0" style="text-align:right;"></td>
+      <td data-v="0.0943412612925224" style="text-align:right;">0.094</td>
+      <td data-v="4455558656" style="text-align:right;">4.5B</td>
+      <td data-v="784763" style="text-align:right;">$785K</td>
+      <td data-v="25.8" style="text-align:right; color:rgba(72,187,120,0.9);">25.8%</td>
+      <td data-v="25.8" style="text-align:right; color:rgba(72,187,120,0.7); font-size:0.88em;">+25.8</td>
+      <td data-v="25.1" style="text-align:right; color:rgba(245,101,101,0.9);">25.1%</td>
+      <td data-v="24.3" style="text-align:right; color:rgba(245,101,101,0.7); font-size:0.88em;">+24.3</td>
+    </tr>
+    <tr class="chart-row" data-chart-for="ONDS" style="display:none;">
+      <td colspan="16" style="padding:0; background:#1a1d23;">
+        <div style="display:flex; gap:12px; align-items:stretch; margin:12px 20px 8px;">
+          <div id="summary-ONDS" style="flex:0 1 78ch; padding:14px 18px; background:#262a33; border-left:3px solid #4a5a8a; border-radius:6px; color:#cdd5e0; font-size:0.98em; line-height:1.65; max-height:200px; overflow-y:auto;"></div>
+          <div style="flex:1 1 0; min-width:280px; height:200px; background:#262a33; border-radius:6px; padding:6px 10px;">
+            <canvas id="dv-iv-chart-ONDS"></canvas>
+          </div>
+        </div>
+        <div id="dv-iv-strike-wrap-ONDS" style="display:none; margin:0 20px 8px; padding:10px 14px; background:#262a33; border-left:3px solid #7aa2c7; border-radius:6px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span id="dv-iv-strike-title-ONDS" style="color:#cdd5e0; font-size:0.92em;"></span>
+            <button type="button" data-strike-close="ONDS" style="background:transparent; color:#888; border:1px solid #444; border-radius:3px; padding:2px 8px; font-size:0.8em; cursor:pointer;">close</button>
+          </div>
+          <div id="dv-iv-strike-body-ONDS"></div>
+        </div>
+        <div style="padding:6px 20px 8px; display:flex; gap:8px; align-items:flex-start;">
+          <label style="color:#aaa; font-size:0.82em; padding-top:6px; min-width:48px;">Notes</label>
+          <textarea class="ticker-note" data-ticker="ONDS" placeholder="Add a note about ONDS..." style="flex:1; min-height:42px; padding:6px 8px; border:1px solid #333; border-radius:4px; background:#15171c; color:#ddd; font-size:0.88em; font-family:inherit; resize:vertical;"></textarea>
+          <span class="note-status" data-ticker="ONDS" style="color:#888; font-size:0.78em; padding-top:8px; min-width:54px;"></span>
+        </div>
+        <div style="padding:12px 16px; height:480px;">
+          <canvas id="chart-ONDS"></canvas>
+        </div>
+        <div id="opts-wrap-ONDS" style="display:none; padding:8px 16px 4px;">
+          <div style="display:flex; gap:8px;">
+            <div style="flex:1; min-width:0;">
+              <div id="opts-iv-label-0-ONDS" style="color:#aaa; font-size:0.82em; padding:2px 4px; cursor:pointer; user-select:none;" title="Click for historical weighted IV"></div>
+              <div style="height:360px;"><canvas id="opts-chart-0-ONDS"></canvas></div>
+            </div>
+            <div style="flex:1; min-width:0;">
+              <div id="opts-iv-label-1-ONDS" style="color:#aaa; font-size:0.82em; padding:2px 4px; cursor:pointer; user-select:none;" title="Click for historical weighted IV"></div>
+              <div style="height:360px;"><canvas id="opts-chart-1-ONDS"></canvas></div>
+            </div>
+          </div>
+          <div id="iv-history-wrap-ONDS" style="display:none; padding:8px 0; height:420px;">
+            <canvas id="iv-history-chart-ONDS"></canvas>
+          </div>
+        </div>
+        <div id="news-ONDS" style="padding:4px 20px 14px;"></div>
+      </td>
+    </tr></tbody>
+</table>
+
+<script>
+(function() {
+  const chartDataMap = {"ONDS":{"dates":["2025-12-26","2025-12-29","2025-12-30","2025-12-31","2026-01-02","2026-01-05","2026-01-06","2026-01-07","2026-01-08","2026-01-09","2026-01-12","2026-01-13","2026-01-14","2026-01-15","2026-01-16","2026-01-20","2026-01-21","2026-01-22","2026-01-23","2026-01-26","2026-01-27","2026-01-28","2026-01-29","2026-01-30","2026-02-02","2026-02-03","2026-02-04","2026-02-05","2026-02-06","2026-02-09","2026-02-10","2026-02-11","2026-02-12","2026-02-13","2026-02-17","2026-02-18","2026-02-19","2026-02-20","2026-02-23","2026-02-24","2026-02-25","2026-02-26","2026-02-27","2026-03-02","2026-03-03","2026-03-04","2026-03-05","2026-03-06","2026-03-09","2026-03-10","2026-03-11","2026-03-12","2026-03-13","2026-03-16","2026-03-17","2026-03-18","2026-03-19","2026-03-20","2026-03-23","2026-03-24","2026-03-25","2026-03-26","2026-03-27","2026-03-30","2026-03-31","2026-04-01","2026-04-02","2026-04-06","2026-04-07","2026-04-08","2026-04-09","2026-04-10","2026-04-13","2026-04-14","2026-04-15","2026-04-16","2026-04-17","2026-04-20","2026-04-21","2026-04-22","2026-04-23","2026-04-24","2026-04-27","2026-04-28","2026-04-29","2026-04-30","2026-05-01","2026-05-04","2026-05-05","2026-05-06","2026-05-07","2026-05-08","2026-05-11","2026-05-12"],"closes":[8.479999542236328,8.460000038146973,8.989999771118164,9.760000228881836,11.020000457763672,12.529999732971191,12.84000015258789,12.180000305175781,14.010000228881836,13.6899995803833,13.1899995803833,13.890000343322754,13.5600004196167,12.819999694824219,12.15999984741211,13.130000114440918,12.550000190734863,12.619999885559082,12.170000076293945,11.15999984741211,12.260000228881836,12.270000457763672,11.270000457763672,10.359999656677246,10.640000343322754,11.380000114440918,9.680000305175781,8.479999542236328,9.6899995803833,10.34000015258789,9.680000305175781,9.229999542236328,8.970000267028809,9.3100004196167,10.050000190734863,11.069999694824219,11.390000343322754,10.029999732971191,10.1899995803833,10.399999618530273,10.300000190734863,10.449999809265137,10.079999923706055,10.670000076293945,10.020000457763672,10.510000228881836,10.489999771118164,9.829999923706055,9.720000267028809,10.010000228881836,9.829999923706055,10.329999923706055,10.15999984741211,10.529999732971191,11.279999732971191,10.829999923706055,10.75,10.0600004196167,10.899999618530273,10.680000305175781,10.3100004196167,9.4399995803833,8.800000190734863,8.149999618530273,9.039999961853027,8.8100004196167,9.600000381469727,9.520000457763672,9.529999732971191,9.449999809265137,9.140000343322754,9.130000114440918,9.470000267028809,9.399999618530273,10.029999732971191,10.199999809265137,10,10.729999542236328,10.869999885559082,11.0600004196167,10.539999961853027,10.550000190734863,10.949999809265137,10.479999542236328,9.489999771118164,10.039999961853027,10.319999694824219,9.729999542236328,9.329999923706055,9.34000015258789,8.890000343322754,9.0600004196167,9.420000076293945,9.039999961853027],"volumes":[49157100,29712000,56951500,156334100,136003400,142435600,92109800,70855300,137379500,114278000,121385400,130778300,83593700,96377300,168234800,150704200,148204900,117527800,79504300,79825500,92724300,100928200,87794500,79362400,92683800,102072700,125055500,100976900,87820600,88727400,56340300,67427300,59629600,56681700,76272200,110468200,102375900,111577200,68820900,69619700,68949400,67386300,65528400,181539000,100359300,104822000,86235300,160635300,91130900,90578700,88367400,136065200,73311700,88867500,109611300,79494300,69267000,86922700,92323400,96637500,96871600,72606200,56393100,71761400,59296600,63384400,71272400,45392400,47377100,64338100,37717900,33455200,52073400,41727200,54416500,52178100,58571400,94506700,80859000,67613600,52294400,45396400,57126900,41736600,58503700,35726100,45644500,47914900,56570800,54577200,45228600,34078000,44661900,36847300],"events":[{"idx":3,"y":9.760000228881836,"classification":"surprising_positive"},{"idx":4,"y":11.020000457763672,"classification":"surprising_positive"},{"idx":5,"y":12.529999732971191,"classification":"surprising_positive"},{"idx":8,"y":14.010000228881836,"classification":"surprising_positive"},{"idx":15,"y":13.130000114440918,"classification":"surprising_positive"},{"idx":26,"y":9.680000305175781,"classification":"surprising_negative"},{"idx":37,"y":10.029999732971191,"classification":"surprising_negative"},{"idx":51,"y":10.329999923706055,"classification":"surprising_positive"}],"optionsStrikes":[{"label":"2026-05-15","calls":[{"strike":9.5,"dollarVol":117920,"dollarOI":0,"iv":12.500875},{"strike":10,"dollarVol":198920,"dollarOI":0,"iv":25.00075},{"strike":10.5,"dollarVol":64163,"dollarOI":0,"iv":50.0005},{"strike":11,"dollarVol":38776,"dollarOI":0,"iv":50.0005},{"strike":11.5,"dollarVol":4068,"dollarOI":0,"iv":50.0005},{"strike":12,"dollarVol":6780,"dollarOI":0,"iv":50.0005},{"strike":12.5,"dollarVol":1024,"dollarOI":0,"iv":50.0005},{"strike":13,"dollarVol":2228,"dollarOI":0,"iv":50.0005},{"strike":13.5,"dollarVol":44,"dollarOI":0,"iv":50.0005},{"strike":14,"dollarVol":1098,"dollarOI":0,"iv":50.0005},{"strike":14.5,"dollarVol":776,"dollarOI":0,"iv":50.0005},{"strike":15,"dollarVol":65,"dollarOI":0,"iv":50.0005},{"strike":15.5,"dollarVol":5,"dollarOI":0,"iv":50.0005},{"strike":16,"dollarVol":9,"dollarOI":0,"iv":50.0005},{"strike":17,"dollarVol":3,"dollarOI":0,"iv":50.0005},{"strike":18,"dollarVol":21.000000000000004,"dollarOI":0,"iv":50.0005},{"strike":19,"dollarVol":54,"dollarOI":0,"iv":100.0005},{"strike":20,"dollarVol":25,"dollarOI":0,"iv":50.0005}],"puts":[{"strike":6,"dollarVol":7.000000000000001,"dollarOI":0,"iv":50.0005},{"strike":6.5,"dollarVol":2,"dollarOI":0,"iv":50.0005},{"strike":7,"dollarVol":1224,"dollarOI":0,"iv":50.0005},{"strike":7.5,"dollarVol":1330,"dollarOI":0,"iv":50.0005},{"strike":8,"dollarVol":20190,"dollarOI":0,"iv":50.0005},{"strike":8.5,"dollarVol":45195.00000000001,"dollarOI":0,"iv":25.00075}],"wCallIV":28.5,"wPutIV":33.4,"atmCallIV":0,"atmPutIV":3.1,"atmBandCallIV":0,"atmBandPutIV":1.1,"atmCallDV":396837,"atmPutDV":235864,"ivSpreadCall":28.5,"ivSpreadPut":30.3,"deepOTMCallPct":73,"deepOTMPutPct":33.5},{"label":"2026-05-22","calls":[{"strike":9.5,"dollarVol":68256,"dollarOI":0,"iv":12.500875},{"strike":10,"dollarVol":48510,"dollarOI":0,"iv":25.00075},{"strike":10.5,"dollarVol":13991.999999999998,"dollarOI":0,"iv":25.00075},{"strike":11,"dollarVol":11526,"dollarOI":0,"iv":25.00075},{"strike":11.5,"dollarVol":1463,"dollarOI":0,"iv":50.0005},{"strike":12,"dollarVol":8721,"dollarOI":0,"iv":50.0005},{"strike":12.5,"dollarVol":1463,"dollarOI":0,"iv":50.0005},{"strike":13,"dollarVol":385,"dollarOI":0,"iv":50.0005},{"strike":13.5,"dollarVol":10,"dollarOI":0,"iv":50.0005},{"strike":14,"dollarVol":32,"dollarOI":0,"iv":50.0005},{"strike":15,"dollarVol":9,"dollarOI":0,"iv":50.0005},{"strike":15.5,"dollarVol":16,"dollarOI":0,"iv":50.0005},{"strike":18,"dollarVol":2,"dollarOI":0,"iv":50.0005},{"strike":20,"dollarVol":4,"dollarOI":0,"iv":50.0005}],"puts":[{"strike":6,"dollarVol":1,"dollarOI":0,"iv":50.0005},{"strike":6.5,"dollarVol":72,"dollarOI":0,"iv":50.0005},{"strike":7,"dollarVol":77,"dollarOI":0,"iv":50.0005},{"strike":7.5,"dollarVol":2460,"dollarOI":0,"iv":25.00075},{"strike":8,"dollarVol":8020,"dollarOI":0,"iv":25.00075},{"strike":8.5,"dollarVol":26315.999999999996,"dollarOI":0,"iv":12.500875}],"wCallIV":21.4,"wPutIV":16.2,"atmCallIV":0,"atmPutIV":1.6,"atmBandCallIV":0,"atmBandPutIV":0.4,"atmCallDV":176578,"atmPutDV":126296,"ivSpreadCall":21.4,"ivSpreadPut":14.6,"deepOTMCallPct":55.8,"deepOTMPutPct":28.8},{"label":"2026-05-29","calls":[{"strike":9.5,"dollarVol":21224,"dollarOI":0,"iv":6.250937500000001},{"strike":10,"dollarVol":9460,"dollarOI":0,"iv":12.500875},{"strike":10.5,"dollarVol":3629.9999999999995,"dollarOI":0,"iv":25.00075},{"strike":11,"dollarVol":8169,"dollarOI":0,"iv":25.00075},{"strike":11.5,"dollarVol":1394.0000000000002,"dollarOI":0,"iv":25.00075},{"strike":12,"dollarVol":24830,"dollarOI":0,"iv":25.00075},{"strike":12.5,"dollarVol":1925,"dollarOI":0,"iv":50.0005},{"strike":13,"dollarVol":8,"dollarOI":0,"iv":50.0005},{"strike":14,"dollarVol":16,"dollarOI":0,"iv":50.0005},{"strike":15,"dollarVol":6,"dollarOI":0,"iv":50.0005}],"puts":[{"strike":6,"dollarVol":2,"dollarOI":0,"iv":50.0005},{"strike":7,"dollarVol":66,"dollarOI":0,"iv":25.00075},{"strike":7.5,"dollarVol":320,"dollarOI":0,"iv":25.00075},{"strike":8,"dollarVol":7453,"dollarOI":0,"iv":12.500875},{"strike":8.5,"dollarVol":10997.999999999998,"dollarOI":0,"iv":12.500875}],"wCallIV":18.4,"wPutIV":12.8,"atmCallIV":0,"atmPutIV":0.8,"atmBandCallIV":0,"atmBandPutIV":0.3,"atmCallDV":298621.00000000006,"atmPutDV":48393,"ivSpreadCall":18.4,"ivSpreadPut":12,"deepOTMCallPct":70,"deepOTMPutPct":41.6}]}};
+  const summaryMap = {"ONDS":"Ondas Inc. provides private wireless, drone, and automated data solutions in the United States and internationally. It operates through the Ondas Networks and Ondas Autonomous Systems segments. The company offers Counter-UAS (CUAS) and site protection systems, including iron drone raider, a fully autonomous interceptor drone system for neutralizing small hostile drones; sentrycs CoRF, Cyber/RF-based CUAS platform for detection, identification, tracking, and mitigation of unauthorized drones; optimus system, fully autonomous drone platform for continuous security, surveillance, and mission-critical data collection; 4M defense, supporting missions related to demining and clearing land of unexploded ordnance; roboteam, UGVs and tactical ground robotics; apeiro motion, autonomy and mobility software for robotic platforms, enhancing navigation and operational effectiveness; and loitering munition systems, is a one way drone for a variety of missions including ISR defense and strike. It also offers FullMAX Software-Defined Radio Platform, a patented SDR platform for secure, private, wide-area broadband networks, enabling mission-critical communications; software and hardware maintenance agreements, extended software and hardware maintenance contracts, including ongoing support, security upgrades, and feature enhancements; licensing/royalties, licensing of FullMAX software and technology for integration into partner hardware and software platforms; and ancillary services, wireless network design, systems engineering, radio frequency planning, software configuration, product training, installation, onsite support, and engineering/product development. It serves rail, electric utilities, oil and gas, public safety, government, and other industrial applications. The company was formerly known as Ondas Holdings Inc. and changed its name to Ondas Inc. in January 2026. Ondas Inc. was incorporated in 2014 and is headquartered in West Palm Beach, Florida."};
+  const newsMap = {"ONDS":[{"date":"May-05-26","time":"10:30AM","headline":"BC-Most Active Stocks","url":"https://finance.yahoo.com/markets/stocks/articles/bc-most-active-stocks-143017809.html","category":"mixed"},{"date":"May-04-26","time":"10:30AM","headline":"BC-Most Active Stocks","url":"https://finance.yahoo.com/markets/stocks/articles/bc-most-active-stocks-143017315.html","category":"mixed"},{"date":"Apr-30-26","time":"11:42AM","headline":"The Camera Is the New Sensor: Why a Provisional Patent Filing in Hollywood Could Reshape How the Pentagon Buys Vision","url":"/news/349455/the-camera-is-the-new-sensor-why-a-provisional-patent-filing-in-hollywood-could-reshape-how-the-pentagon-buys-vision","category":"mixed"},{"date":"Apr-30-26","time":"08:30AM","headline":"Ondas to Report First Quarter 2026 Financial Results on May 14, 2026 at 8:30 AM ET","url":"/news/349365/ondas-to-report-first-quarter-2026-financial-results-on-may-14-2026-at-8-30-am-et","category":"win"},{"date":"Apr-29-26","time":"10:30AM","headline":"BC-Most Active Stocks","url":"https://finance.yahoo.com/markets/stocks/articles/bc-most-active-stocks-143018483.html","category":"mixed"},{"date":"Apr-29-26","time":"09:47AM","headline":"Drones as a Service Emerges as Critical Infrastructure for Modern Business and Defense Ops","url":"/news/348845/drones-as-a-service-emerges-as-critical-infrastructure-for-modern-business-and-defense-ops","category":"mixed"},{"date":"Apr-27-26","time":"10:30AM","headline":"BC-Most Active Stocks","url":"https://finance.yahoo.com/markets/stocks/articles/bc-most-active-stocks-143018557.html","category":"mixed"},{"date":"Apr-24-26","time":"08:50AM","headline":"Ondas Completes Merger of U.S. Defense Prime Contractor Mistral, Brings Programs in Excess of $1 Billion and Expands Direct Prime Participation Across U.S. Department of War Programs","url":"/news/347561/ondas-completes-merger-of-us-defense-prime-contractor-mistral-brings-programs-in-excess-of-1-billion-and-expands-direct-prime-participation-across-us-department-of-war-programs","category":"win"},{"date":"Apr-23-26","time":"09:00AM","headline":"Pentagon Counter-Drone Priority Meets Defense AI: Video Intelligence Joins the RF Sensing Stack","url":"/news/347213/pentagon-counter-drone-priority-meets-defense-ai-video-intelligence-joins-the-rf-sensing-stack","category":"mixed"},{"date":"Apr-22-26","time":"10:30AM","headline":"BC-Most Active Stocks","url":"https://finance.yahoo.com/markets/stocks/articles/bc-most-active-stocks-143018096.html","category":"mixed"},{"date":"Apr-21-26","time":"10:30AM","headline":"BC-Most Active Stocks","url":"https://finance.yahoo.com/markets/stocks/articles/bc-most-active-stocks-143020968.html","category":"mixed"},{"date":"Apr-21-26","time":"09:00AM","headline":"AI-Driven Video Intelligence and RF-Powered Detection Moving to the Front Line of Military Modernization","url":"/news/346226/ai-driven-video-intelligence-and-rf-powered-detection-moving-to-the-front-line-of-military-modernization","category":"mixed"},{"date":"Apr-20-26","time":"10:30AM","headline":"BC-Most Active Stocks","url":"https://finance.yahoo.com/markets/stocks/articles/bc-most-active-stocks-143018596.html","category":"mixed"},{"date":"Apr-20-26","time":"08:30AM","headline":"Ondas Receives $10 Million Initial Order, Part of a $50 Million Award, to Launch Large-Scale Border Demining Program Along Israel's Eastern Border","url":"/news/345787/ondas-receives-10-million-initial-order-part-of-a-50-million-award-to-launch-large-scale-border-demining-program-along-israels-eastern-border","category":"mixed"},{"date":"Apr-16-26","time":"09:20AM","headline":"Next-Generation Defense Is Unmanned as Global Drone Industry Targets $160Billion+ Expansion","url":"/news/345237/next-generation-defense-is-unmanned-as-global-drone-industry-targets-160billion-expansion","category":"mixed"},{"date":"Apr-15-26","time":"08:30AM","headline":"Ondas and Heidelberg Launch ONBERG Autonomous Systems Joint Venture with Official Launch and Live Demonstration Event in Germany","url":"/news/344780/ondas-and-heidelberg-launch-onberg-autonomous-systems-joint-venture-with-official-launch-and-live-demonstration-event-in-germany","category":"win"},{"date":"Apr-13-26","time":"12:05PM","headline":"Sensor Fusion Is The New Defense Frontier: AI Video Joins RF In The Race To Counter Drones","url":"/news/344141/sensor-fusion-is-the-new-defense-frontier-ai-video-joins-rf-in-the-race-to-counter-drones","category":"win"},{"date":"Apr-13-26","time":"10:30AM","headline":"BC-Most Active Stocks","url":"https://finance.yahoo.com/markets/stocks/articles/bc-most-active-stocks-143018936.html","category":"mixed"},{"date":"Apr-13-26","time":"08:30AM","headline":"Ondas Receives Initial ~$68 Million Order Under $140 Million Strategic Military Engineering Program","url":"/news/344064/ondas-receives-initial-68-million-order-under-140-million-strategic-military-engineering-program","category":"win"},{"date":"Apr-07-26","time":"08:30AM","headline":"Ondas Selected to Deploy Counter-Drone Protection for the 2026 FIFA World Cup","url":"/news/342824/ondas-selected-to-deploy-counter-drone-protection-for-the-2026-fifa-world-cup","category":"win"},{"date":"Apr-06-26","time":"03:15PM","headline":"Counter-Drone Just Became the Fastest-Growing Niche in Defense. VisionWave Is Already Demonstrating ARGUS","url":"/news/342576/counter-drone-just-became-the-fastest-growing-niche-in-defense-visionwave-is-already-demonstrating-argus","category":"mixed"},{"date":"Apr-06-26","time":"10:30AM","headline":"BC-Most Active Stocks","url":"https://finance.yahoo.com/markets/stocks/articles/bc-most-active-stocks-143017599.html","category":"mixed"},{"date":"Apr-06-26","time":"08:30AM","headline":"Ondas' 4M Defense Wins Competitive Tender for Large-Scale Border Demining Program with Opportunity Expected to Exceed $50 Million","url":"/news/342478/ondas-4m-defense-wins-competitive-tender-for-large-scale-border-demining-program-with-opportunity-expected-to-exceed-50-million","category":"win"},{"date":"Apr-02-26","time":"10:30AM","headline":"BC-Most Active Stocks","url":"https://finance.yahoo.com/markets/stocks/articles/bc-most-active-stocks-143019075.html","category":"mixed"},{"date":"Apr-01-26","time":"10:30AM","headline":"BC-Most Active Stocks","url":"https://finance.yahoo.com/markets/stocks/articles/bc-most-active-stocks-143018380.html","category":"mixed"},{"date":"Apr-01-26","time":"08:30AM","headline":"Ondas Completes Acquisition of World View Enterprises, Establishing a Persistent, AI-Enabled Multi-Domain ISR Platform Across Stratosphere, Air, and Ground","url":"/news/341712/ondas-completes-acquisition-of-world-view-enterprises-establishing-a-persistent-ai-enabled-multi-domain-isr-platform-across-stratosphere-air-and-ground","category":"win"},{"date":"Mar-30-26","time":"10:30AM","headline":"BC-Most Active Stocks","url":"https://finance.yahoo.com/markets/stocks/articles/bc-most-active-stocks-143018980.html","category":"mixed"},{"date":"Mar-26-26","time":"04:24PM","headline":"This Palantir-Linked Drone Stock Is Falling. But Wall Street Is Feeling Good About Its Prospects.","url":"https://www.barrons.com/articles/ondas-palantir-linked-drone-stock-falling-wall-street-feeling-good-768a71f0?mod=bar_FV","category":"mixed"},{"date":"Mar-26-26","time":"08:30AM","headline":"Ondas Holdings Inc. Q4 2025 Earnings Call Summary","url":"https://finance.yahoo.com/m/91560171-f3ae-3899-b318-5a1ab1cb5ff2/ondas-holdings-inc.-q4-2025.html","category":"mixed"},{"date":"Mar-25-26","time":"03:01PM","headline":"Ondas Inc (ONDS) Q4 2025 Earnings Call Highlights: Record Revenue Growth and Strategic ...","url":"https://finance.yahoo.com/markets/stocks/articles/ondas-inc-onds-q4-2025-190148455.html","category":"win"},{"date":"Mar-25-26","time":"05:30AM","headline":"Cintas headlines Wednesday's earnings slate","url":"https://www.marketwatch.com/livecoverage/dow-s-p-500-nasdaq-oil-dips-donald-trump-peace-plan-iran/card/cintas-headlines-wednesday-s-earnings-slate-cGPiGX0IDlcsDbG8x1Uk?mod=mw_FV","category":"technical"},{"date":"Mar-25-26","time":"04:28AM","headline":"Stock Market Today: Stock futures trim gains on report Iran rejects cease-fire plan","url":"https://www.marketwatch.com/livecoverage/dow-s-p-500-nasdaq-oil-dips-donald-trump-peace-plan-iran?mod=mw_FV","category":"fear"},{"date":"Mar-24-26","time":"07:00AM","headline":"Trump's Kryptonite Rescues the Market Again. What's Stopping a Bumper Stocks Rally.","url":"https://www.barrons.com/articles/trump-iran-stock-market-treasuries-things-to-know-today-1fd45954?mod=bar_FV","category":"mixed"},{"date":"Mar-23-26","time":"03:50PM","headline":"Why Palantir's Autonomous Drone Partner Is Rallying on Earnings","url":"https://www.barrons.com/articles/ondas-palantirs-autonomous-drone-earnings-4c1c5062?mod=bar_FV","category":"mixed"},{"date":"Mar-23-26","time":"08:30AM","headline":"Ondas to Acquire World View, Building on Shared Vision for Multi-Domain, Interconnected Intelligence Platform","url":"/news/339234/ondas-to-acquire-world-view-building-on-shared-vision-for-multi-domain-interconnected-intelligence-platform","category":"win"},{"date":"Mar-23-26","time":"08:00AM","headline":"Ondas Inc. Reports Record Fourth Quarter and Full Year 2025 Financial Results: Expects Outsized Growth in 2026 Driven by Execution at OAS, Accelerated Strategic Growth Program and Strong Global Demand for Autonomous Systems","url":"/news/339191/ondas-inc-reports-record-fourth-quarter-and-full-year-2025-financial-results-expects-outsized-growth-in-2026-driven-by-execution-at-oas-accelerated-strategic-growth-program-and-strong-global-demand-for-autonomous-systems","category":"win"},{"date":"Mar-20-26","time":"08:30AM","headline":"Unusual Machines Announces Pricing of Approximately $150 Million Public Offering of Common Stock","url":"/news/338960/unusual-machines-announces-pricing-of-approximately-150-million-public-offering-of-common-stock","category":"mixed"},{"date":"Mar-20-26","time":"08:30AM","headline":"Ondas Reports Revised Preliminary Fourth Quarter and Full Year 2025 Financial Results and will Report Final Results on March 25, 2026 at 8:30 a.m. ET","url":"/news/338959/ondas-reports-revised-preliminary-fourth-quarter-and-full-year-2025-financial-results-and-will-report-final-results-on-march-25-2026-at-8-30-am-et","category":"win"},{"date":"Mar-19-26","time":"08:30AM","headline":"Ondas' Sentrycs Supports Airspace Protection at World Economic Forum 2026 in Davos","url":"/news/338664/ondas-sentrycs-supports-airspace-protection-at-world-economic-forum-2026-in-davos","category":"macro_fear"},{"date":"Mar-18-26","time":"12:22PM","headline":"Swarmer's stock surges 1,100% in two days, underscoring fervent demand for drones","url":"https://www.marketwatch.com/story/swarmers-stock-surges-1-100-in-two-days-underscoring-fervent-demand-for-drones-5f468b07?mod=mw_FV","category":"win"},{"date":"Mar-18-26","time":"09:15AM","headline":"Ondas and Heidelberg Establish ONBERG Autonomous Systems Joint Venture to Advance European Drone Defense Industry","url":"/news/338367/ondas-and-heidelberg-establish-onberg-autonomous-systems-joint-venture-to-advance-european-drone-defense-industry","category":"mixed"},{"date":"Mar-17-26","time":"03:10PM","headline":"Swarmer IPO Rises 700% Following Exec Edge Research Initiation","url":"https://finance.yahoo.com/news/swarmer-prices-ipo-5-share-005743183.html","category":"win"},{"date":"Mar-17-26","time":"09:15AM","headline":"Ondas Acquires INDO Earth Moving Ltd. Following its $140 Million Strategic Procurement Tender Award for Military Heavy Engineering Platforms from a Major Military Customer","url":"/news/337982/ondas-acquires-indo-earth-moving-ltd-following-its-140-million-strategic-procurement-tender-award-for-military-heavy-engineering-platforms-from-a-major-military-customer","category":"win"},{"date":"Mar-16-26","time":"08:56PM","headline":"Swarmer Prices IPO at $5 a Share Following Exec Edge Research Initiation","url":"https://finance.yahoo.com/news/swarmer-prices-ipo-5-share-005627166.html","category":"mixed"},{"date":"Mar-16-26","time":"11:15AM","headline":"Palantir and GE Aerospace Are Working Together on Military Aircraft. Is PLTR or GE Stock a Better Buy Here?","url":"https://finance.yahoo.com/m/840eccbf-30cf-376c-a6fb-b09ef0d8f655/palantir-and-ge-aerospace-are.html","category":"technical"},{"date":"Mar-16-26","time":"08:30AM","headline":"Ondas Completes Acquisition of Rotron Aerospace Ltd., Expanding Long-Range Propulsion Technologies for Advanced Unmanned Systems for Defense","url":"/news/337521/ondas-completes-acquisition-of-rotron-aerospace-ltd-expanding-long-range-propulsion-technologies-for-advanced-unmanned-systems-for-defense","category":"win"},{"date":"Mar-12-26","time":"09:45AM","headline":"Drone Stock On The Move After Palantir Partnership","url":"/news/336921/drone-stock-on-the-move-after-palantir-partnership","category":"mixed"},{"date":"Mar-12-26","time":"09:00AM","headline":"Defense Sector Turns to Drone-as-a-Service as Military Forces Seek Faster, Smarter Intelligence Solutions","url":"/news/336893/defense-sector-turns-to-drone-as-a-service-as-military-forces-seek-faster-smarter-intelligence-solutions","category":"mixed"},{"date":"Mar-12-26","time":"06:59AM","headline":"Palantir Partners with Ondas and World View to Advance Next Generation Multi-Domain Intelligence Platform","url":"https://www.businesswire.com/news/home/20260312925594/en","category":"mixed"},{"date":"Mar-11-26","time":"09:10AM","headline":"Ondas Acquires BIRD Aerosystems to Expand Airborne Missile Protection and ISR Capabilities","url":"/news/336469/ondas-acquires-bird-aerosystems-to-expand-airborne-missile-protection-and-isr-capabilities","category":"win"},{"date":"Mar-10-26","time":"05:01PM","headline":"AeroVironment CEO Emphasizes Scaling Manufacturing to Accelerate Sales in 2027","url":"/news/335931/aerovironment-ceo-emphasizes-scaling-manufacturing-to-accelerate-sales-in-2027","category":"mixed"},{"date":"Mar-10-26","time":"03:32PM","headline":"Live: Will AeroVironment (AVAV) Beat Q3 Earnings Tonight?","url":"/news/335782/live-will-aerovironment-avav-beat-q3-earnings-tonight","category":"mixed"},{"date":"Mar-10-26","time":"11:26AM","headline":"Ondas Stock Gains On Multi-Year Israel Land Clearance Project","url":"/news/335483/ondas-stock-gains-on-multi-year-israel-land-clearance-project","category":"mixed"},{"date":"Mar-10-26","time":"10:03AM","headline":"Ondas Projects Strong Q4 Revenue, Agrees to Merge With Mistral","url":"/news/335350/ondas-projects-strong-q4-revenue-agrees-to-merge-with-mistral","category":"win"},{"date":"Mar-10-26","time":"09:28AM","headline":"Ondas Stock Up 51% in the Past 6 Months: Is There Further Upside?","url":"/news/335216/ondas-stock-up-51-in-the-past-6-months-is-there-further-upside","category":"mixed"},{"date":"Mar-10-26","time":"08:30AM","headline":"Ondas Receives $15.8 Million Initial Order, Part of $30 Million Demining Program Secured by 4M Defense in Israel","url":"/news/334968/ondas-receives-158-million-initial-order-part-of-30-million-demining-program-secured-by-4m-defense-in-israel","category":"win"},{"date":"Mar-09-26","time":"01:21PM","headline":"Ondas Just Unlocked $1 Billion In Prime Defense Contracts","url":"/news/334124/ondas-just-unlocked-1-billion-in-prime-defense-contracts","category":"win"},{"date":"Mar-09-26","time":"09:19AM","headline":"Ondas Stock Rises After Preliminary Q4 Results Top Company Guidance","url":"/news/333641/ondas-stock-rises-after-preliminary-q4-results-top-company-guidance","category":"mixed"},{"date":"Mar-09-26","time":"09:00AM","headline":"Ondas Reaches Merger Agreement with U.S. Defense Prime Contractor Mistral Inc., Expanding Direct Prime Participation Across U.S. Department of Defense Programs","url":"/news/333597/ondas-reaches-merger-agreement-with-us-defense-prime-contractor-mistral-inc-expanding-direct-prime-participation-across-us-department-of-defense-programs","category":"win"},{"date":"Mar-09-26","time":"08:46AM","headline":"Are Escalating Middle East Drone Threats a Revenue Tailwind for Ondas?","url":"/news/333687/are-escalating-middle-east-drone-threats-a-revenue-tailwind-for-ondas","category":"mixed"},{"date":"Mar-09-26","time":"08:00AM","headline":"Ondas Reports Preliminary Fourth Quarter and Full Year 2025 Financial Results and will Report Final Results on March 25, 2026 at 8:30 a.m. ET","url":"/news/333522/ondas-reports-preliminary-fourth-quarter-and-full-year-2025-financial-results-and-will-report-final-results-on-march-25-2026-at-8-30-am-et","category":"win"},{"date":"Mar-06-26","time":"02:45PM","headline":"Ondas (ONDS) Invests $10M in World View for Stratospheric ISR Solutions","url":"/news/332786/ondas-onds-invests-10m-in-world-view-for-stratospheric-isr-solutions","category":"mixed"},{"date":"Mar-06-26","time":"10:18AM","headline":"What's Going On With Ondas Shares On Friday?","url":"/news/332263/whats-going-on-with-ondas-shares-on-friday","category":"mixed"},{"date":"Mar-06-26","time":"08:30AM","headline":"Ondas Receives New Orders for Counter-Drone Systems from Current Customers in the Middle East as Regional Drone Threats Escalate","url":"/news/332069/ondas-receives-new-orders-for-counter-drone-systems-from-current-customers-in-the-middle-east-as-regional-drone-threats-escalate","category":"macro_fear"},{"date":"Mar-05-26","time":"09:19AM","headline":"Palantir May Be The Brain Of AI Warfare - But Ondas Is Building The Hardware","url":"/news/330772/palantir-may-be-the-brain-of-ai-warfare-but-ondas-is-building-the-hardware","category":"macro_fear"},{"date":"Mar-05-26","time":"08:30AM","headline":"Ondas Strengthens OAS Board with McKinsey Senior Partner David Chinn to Support Global Defense Expansion","url":"/news/330648/ondas-strengthens-oas-board-with-mckinsey-senior-partner-david-chinn-to-support-global-defense-expansion","category":"macro_fear"},{"date":"Mar-04-26","time":"05:55PM","headline":"ATN International (ATNI) Meets Q4 Earnings Estimates","url":"/news/330215/atn-international-atni-meets-q4-earnings-estimates","category":"win"},{"date":"Mar-04-26","time":"02:44PM","headline":"3 Stocks That Could Provide the Anti-Drone Technology the U.S. So Desperately Needs","url":"https://www.barrons.com/articles/anti-drone-stocks-iran-war-ondas-blacksky-iridium-4066149d?mod=bar_FV","category":"technical"},{"date":"Mar-04-26","time":"01:02PM","headline":"What's Going On With Ondas Stock On Wednesday?","url":"/news/329887/whats-going-on-with-ondas-stock-on-wednesday","category":"mixed"},{"date":"Mar-04-26","time":"11:59AM","headline":"War in Iran Shows the U.S. Needs Anti-Drone Technology. These 3 Stocks Could Provide It.","url":"https://www.barrons.com/articles/iran-war-drone-stocks-ondas-blacksky-technology-iridium-communications-4066149d?mod=bar_FV","category":"technical"},{"date":"Mar-04-26","time":"08:30AM","headline":"Ondas Receives $20 Million Initial Purchase Order as Prime Contractor Under Strategic National Autonomous Border Protection Program","url":"/news/329377/ondas-receives-20-million-initial-purchase-order-as-prime-contractor-under-strategic-national-autonomous-border-protection-program","category":"win"},{"date":"Mar-03-26","time":"07:28AM","headline":"Trump Said US Is Ready To 'WIN BIG' In Iran With 'Unlimited' Munitions. Then These Two Drone Stocks Took Off- Here's Why","url":"/news/328003/trump-said-us-is-ready-to-win-big-in-iran-with-unlimited-munitions-then-these-two-drone-stocks-took-off-heres-why","category":"mixed"},{"date":"Mar-02-26","time":"12:35PM","headline":"Ondas, AeroVironment, and nLIGHT See Major Stock Moves After Iran Strikes","url":"https://finance.yahoo.com/m/0b089b8b-8aff-3244-8517-b6d1549261a6/ondas%2C-aerovironment%2C-and.html","category":"mixed"},{"date":"Mar-02-26","time":"10:25AM","headline":"Ondas Jumps On $10M Investment, Defense-Focused Partnership","url":"/news/327071/ondas-jumps-on-10m-investment-defense-focused-partnership","category":"win"},{"date":"Mar-02-26","time":"09:19AM","headline":"Palantir, Lockheed and these other defense stocks are rising on heels of Iran conflict","url":"https://www.marketwatch.com/story/palantir-lockheed-and-these-other-defense-stocks-are-rising-on-heels-of-iran-conflict-3832f763?mod=mw_FV","category":"mixed"},{"date":"Mar-02-26","time":"09:15AM","headline":"Uniti Group (UNIT) Reports Q4 Loss, Tops Revenue Estimates","url":"/news/327049/uniti-group-unit-reports-q4-loss-tops-revenue-estimates","category":"mixed"},{"date":"Mar-02-26","time":"08:30AM","headline":"Ondas Announces $10 Million Strategic Investment in World View and Signs Partnership Agreement to Accelerate Multi-Domain ISR Solutions","url":"/news/326787/ondas-announces-10-million-strategic-investment-in-world-view-and-signs-partnership-agreement-to-accelerate-multi-domain-isr-solutions","category":"win"},{"date":"Feb-28-26","time":"02:14AM","headline":"Is Ondas Inc. (ONDS) One of the Best Hot Stocks Under $20 to Buy?","url":"/news/325939/is-ondas-inc-onds-one-of-the-best-hot-stocks-under-20-to-buy","category":"technical"},{"date":"Feb-27-26","time":"08:15AM","headline":"Gogo (GOGO) Reports Q4 Loss, Tops Revenue Estimates","url":"/news/325049/gogo-gogo-reports-q4-loss-tops-revenue-estimates","category":"fear"},{"date":"Feb-25-26","time":"08:50AM","headline":"The Defense Budget Supercycle Nobody Saw Coming","url":"/news/321672/the-defense-budget-supercycle-nobody-saw-coming","category":"macro_win"},{"date":"Feb-24-26","time":"11:54AM","headline":"ONDS vs. DPRO: Which Drone Tech Stock Is the Better Pick Now?","url":"/news/320697/onds-vs-dpro-which-drone-tech-stock-is-the-better-pick-now","category":"technical"},{"date":"Feb-24-26","time":"11:30AM","headline":"Flying High with Erik Prince: Swarmer IPO Brings Combat-Tested Tech To Public Markets  Initiation Report","url":"https://finance.yahoo.com/news/flying-high-erik-prince-swarmer-163024943.html","category":"technical"},{"date":"Feb-23-26","time":"03:53PM","headline":"Ondas Inc. (ONDS): Airobotics Bags New Multi-million-dollar Order for Iron Drone Raider Counter-UAS System","url":"/news/319311/ondas-inc-onds-airobotics-bags-new-multi-million-dollar-order-for-iron-drone-raider-counter-uas-system","category":"mixed"},{"date":"Feb-20-26","time":"03:30PM","headline":"Safe Pro Group (SPAI) Awarded Subcontract Under $1M US Government Program","url":"https://finance.yahoo.com/news/safe-pro-group-spai-awarded-203000759.html","category":"win"},{"date":"Feb-20-26","time":"08:10AM","headline":"Cogent Communications (CCOI) Reports Q4 Loss, Lags Revenue Estimates","url":"/news/317142/cogent-communications-ccoi-reports-q4-loss-lags-revenue-estimates","category":"fear"},{"date":"Feb-19-26","time":"07:02AM","headline":"Ondas Jumps on German Police and NATO Wins-Can the Rally Hold Into Earnings?","url":"/news/315432/ondas-jumps-on-german-police-and-nato-wins-can-the-rally-hold-into-earnings","category":"mixed"},{"date":"Feb-19-26","time":"06:10AM","headline":"Ondas (ONDS) Soars 10.15% as Firm Hints At Multi-Billion-Dollar Market","url":"/news/315387/ondas-onds-soars-1015-as-firm-hints-at-multi-billion-dollar-market","category":"mixed"},{"date":"Feb-18-26","time":"07:38PM","headline":"Critical Report on Ondas (ONDS) Precedes Defense Unit's $30M Contract in Israel","url":"/news/315151/critical-report-on-ondas-onds-precedes-defense-units-30m-contract-in-israel","category":"win"},{"date":"Feb-18-26","time":"02:39PM","headline":"Ondas Stock Climbs On Rising Iran Conflict Fears","url":"/news/314813/ondas-stock-climbs-on-rising-iran-conflict-fears","category":"mixed"},{"date":"Feb-18-26","time":"01:36AM","headline":"Ondas (ONDS) Climbs 8% as Firm Guns for Multi-Billion-Dollar Market","url":"/news/313774/ondas-onds-climbs-8-as-firm-guns-for-multi-billion-dollar-market","category":"mixed"},{"date":"Feb-17-26","time":"10:01AM","headline":"Will the Iron Drone Raider Win Ignite Ondas' Long-Term Growth Engine?","url":"/news/313013/will-the-iron-drone-raider-win-ignite-ondas-long-term-growth-engine","category":"mixed"},{"date":"Feb-17-26","time":"09:59AM","headline":"Defense Autonomy Spending Surges as AI Reshapes the Battlefield","url":"/news/312851/defense-autonomy-spending-surges-as-ai-reshapes-the-battlefield","category":"macro_fear"},{"date":"Feb-17-26","time":"08:30AM","headline":"Ondas' Sentrycs Secures German State Police Contract to Enhance Airspace Protection","url":"/news/312662/ondas-sentrycs-secures-german-state-police-contract-to-enhance-airspace-protection","category":"win"},{"date":"Feb-14-26","time":"11:52PM","headline":"Northland Securities Reiterates Outperform Rating on Ondas Inc. (ONDS)","url":"/news/311262/northland-securities-reiterates-outperform-rating-on-ondas-inc-onds","category":"technical"},{"date":"Feb-13-26","time":"12:48PM","headline":"What's Going On With Ondas Stock Today?","url":"/news/310881/whats-going-on-with-ondas-stock-today","category":"mixed"},{"date":"Feb-13-26","time":"12:26PM","headline":"Ondas Gains on New European Defense Order","url":"https://finance.yahoo.com/news/ondas-gains-european-defense-order-172609379.html","category":"mixed"},{"date":"Feb-13-26","time":"08:30AM","headline":"Ondas Secures New Multi-Million Dollar European Order for Iron Drone Raider to Protect Civil Infrastructure Following Successful Deployment at Major International Airport with Customer","url":"/news/310327/ondas-secures-new-multi-million-dollar-european-order-for-iron-drone-raider-to-protect-civil-infrastructure-following-successful-deployment-at-major-international-airport-with-customer","category":"mixed"},{"date":"Feb-13-26","time":"08:29AM","headline":"Top Drone Tech Stocks to Watch as Adoption Accelerates","url":"/news/310402/top-drone-tech-stocks-to-watch-as-adoption-accelerates","category":"mixed"},{"date":"Feb-12-26","time":"03:54AM","headline":"Ondas Incorporated (ONDS) Fuels Confidence Based on Acquisitive Strategy and Autonomous Systems Portfolio","url":"/news/308446/ondas-incorporated-onds-fuels-confidence-based-on-acquisitive-strategy-and-autonomous-systems-portfolio","category":"technical"},{"date":"Feb-10-26","time":"09:23AM","headline":"ONDS Stock Slips 22% in the Past Month: What's Next for Investors?","url":"/news/305837/onds-stock-slips-22-in-the-past-month-whats-next-for-investors","category":"fear"}]};
+  const ivHistoryMap = {"ONDS":[{"date":"2026-05-11","sector":"Technology","eventTags":["guidance_raise","analyst_downgrade_wave"],"dailyReturn":3.973505960306308,"exp1":{"label":"2026-05-15","callIV":129.6,"putIV":123.2,"atmCallIV":125.4,"atmPutIV":122.3,"atmBandCallIV":138,"atmBandPutIV":138.8,"atmCallDV":871149,"atmPutDV":1174578,"deepOTMCallPct":47.2,"deepOTMPutPct":18.7,"callDV":1025240,"putDV":350411,"dv":1375651,"calls":[{"strike":10,"dv":541761,"iv":12656.3},{"strike":10.5,"dv":225920,"iv":12968.8},{"strike":11,"dv":181636,"iv":13359.4},{"strike":11.5,"dv":31968,"iv":13437.5},{"strike":12,"dv":33012,"iv":14375},{"strike":12.5,"dv":4040,"iv":14375},{"strike":13,"dv":3321,"iv":15000},{"strike":13.5,"dv":153,"iv":17343.8},{"strike":14,"dv":1387,"iv":16250},{"strike":14.5,"dv":19,"iv":18906.3},{"strike":15,"dv":1428,"iv":18750},{"strike":15.5,"dv":102,"iv":19687.5},{"strike":16,"dv":8,"iv":22187.5},{"strike":18,"dv":6,"iv":29687.5},{"strike":19,"dv":45,"iv":26250},{"strike":20,"dv":434,"iv":24375}],"puts":[{"strike":5,"dv":1,"iv":22500},{"strike":5.5,"dv":3,"iv":21250},{"strike":6,"dv":4154,"iv":18125},{"strike":6.5,"dv":410,"iv":18437.5},{"strike":7,"dv":1612,"iv":15937.5},{"strike":7.5,"dv":4100,"iv":13906.3},{"strike":8,"dv":55410,"iv":12968.8},{"strike":8.5,"dv":70848,"iv":12031.3},{"strike":9,"dv":213873,"iv":12070.4}]},"exp2":{"label":"2026-05-22","callIV":107.2,"putIV":101.4,"atmCallIV":104.5,"atmPutIV":100.8,"atmBandCallIV":104.6,"atmBandPutIV":109.7,"atmCallDV":279526,"atmPutDV":74157,"deepOTMCallPct":39.2,"deepOTMPutPct":9.3,"callDV":276388,"putDV":116103,"dv":392491,"calls":[{"strike":10,"dv":168119,"iv":10546.9},{"strike":10.5,"dv":33864,"iv":10664.1},{"strike":11,"dv":37775,"iv":10937.5},{"strike":11.5,"dv":16002,"iv":11054.7},{"strike":12,"dv":16458,"iv":11406.3},{"strike":12.5,"dv":1250,"iv":11953.2},{"strike":13,"dv":1832,"iv":12031.3},{"strike":13.5,"dv":162,"iv":13281.3},{"strike":14,"dv":680,"iv":12968.8},{"strike":14.5,"dv":6,"iv":13515.7},{"strike":15,"dv":216,"iv":13359.4},{"strike":15.5,"dv":24,"iv":13281.3}],"puts":[{"strike":6,"dv":102,"iv":15937.5},{"strike":6.5,"dv":9,"iv":16093.8},{"strike":7,"dv":565,"iv":11796.9},{"strike":7.5,"dv":783,"iv":9765.6},{"strike":8,"dv":9333,"iv":10312.5},{"strike":8.5,"dv":21315,"iv":10039.1},{"strike":9,"dv":83996,"iv":10136.8}]},"exp3":{"label":"2026-05-29","callIV":102.3,"putIV":95.3,"atmCallIV":97.1,"atmPutIV":94.7,"atmBandCallIV":274.3,"atmBandPutIV":95.2,"atmCallDV":193122,"atmPutDV":198862,"deepOTMCallPct":33.9,"deepOTMPutPct":15.2,"callDV":121513,"putDV":43724,"dv":165237,"calls":[{"strike":10,"dv":80280,"iv":10390.7},{"strike":10.5,"dv":6345,"iv":9824.2},{"strike":11,"dv":14756,"iv":9765.6},{"strike":11.5,"dv":4950,"iv":9863.3},{"strike":12,"dv":11533,"iv":9921.9},{"strike":12.5,"dv":1350,"iv":10390.7},{"strike":13,"dv":1672,"iv":10507.9},{"strike":13.5,"dv":390,"iv":10859.4},{"strike":14,"dv":88,"iv":11015.7},{"strike":14.5,"dv":80,"iv":11328.2},{"strike":15,"dv":4,"iv":12734.4},{"strike":16,"dv":65,"iv":13515.7}],"puts":[{"strike":5.5,"dv":66,"iv":14687.5},{"strike":6,"dv":764,"iv":13125},{"strike":6.5,"dv":50,"iv":11796.9},{"strike":7,"dv":216,"iv":12343.8},{"strike":7.5,"dv":280,"iv":10546.9},{"strike":8,"dv":5252,"iv":9414.1},{"strike":8.5,"dv":15561,"iv":9453.1},{"strike":9,"dv":21535,"iv":9414.1}]}},{"date":"2026-05-12","sector":"Technology","eventTags":["guidance_raise","analyst_downgrade_wave"],"dailyReturn":-4.033971458208514,"exp1":{"label":"2026-05-15","callIV":142.4,"putIV":124,"atmCallIV":135.5,"atmPutIV":119.5,"atmBandCallIV":146.9,"atmBandPutIV":144.9,"atmCallDV":384835,"atmPutDV":226830,"deepOTMCallPct":73.1,"deepOTMPutPct":34.9,"callDV":431904,"putDV":61616,"dv":493520,"calls":[{"strike":9.5,"dv":116259,"iv":13945.3},{"strike":10,"dv":195000,"iv":14062.5},{"strike":10.5,"dv":74256,"iv":14453.2},{"strike":11,"dv":32767,"iv":14765.7},{"strike":11.5,"dv":3325,"iv":15156.3},{"strike":12,"dv":4974,"iv":16250},{"strike":12.5,"dv":1016,"iv":16875},{"strike":13,"dv":2228,"iv":18437.5},{"strike":13.5,"dv":44,"iv":22812.5},{"strike":14,"dv":1098,"iv":18750},{"strike":14.5,"dv":776,"iv":21250},{"strike":15,"dv":65,"iv":22500},{"strike":15.5,"dv":5,"iv":23750},{"strike":16,"dv":9,"iv":26562.5},{"strike":17,"dv":3,"iv":26875},{"strike":19,"dv":54,"iv":31875},{"strike":20,"dv":25,"iv":28750}],"puts":[{"strike":6,"dv":7,"iv":17500},{"strike":6.5,"dv":2,"iv":15625},{"strike":7,"dv":1214,"iv":14687.5},{"strike":7.5,"dv":1325,"iv":13125},{"strike":8,"dv":18940,"iv":12500},{"strike":8.5,"dv":40128,"iv":12265.7}]},"exp2":{"label":"2026-05-22","callIV":108.7,"putIV":98.5,"atmCallIV":104.3,"atmPutIV":96.1,"atmBandCallIV":114.9,"atmBandPutIV":104.3,"atmCallDV":155605,"atmPutDV":109784,"deepOTMCallPct":54.1,"deepOTMPutPct":29,"callDV":149320,"putDV":39956,"dv":189276,"calls":[{"strike":9.5,"dv":68600,"iv":10546.9},{"strike":10,"dv":45144,"iv":10937.5},{"strike":10.5,"dv":12096,"iv":11015.7},{"strike":11,"dv":11526,"iv":11250},{"strike":11.5,"dv":1452,"iv":11406.3},{"strike":12,"dv":8604,"iv":11953.2},{"strike":12.5,"dv":1463,"iv":12343.8},{"strike":13,"dv":385,"iv":12734.4},{"strike":14,"dv":21,"iv":14375},{"strike":15,"dv":9,"iv":14531.3},{"strike":15.5,"dv":16,"iv":16250},{"strike":20,"dv":4,"iv":19687.5}],"puts":[{"strike":6,"dv":1,"iv":12812.5},{"strike":6.5,"dv":72,"iv":12109.4},{"strike":7,"dv":77,"iv":10859.4},{"strike":7.5,"dv":2460,"iv":10390.7},{"strike":8,"dv":8993,"iv":9921.9},{"strike":8.5,"dv":28353,"iv":9765.6}]},"exp3":{"label":"2026-05-29","callIV":101.4,"putIV":90.2,"atmCallIV":97.3,"atmPutIV":89.6,"atmBandCallIV":98.9,"atmBandPutIV":89.6,"atmCallDV":293426,"atmPutDV":47387,"deepOTMCallPct":72.9,"deepOTMPutPct":46.4,"callDV":67024,"putDV":16906,"dv":83930,"calls":[{"strike":9.5,"dv":18154,"iv":9746.1},{"strike":10,"dv":9592,"iv":9921.9},{"strike":10.5,"dv":3630,"iv":10039.1},{"strike":11,"dv":8169,"iv":10117.2},{"strike":11.5,"dv":1394,"iv":10390.7},{"strike":12,"dv":24505,"iv":10468.8},{"strike":12.5,"dv":1550,"iv":10859.4},{"strike":13,"dv":8,"iv":11015.7},{"strike":14,"dv":16,"iv":11875},{"strike":15,"dv":6,"iv":13046.9}],"puts":[{"strike":6,"dv":2,"iv":10703.2},{"strike":7,"dv":66,"iv":9609.4},{"strike":7.5,"dv":320,"iv":9101.6},{"strike":8,"dv":7453,"iv":9062.5},{"strike":8.5,"dv":9065,"iv":8984.4}]}},{"date":"2026-05-13","sector":"Technology","eventTags":["guidance_raise","analyst_downgrade_wave"],"dailyReturn":-4.033971458208514,"exp1":{"label":"2026-05-15","callIV":28.5,"putIV":33.4,"atmCallIV":0,"atmPutIV":3.1,"atmBandCallIV":0,"atmBandPutIV":1.1,"atmCallDV":396837,"atmPutDV":235864,"deepOTMCallPct":73,"deepOTMPutPct":33.5,"callDV":435979,"putDV":67948,"dv":503927,"calls":[{"strike":9.5,"dv":117920,"iv":1250.1},{"strike":10,"dv":198920,"iv":2500.1},{"strike":10.5,"dv":64163,"iv":5000.1},{"strike":11,"dv":38776,"iv":5000.1},{"strike":11.5,"dv":4068,"iv":5000.1},{"strike":12,"dv":6780,"iv":5000.1},{"strike":12.5,"dv":1024,"iv":5000.1},{"strike":13,"dv":2228,"iv":5000.1},{"strike":13.5,"dv":44,"iv":5000.1},{"strike":14,"dv":1098,"iv":5000.1},{"strike":14.5,"dv":776,"iv":5000.1},{"strike":15,"dv":65,"iv":5000.1},{"strike":15.5,"dv":5,"iv":5000.1},{"strike":16,"dv":9,"iv":5000.1},{"strike":17,"dv":3,"iv":5000.1},{"strike":18,"dv":21,"iv":5000.1},{"strike":19,"dv":54,"iv":10000.1},{"strike":20,"dv":25,"iv":5000.1}],"puts":[{"strike":6,"dv":7,"iv":5000.1},{"strike":6.5,"dv":2,"iv":5000.1},{"strike":7,"dv":1224,"iv":5000.1},{"strike":7.5,"dv":1330,"iv":5000.1},{"strike":8,"dv":20190,"iv":5000.1},{"strike":8.5,"dv":45195,"iv":2500.1}]},"exp2":{"label":"2026-05-22","callIV":21.4,"putIV":16.2,"atmCallIV":0,"atmPutIV":1.6,"atmBandCallIV":0,"atmBandPutIV":0.4,"atmCallDV":176578,"atmPutDV":126296,"deepOTMCallPct":55.8,"deepOTMPutPct":28.8,"callDV":154389,"putDV":36946,"dv":191335,"calls":[{"strike":9.5,"dv":68256,"iv":1250.1},{"strike":10,"dv":48510,"iv":2500.1},{"strike":10.5,"dv":13992,"iv":2500.1},{"strike":11,"dv":11526,"iv":2500.1},{"strike":11.5,"dv":1463,"iv":5000.1},{"strike":12,"dv":8721,"iv":5000.1},{"strike":12.5,"dv":1463,"iv":5000.1},{"strike":13,"dv":385,"iv":5000.1},{"strike":13.5,"dv":10,"iv":5000.1},{"strike":14,"dv":32,"iv":5000.1},{"strike":15,"dv":9,"iv":5000.1},{"strike":15.5,"dv":16,"iv":5000.1},{"strike":18,"dv":2,"iv":5000.1},{"strike":20,"dv":4,"iv":5000.1}],"puts":[{"strike":6,"dv":1,"iv":5000.1},{"strike":6.5,"dv":72,"iv":5000.1},{"strike":7,"dv":77,"iv":5000.1},{"strike":7.5,"dv":2460,"iv":2500.1},{"strike":8,"dv":8020,"iv":2500.1},{"strike":8.5,"dv":26316,"iv":1250.1}]},"exp3":{"label":"2026-05-29","callIV":18.4,"putIV":12.8,"atmCallIV":0,"atmPutIV":0.8,"atmBandCallIV":0,"atmBandPutIV":0.3,"atmCallDV":298621.00000000006,"atmPutDV":48393,"deepOTMCallPct":70,"deepOTMPutPct":41.6,"callDV":70662,"putDV":18839,"dv":89501,"calls":[{"strike":9.5,"dv":21224,"iv":625.1},{"strike":10,"dv":9460,"iv":1250.1},{"strike":10.5,"dv":3630,"iv":2500.1},{"strike":11,"dv":8169,"iv":2500.1},{"strike":11.5,"dv":1394,"iv":2500.1},{"strike":12,"dv":24830,"iv":2500.1},{"strike":12.5,"dv":1925,"iv":5000.1},{"strike":13,"dv":8,"iv":5000.1},{"strike":14,"dv":16,"iv":5000.1},{"strike":15,"dv":6,"iv":5000.1}],"puts":[{"strike":6,"dv":2,"iv":5000.1},{"strike":7,"dv":66,"iv":2500.1},{"strike":7.5,"dv":320,"iv":2500.1},{"strike":8,"dv":7453,"iv":1250.1},{"strike":8.5,"dv":10998,"iv":1250.1}]}}]};
+  // Combine IV from a saved history record (exp1/exp2/exp3), weighted by dv if available.
+  // Single-pool combine of a history record across expirations;
+  // old records fall back to legacy combined DV + single-strike ATM.
+  function combineHist(record) {
+    const exps = [];
+    for (const key of ['exp1', 'exp2', 'exp3']) {
+      const e = record[key];
+      if (!e || (e.callIV <= 0 && e.putIV <= 0)) continue;
+      exps.push(e);
+    }
+    if (exps.length === 0) return null;
+
+    function pool(valueFn, weightFn) {
+      var vals = [];
+      for (var i = 0; i < exps.length; i++) {
+        var v = valueFn(exps[i]);
+        if (v == null) continue;
+        var w = weightFn(exps[i]);
+        vals.push({ v: v, w: w > 0 ? w : 0 });
+      }
+      if (vals.length === 0) return null;
+      var sumW = 0, sumVW = 0;
+      for (var j = 0; j < vals.length; j++) { sumW += vals[j].w; sumVW += vals[j].v * vals[j].w; }
+      if (sumW > 0) return sumVW / sumW;
+      var sumV = 0;
+      for (var k = 0; k < vals.length; k++) sumV += vals[k].v;
+      return sumV / vals.length;
+    }
+    function legacyDV(e) { return e.dv || 0; }
+
+    var callIV = pool(
+      function(e) { return e.callIV > 0 ? e.callIV : null; },
+      function(e) { return e.callDV != null ? e.callDV : legacyDV(e); }
+    ) || 0;
+    var putIV = pool(
+      function(e) { return e.putIV > 0 ? e.putIV : null; },
+      function(e) { return e.putDV != null ? e.putDV : legacyDV(e); }
+    ) || 0;
+    var atmCallIV = pool(
+      function(e) { return (e.atmBandCallIV != null && e.atmBandCallIV > 0) ? e.atmBandCallIV : (e.atmCallIV != null ? e.atmCallIV : null); },
+      function(e) { return e.atmCallDV != null ? e.atmCallDV : legacyDV(e); }
+    );
+    var atmPutIV = pool(
+      function(e) { return (e.atmBandPutIV != null && e.atmBandPutIV > 0) ? e.atmBandPutIV : (e.atmPutIV != null ? e.atmPutIV : null); },
+      function(e) { return e.atmPutDV != null ? e.atmPutDV : legacyDV(e); }
+    );
+
+    return { callIV: callIV, putIV: putIV, atmCallIV: atmCallIV, atmPutIV: atmPutIV };
+  }
+  // Favorite star click handler
+  let favToastTimer = null;
+  function showFavToast(msg, success) {
+    const el = document.getElementById('fav-toast');
+    el.textContent = msg;
+    el.style.background = success ? '#4caf50' : '#f44336';
+    el.classList.add('show');
+    clearTimeout(favToastTimer);
+    favToastTimer = setTimeout(() => el.classList.remove('show'), 1500);
+  }
+
+  // Ticker notes: debounced autosave
+  const noteTimers = {};
+  document.querySelectorAll('.ticker-note').forEach(ta => {
+    const ticker = ta.getAttribute('data-ticker');
+    const statusEl = document.querySelector('.note-status[data-ticker="' + ticker + '"]');
+    const save = async () => {
+      if (!window.electronAPI || !window.electronAPI.saveNote) return;
+      if (statusEl) statusEl.textContent = 'saving…';
+      try {
+        await window.electronAPI.saveNote(ticker, ta.value);
+        if (statusEl) {
+          statusEl.textContent = 'saved';
+          setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 1200);
+        }
+        // Update note indicator next to ticker
+        const row = document.querySelector('tr.data-row[data-ticker="' + ticker + '"]');
+        if (row) {
+          const cell = row.children[1];
+          if (cell) {
+            const existing = cell.querySelector('span[title="Has note"]');
+            const hasText = ta.value.trim().length > 0;
+            if (hasText && !existing) {
+              const span = document.createElement('span');
+              span.setAttribute('title', 'Has note');
+              span.style.fontSize = '0.75em';
+              span.textContent = ' 📝';
+              cell.appendChild(span);
+            } else if (!hasText && existing) {
+              existing.remove();
+            }
+          }
+        }
+      } catch (err) {
+        if (statusEl) statusEl.textContent = 'failed';
+      }
+    };
+    ta.addEventListener('input', () => {
+      clearTimeout(noteTimers[ticker]);
+      noteTimers[ticker] = setTimeout(save, 700);
+    });
+    ta.addEventListener('blur', () => {
+      clearTimeout(noteTimers[ticker]);
+      save();
+    });
+    ta.addEventListener('click', (e) => e.stopPropagation());
+  });
+
+  // ── Event-tag filter ──
+  // Click any tag chip to filter rows; only data-rows whose data-tags contains
+  // the active tag remain visible (their chart-row sibling is hidden too).
+  let activeTagFilter = null;
+  function applyTagFilter() {
+    const bar = document.getElementById('tag-filter-bar');
+    const activeEl = document.getElementById('tag-filter-active');
+    if (activeTagFilter) {
+      bar.style.display = '';
+      activeEl.textContent = activeTagFilter;
+    } else {
+      bar.style.display = 'none';
+      activeEl.textContent = '';
+    }
+    document.querySelectorAll('tr.data-row').forEach(row => {
+      const tags = (row.getAttribute('data-tags') || '').split(' ').filter(Boolean);
+      const show = !activeTagFilter || tags.includes(activeTagFilter);
+      row.style.display = show ? '' : 'none';
+      const ticker = row.getAttribute('data-ticker');
+      const chartRow = document.querySelector('tr.chart-row[data-chart-for="' + ticker + '"]');
+      if (chartRow && !show) chartRow.style.display = 'none';
+    });
+    document.querySelectorAll('.event-tag').forEach(chip => {
+      chip.style.outline = (chip.getAttribute('data-tag') === activeTagFilter) ? '2px solid #7aa2c7' : '';
+    });
+  }
+  document.querySelectorAll('.event-tag').forEach(chip => {
+    chip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const tag = chip.getAttribute('data-tag');
+      activeTagFilter = (activeTagFilter === tag) ? null : tag;
+      applyTagFilter();
+    });
+  });
+  const clearLink = document.getElementById('tag-filter-clear');
+  if (clearLink) clearLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    activeTagFilter = null;
+    applyTagFilter();
+  });
+
+  document.querySelectorAll('.fav-star').forEach(star => {
+    star.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const ticker = star.getAttribute('data-ticker');
+      if (!ticker || !window.electronAPI || !window.electronAPI.toggleFavorite) return;
+      if (star.dataset.busy) return;
+      star.dataset.busy = '1';
+      try {
+        const result = await window.electronAPI.toggleFavorite(ticker);
+        const supers = result.superFavorites || [];
+        const favs = result.favorites || [];
+        const isSuper = supers.includes(ticker);
+        const isFav = !isSuper && favs.includes(ticker);
+        const level = isSuper ? 2 : (isFav ? 1 : 0);
+        star.textContent = level > 0 ? '\u2605' : '\u2606';
+        star.style.color = isSuper ? '#e53935' : (isFav ? '#f5c518' : '#ccc');
+        star.title = isSuper ? 'Super favorite (click to clear)' : (isFav ? 'Favorite (click to make super)' : 'Click to favorite');
+        star.closest('td').setAttribute('data-v', String(level));
+        const msg = isSuper ? ticker + ' is now a super favorite \u2B50' : (isFav ? ticker + ' added to favorites' : ticker + ' removed from favorites');
+        showFavToast(msg, true);
+      } catch (err) {
+        showFavToast('Failed to update ' + ticker, false);
+      }
+      delete star.dataset.busy;
+    });
+  });
+
+  const classColors = {
+    surprising_positive: '#4caf50',
+    positive_anticipated: '#8bc34a',
+    negative_anticipated: '#ff9800',
+    surprising_negative: '#f44336',
+  };
+  const classNames = {
+    surprising_positive: 'Surprising +',
+    positive_anticipated: 'Anticipated +',
+    negative_anticipated: 'Anticipated -',
+    surprising_negative: 'Surprising -',
+  };
+
+  const renderedCharts = {};
+
+  function pairwiseCorrelation(tickerA, tickerB) {
+    const cdA = chartDataMap[tickerA];
+    const cdB = chartDataMap[tickerB];
+    if (!cdA || !cdB || !cdA.dates || !cdB.dates) return null;
+
+    const dateIdxA = {};
+    for (let i = 0; i < cdA.dates.length; i++) dateIdxA[cdA.dates[i]] = i;
+
+    const retA = [], retB = [];
+    let prevIdxA = -1, prevIdxB = -1;
+    for (let j = 0; j < cdB.dates.length; j++) {
+      const idxA = dateIdxA[cdB.dates[j]];
+      if (idxA == null) continue;
+      if (prevIdxA >= 0 && prevIdxB >= 0 && idxA === prevIdxA + 1 && j === prevIdxB + 1) {
+        if (cdA.closes[prevIdxA] > 0 && cdB.closes[prevIdxB] > 0) {
+          retA.push(Math.log(cdA.closes[idxA] / cdA.closes[prevIdxA]));
+          retB.push(Math.log(cdB.closes[j] / cdB.closes[prevIdxB]));
+        }
+      }
+      prevIdxA = idxA;
+      prevIdxB = j;
+    }
+
+    if (retA.length < 20) return null;
+
+    const n = retA.length;
+    let sx = 0, sy = 0, sxy = 0, sx2 = 0, sy2 = 0;
+    for (let k = 0; k < n; k++) {
+      sx += retA[k]; sy += retB[k];
+      sxy += retA[k] * retB[k];
+      sx2 += retA[k] * retA[k];
+      sy2 += retB[k] * retB[k];
+    }
+    const denom = Math.sqrt((n * sx2 - sx * sx) * (n * sy2 - sy * sy));
+    return denom > 0 ? (n * sxy - sx * sy) / denom : 0;
+  }
+
+  function corrColor(r) {
+    const abs = Math.abs(r);
+    if (r < 0) return 'rgba(76, 175, 80, ' + (0.5 + abs * 0.5) + ')';
+    if (abs < 0.3) return 'rgba(76, 175, 80, 0.7)';
+    if (abs < 0.6) return 'rgba(255, 193, 7, ' + (0.6 + (abs - 0.3) * 1.3) + ')';
+    return 'rgba(244, 67, 54, ' + (0.6 + (abs - 0.6) * 1.0) + ')';
+  }
+
+  // Portfolio correlation checker
+  document.getElementById('portfolio-corr-btn').addEventListener('click', () => {
+    const raw = document.getElementById('portfolio-corr-input').value;
+    const tickers = raw.split(',').map(t => t.trim().toUpperCase()).filter(t => t.length > 0);
+    const resultDiv = document.getElementById('portfolio-corr-result');
+
+    if (tickers.length < 2) {
+      resultDiv.innerHTML = '<span style="color:#888; font-size:0.9em;">Enter at least 2 tickers separated by commas.</span>';
+      return;
+    }
+
+    const missing = tickers.filter(t => !chartDataMap[t]);
+    if (missing.length > 0) {
+      resultDiv.innerHTML = '<span style="color:#c62828; font-size:0.9em;">Not in screening data: ' + missing.join(', ') + '</span>';
+      return;
+    }
+
+    // Compute all pairwise correlations
+    const pairs = [];
+    for (let i = 0; i < tickers.length; i++) {
+      for (let j = i + 1; j < tickers.length; j++) {
+        const r = pairwiseCorrelation(tickers[i], tickers[j]);
+        pairs.push({ a: tickers[i], b: tickers[j], r });
+      }
+    }
+
+    const valid = pairs.filter(p => p.r !== null);
+    if (valid.length === 0) {
+      resultDiv.innerHTML = '<span style="color:#888; font-size:0.9em;">Not enough overlapping data to compute correlations.</span>';
+      return;
+    }
+
+    const avgCorr = valid.reduce((s, p) => s + p.r, 0) / valid.length;
+    const maxCorr = Math.max(...valid.map(p => p.r));
+    const minCorr = Math.min(...valid.map(p => p.r));
+
+    // Verdict
+    let verdict, verdictColor;
+    if (avgCorr >= 0.7) { verdict = 'Highly correlated — low diversification'; verdictColor = '#c62828'; }
+    else if (avgCorr >= 0.5) { verdict = 'Moderately correlated'; verdictColor = '#ef6c00'; }
+    else if (avgCorr >= 0.3) { verdict = 'Moderately diversified'; verdictColor = '#f9a825'; }
+    else { verdict = 'Well diversified — low correlation'; verdictColor = '#2e7d32'; }
+
+    let html = '<div style="margin-bottom:6px;"><span style="font-weight:700; font-size:1.05em; color:' + verdictColor + ';">' + verdict + '</span>';
+    html += '<span style="color:#888; margin-left:12px; font-size:0.9em;">avg ' + avgCorr.toFixed(3) + ' &nbsp;|&nbsp; range ' + minCorr.toFixed(3) + ' to ' + maxCorr.toFixed(3) + '</span></div>';
+
+    // Pair table
+    html += '<table style="width:100%; border-collapse:collapse; font-size:0.9em; margin-top:4px;">';
+    html += '<tr style="color:#888; font-size:0.8em; text-transform:uppercase; letter-spacing:0.5px;"><th style="text-align:left; padding:4px 8px;">Pair</th><th style="text-align:right; padding:4px 8px;">Correlation</th></tr>';
+    valid.sort((a, b) => b.r - a.r);
+    for (const p of valid) {
+      const color = corrColor(p.r);
+      html += '<tr style="border-top:1px solid #eee;">' +
+        '<td style="padding:4px 8px;">' + p.a + ' / ' + p.b + '</td>' +
+        '<td style="padding:4px 8px; text-align:right; color:' + color + '; font-weight:600;">' + p.r.toFixed(3) + '</td>' +
+        '</tr>';
+    }
+    const skipped = pairs.filter(p => p.r === null);
+    if (skipped.length > 0) {
+      for (const p of skipped) {
+        html += '<tr style="border-top:1px solid #eee;">' +
+          '<td style="padding:4px 8px; color:#bbb;">' + p.a + ' / ' + p.b + '</td>' +
+          '<td style="padding:4px 8px; text-align:right; color:#bbb;">insufficient data</td></tr>';
+      }
+    }
+    html += '</table>';
+    resultDiv.innerHTML = html;
+  });
+
+  document.getElementById('portfolio-corr-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('portfolio-corr-btn').click();
+  });
+
+  // Click handler for data rows
+  document.querySelectorAll('tr.data-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      const ticker = row.getAttribute('data-ticker');
+      const chartRow = document.querySelector('tr.chart-row[data-chart-for="' + ticker + '"]');
+      if (!chartRow) return;
+
+      const isVisible = chartRow.style.display !== 'none';
+      // Toggle arrow indicator
+      const arrow = row.querySelector('td:first-child span');
+      if (arrow) arrow.textContent = isVisible ? '\u25B6' : '\u25BC';
+
+      if (isVisible) {
+        chartRow.style.display = 'none';
+        return;
+      }
+
+      chartRow.style.display = '';
+
+      // Render chart if not yet done
+      if (!renderedCharts[ticker]) {
+        const cd = chartDataMap[ticker];
+        if (!cd) return;
+
+        const canvas = document.getElementById('chart-' + ticker);
+        if (!canvas) return;
+
+        // Build all datasets using numeric indices for x — avoids category/scatter misalignment
+        const eventsByClass = {};
+        for (const ev of cd.events) {
+          if (!eventsByClass[ev.classification]) eventsByClass[ev.classification] = [];
+          if (ev.idx != null && ev.idx < cd.dates.length) {
+            eventsByClass[ev.classification].push({ x: ev.idx, y: ev.y });
+          }
+        }
+
+        // Convert line and bar data to {x, y} indexed points so all datasets share the linear x scale
+        const pricePoints = cd.closes.map((v, i) => ({ x: i, y: v }));
+        const volumePoints = cd.volumes.map((v, i) => ({ x: i, y: v }));
+
+        const datasets = [{
+          label: 'Volume',
+          data: volumePoints,
+          type: 'bar',
+          backgroundColor: 'rgba(100, 100, 180, 0.25)',
+          borderColor: 'rgba(100, 100, 180, 0.4)',
+          borderWidth: 1,
+          yAxisID: 'yVol',
+          order: 2,
+        }, {
+          label: ticker + ' Close',
+          data: pricePoints,
+          borderColor: 'rgba(136, 176, 136, 0.8)',
+          backgroundColor: 'rgba(136, 176, 136, 0.1)',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: true,
+          yAxisID: 'y',
+          order: 1,
+        }];
+
+        for (const [cls, points] of Object.entries(eventsByClass)) {
+          datasets.push({
+            label: classNames[cls] || cls,
+            data: points,
+            type: 'scatter',
+            backgroundColor: classColors[cls] || '#ccc',
+            borderColor: classColors[cls] || '#ccc',
+            pointRadius: 7,
+            pointHoverRadius: 9,
+            yAxisID: 'y',
+            order: 0,
+          });
+        }
+
+        const dates = cd.dates;
+        renderedCharts[ticker] = new Chart(canvas, {
+          type: 'line',
+          data: { datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 300 },
+            plugins: {
+              title: { display: true, text: ticker + ' Price with Events', color: '#b0b0b0' },
+              legend: { labels: { color: '#909090', boxWidth: 12, font: { size: 11 } } },
+              tooltip: {
+                callbacks: {
+                  title: function(items) { return items[0] ? dates[items[0].parsed.x] || '' : ''; }
+                }
+              },
+            },
+            scales: {
+              x: {
+                type: 'linear',
+                ticks: {
+                  color: '#909090',
+                  maxTicksLimit: 12,
+                  font: { size: 10 },
+                  callback: function(val) { return dates[val] || ''; },
+                },
+                grid: { color: '#2a2a4a' },
+                min: 0,
+                max: dates.length - 1,
+              },
+              y: {
+                position: 'left',
+                ticks: { color: '#909090', font: { size: 10 } },
+                grid: { color: '#2a2a4a' },
+              },
+              yVol: {
+                position: 'right',
+                display: false,
+                beginAtZero: true,
+                max: Math.max(...(cd.volumes || [0])) * 4,
+                grid: { drawOnChartArea: false },
+              },
+            },
+          },
+        });
+
+        // Populate company summary
+        const sumEl = document.getElementById('summary-' + ticker);
+        if (sumEl && summaryMap[ticker]) {
+          sumEl.textContent = summaryMap[ticker];
+        }
+
+        // Render last-5-day DV (bars) + average IV (line) mini-chart next to summary
+        const dvIvCanvas = document.getElementById('dv-iv-chart-' + ticker);
+        const dvIvHist = ivHistoryMap[ticker];
+        if (dvIvCanvas && Array.isArray(dvIvHist) && dvIvHist.length > 0) {
+          const recent = dvIvHist.slice(-5);
+          const labels = recent.map(r => (r.date || '').slice(5));
+          const dvSeries = recent.map(r => {
+            let dv = 0;
+            for (const k of ['exp1', 'exp2', 'exp3']) {
+              const e = r[k];
+              if (!e) continue;
+              dv += (e.callDV || 0) + (e.putDV || 0);
+            }
+            return dv;
+          });
+          const ivSeries = recent.map(r => {
+            const c = combineHist(r);
+            if (!c) return null;
+            const vals = [];
+            if (c.callIV > 0) vals.push(c.callIV);
+            if (c.putIV > 0) vals.push(c.putIV);
+            if (!vals.length) return null;
+            return vals.reduce((s, v) => s + v, 0) / vals.length;
+          });
+
+          const dvIvDateMap = recent.map(r => r.date);
+          const renderStrikeBreakdown = (dateStr) => {
+            const rec = (ivHistoryMap[ticker] || []).find(r => r.date === dateStr);
+            const wrap = document.getElementById('dv-iv-strike-wrap-' + ticker);
+            const title = document.getElementById('dv-iv-strike-title-' + ticker);
+            const body = document.getElementById('dv-iv-strike-body-' + ticker);
+            if (!rec || !wrap || !body) return;
+            const exps = ['exp1', 'exp2', 'exp3'].map(k => rec[k]).filter(e => e && (e.calls || e.puts));
+            if (!exps.length) {
+              body.innerHTML = '<div style="color:#888; font-size:0.85em; padding:8px 0;">No per-strike data for ' + dateStr + ' (older snapshots stored aggregates only — newer dates will populate).</div>';
+              if (title) title.textContent = ticker + ' — ' + dateStr;
+              wrap.style.display = 'block';
+              return;
+            }
+            if (title) title.textContent = ticker + ' — ' + dateStr;
+            body.innerHTML = exps.map((_, i) => '<div style="display:inline-block; width:48%; margin-right:1%; vertical-align:top;"><div style="height:300px;"><canvas id="strike-hist-' + ticker + '-' + dateStr + '-' + i + '"></canvas></div></div>').join('');
+            wrap.style.display = 'block';
+            exps.forEach((e, i) => {
+              const cv = document.getElementById('strike-hist-' + ticker + '-' + dateStr + '-' + i);
+              if (!cv) return;
+              const strikeSet = new Set();
+              (e.calls || []).forEach(c => strikeSet.add(c.strike));
+              (e.puts || []).forEach(p => strikeSet.add(p.strike));
+              const strikes = Array.from(strikeSet).sort((a, b) => a - b);
+              const cMap = {}, pMap = {};
+              (e.calls || []).forEach(c => { cMap[c.strike] = c; });
+              (e.puts || []).forEach(p => { pMap[p.strike] = p; });
+              new Chart(cv, {
+                data: {
+                  labels: strikes.map(s => '$' + s.toFixed(s >= 100 ? 0 : s >= 1 ? 1 : 2)),
+                  datasets: [
+                    { type: 'bar', label: 'Call $Vol', data: strikes.map(s => cMap[s] ? cMap[s].dv : 0), backgroundColor: 'rgba(72,187,120,0.55)', yAxisID: 'y' },
+                    { type: 'bar', label: 'Put $Vol', data: strikes.map(s => pMap[s] ? pMap[s].dv : 0), backgroundColor: 'rgba(245,101,101,0.55)', yAxisID: 'y' },
+                    { type: 'line', label: 'Call IV', data: strikes.map(s => cMap[s] && cMap[s].iv > 0 ? cMap[s].iv : null), borderColor: 'rgba(72,187,120,0.95)', backgroundColor: 'rgba(72,187,120,0.95)', borderWidth: 2, pointRadius: 2, spanGaps: true, yAxisID: 'y1' },
+                    { type: 'line', label: 'Put IV', data: strikes.map(s => pMap[s] && pMap[s].iv > 0 ? pMap[s].iv : null), borderColor: 'rgba(245,101,101,0.95)', backgroundColor: 'rgba(245,101,101,0.95)', borderWidth: 2, pointRadius: 2, spanGaps: true, yAxisID: 'y1' },
+                  ],
+                },
+                options: {
+                  responsive: true, maintainAspectRatio: false, animation: { duration: 200 },
+                  interaction: { mode: 'index', intersect: false },
+                  plugins: {
+                    title: { display: true, text: e.label || ('Exp ' + (i + 1)), color: '#b0b0b0', font: { size: 11 } },
+                    legend: { labels: { color: '#909090', boxWidth: 10, font: { size: 9 } } },
+                  },
+                  scales: {
+                    x: { ticks: { color: '#909090', font: { size: 9 }, maxRotation: 60, minRotation: 0 }, grid: { color: '#2a2a4a' } },
+                    y: { position: 'left', beginAtZero: true, title: { display: true, text: '$Vol', color: '#909090', font: { size: 9 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : (v / 1e3).toFixed(0) + 'K'; } }, grid: { color: '#2a2a4a' } },
+                    y1: { position: 'right', title: { display: true, text: 'IV %', color: '#909090', font: { size: 9 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } }, grid: { drawOnChartArea: false } },
+                  },
+                },
+              });
+            });
+          };
+
+          const closeBtn = document.querySelector('button[data-strike-close="' + ticker + '"]');
+          if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+              const wrap = document.getElementById('dv-iv-strike-wrap-' + ticker);
+              if (wrap) wrap.style.display = 'none';
+            });
+          }
+
+          new Chart(dvIvCanvas, {
+            data: {
+              labels,
+              datasets: [
+                {
+                  type: 'bar',
+                  label: 'Option $Vol',
+                  data: dvSeries,
+                  backgroundColor: 'rgba(122,162,199,0.55)',
+                  borderColor: 'rgba(122,162,199,0.9)',
+                  borderWidth: 1,
+                  yAxisID: 'y',
+                  order: 1,
+                },
+                {
+                  type: 'line',
+                  label: 'Avg IV',
+                  data: ivSeries,
+                  borderColor: 'rgba(245,180,80,0.95)',
+                  backgroundColor: 'rgba(245,180,80,0.95)',
+                  borderWidth: 2,
+                  pointRadius: 3,
+                  spanGaps: true,
+                  tension: 0.2,
+                  yAxisID: 'y1',
+                  order: 0,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              animation: { duration: 200 },
+              interaction: { mode: 'index', intersect: false },
+              onClick: (evt, els, chart) => {
+                let idx = els && els.length ? els[0].index : null;
+                if (idx == null) {
+                  const pts = chart.getElementsAtEventForMode(evt, 'index', { intersect: false }, true);
+                  if (pts && pts.length) idx = pts[0].index;
+                }
+                if (idx == null) return;
+                const dateStr = dvIvDateMap[idx];
+                if (dateStr) renderStrikeBreakdown(dateStr);
+              },
+              plugins: {
+                title: { display: true, text: 'Last 5d Option $Vol & Avg IV (click a day for strikes)', color: '#b0b0b0', font: { size: 11 } },
+                legend: { labels: { color: '#909090', boxWidth: 10, font: { size: 9 } } },
+                tooltip: {
+                  callbacks: {
+                    label: function(ctx) {
+                      const v = ctx.raw;
+                      if (v == null) return ctx.dataset.label + ': N/A';
+                      if (ctx.dataset.yAxisID === 'y1') return ctx.dataset.label + ': ' + v.toFixed(1) + '%';
+                      return ctx.dataset.label + ': $' + (v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : (v / 1e3).toFixed(0) + 'K');
+                    },
+                  },
+                },
+              },
+              scales: {
+                x: { ticks: { color: '#909090', font: { size: 9 } }, grid: { color: '#2a2a4a' } },
+                y: {
+                  position: 'left',
+                  beginAtZero: true,
+                  title: { display: true, text: '$Vol', color: '#909090', font: { size: 9 } },
+                  ticks: {
+                    color: '#909090', font: { size: 9 },
+                    callback: function(v) { return v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : (v / 1e3).toFixed(0) + 'K'; },
+                  },
+                  grid: { color: '#2a2a4a' },
+                },
+                y1: {
+                  position: 'right',
+                  title: { display: true, text: 'Avg IV %', color: '#909090', font: { size: 9 } },
+                  ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } },
+                  grid: { drawOnChartArea: false },
+                },
+              },
+            },
+          });
+        }
+
+        // Populate news headlines
+        const newsEl = document.getElementById('news-' + ticker);
+        const news = newsMap[ticker];
+        if (newsEl && news && news.length > 0) {
+          const catColors = { technical: '#5b9bd5', fear: '#c0392b', win: '#27ae60', macro_fear: '#e07c4f', macro_win: '#2ecc71', mixed: '#999' };
+          const catLabels = { technical: 'Technical', fear: 'Fear', win: 'Win', macro_fear: 'Macro Fear', macro_win: 'Macro Win', mixed: 'Mixed' };
+          const renderHeadline = (n) => {
+            const badge = n.category ? '<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.75em;font-weight:600;color:#fff;background:' + (catColors[n.category] || '#999') + ';margin-right:6px;vertical-align:middle;">' + (catLabels[n.category] || '') + '</span>' : '';
+            return '<div style="margin-bottom:6px; font-size:0.95em; line-height:1.5;">' +
+              '<span style="color:#666; font-size:0.85em; margin-right:6px;">' + (n.date ? n.date + ' ' : '') + (n.time || '') + '</span>' +
+              badge +
+              '<a href="' + n.url + '" target="_blank" rel="noopener" style="color:#7aa2c7; text-decoration:none;">' + n.headline + '</a>' +
+            '</div>';
+          };
+          const DEFAULT_SHOW = 10;
+          const shown = news.slice(0, DEFAULT_SHOW).map(renderHeadline).join('');
+          const hidden = news.slice(DEFAULT_SHOW).map(renderHeadline).join('');
+          let html = '<div>' + shown + '</div>';
+          if (hidden) {
+            const hiddenId = 'news-hidden-' + ticker;
+            const btnId = 'news-toggle-' + ticker;
+            html += '<div id="' + hiddenId + '" style="display:none;">' + hidden + '</div>';
+            html += '<button id="' + btnId + '" type="button" style="margin-top:6px; background:transparent; color:#7aa2c7; border:1px solid #445; border-radius:3px; padding:3px 10px; font-size:0.85em; cursor:pointer;">Show ' + (news.length - DEFAULT_SHOW) + ' more</button>';
+            newsEl.innerHTML = html;
+            const btn = document.getElementById(btnId);
+            const hiddenEl = document.getElementById(hiddenId);
+            btn.addEventListener('click', () => {
+              const isHidden = hiddenEl.style.display === 'none';
+              hiddenEl.style.display = isHidden ? 'block' : 'none';
+              btn.textContent = isHidden ? 'Show less' : ('Show ' + (news.length - DEFAULT_SHOW) + ' more');
+            });
+          } else {
+            newsEl.innerHTML = html;
+          }
+        }
+
+        // Render options strike charts (nearest 2 expirations side by side)
+        const od = cd.optionsStrikes;
+        if (od && od.length > 0) {
+          const optsWrap = document.getElementById('opts-wrap-' + ticker);
+          if (optsWrap) {
+            optsWrap.style.display = 'block';
+            const fmtDollar = (v) => v >= 1e6 ? '$'+(v/1e6).toFixed(1)+'M' : v >= 1e3 ? '$'+(v/1e3).toFixed(0)+'K' : '$'+v.toFixed(0);
+
+            for (let ei = 0; ei < Math.min(2, od.length); ei++) {
+              const exp = od[ei];
+              const canvas = document.getElementById('opts-chart-' + ei + '-' + ticker);
+              if (!exp || !canvas) continue;
+
+              const strikeSet = new Set();
+              exp.calls.forEach(c => strikeSet.add(c.strike));
+              exp.puts.forEach(p => strikeSet.add(p.strike));
+              const strikes = Array.from(strikeSet).sort((a, b) => a - b);
+              const strikeLabels = strikes.map(s => '$' + s.toFixed(s >= 100 ? 0 : s >= 1 ? 1 : 2));
+
+              const callMap = {};
+              exp.calls.forEach(c => { callMap[c.strike] = c; });
+              const putMap = {};
+              exp.puts.forEach(p => { putMap[p.strike] = p; });
+
+              const callDollarVol = strikes.map(s => callMap[s] ? callMap[s].dollarVol : 0);
+              const putDollarVol = strikes.map(s => putMap[s] ? putMap[s].dollarVol : 0);
+              const callDollarOI = strikes.map(s => callMap[s] ? callMap[s].dollarOI : 0);
+              const putDollarOI = strikes.map(s => putMap[s] ? putMap[s].dollarOI : 0);
+              const callIV = strikes.map(s => callMap[s] && callMap[s].iv > 0 ? callMap[s].iv : null);
+              const putIV = strikes.map(s => putMap[s] && putMap[s].iv > 0 ? putMap[s].iv : null);
+
+              // Populate weighted IV label
+              const ivLabel = document.getElementById('opts-iv-label-' + ei + '-' + ticker);
+              if (ivLabel && (exp.wCallIV > 0 || exp.wPutIV > 0)) {
+                let ivHtml = '<span style="color:rgba(72,187,120,0.9);">Call IV: ' + exp.wCallIV.toFixed(1) + '%</span>';
+                if (exp.atmCallIV > 0) ivHtml += '<span style="color:#888; font-size:0.85em;"> (ATM ' + exp.atmCallIV.toFixed(1) + '%, ' + (exp.ivSpreadCall >= 0 ? '+' : '') + exp.ivSpreadCall.toFixed(1) + ' spread, ' + (exp.deepOTMCallPct || 0).toFixed(0) + '% deep)</span>';
+                ivHtml += ' | <span style="color:rgba(245,101,101,0.9);">Put IV: ' + exp.wPutIV.toFixed(1) + '%</span>';
+                if (exp.atmPutIV > 0) ivHtml += '<span style="color:#888; font-size:0.85em;"> (ATM ' + exp.atmPutIV.toFixed(1) + '%, ' + (exp.ivSpreadPut >= 0 ? '+' : '') + exp.ivSpreadPut.toFixed(1) + ' spread, ' + (exp.deepOTMPutPct || 0).toFixed(0) + '% deep)</span>';
+                ivLabel.innerHTML = ivHtml;
+              }
+
+              new Chart(canvas, {
+                type: 'bar',
+                data: {
+                  labels: strikeLabels,
+                  datasets: [
+                    { label: 'Call $ OI', data: callDollarOI, backgroundColor: 'rgba(72, 187, 120, 0.15)', borderColor: 'rgba(72, 187, 120, 0.3)', borderWidth: 1, yAxisID: 'yDollar', stack: 'call', order: 3, barPercentage: 0.95 },
+                    { label: 'Put $ OI', data: putDollarOI, backgroundColor: 'rgba(245, 101, 101, 0.15)', borderColor: 'rgba(245, 101, 101, 0.3)', borderWidth: 1, yAxisID: 'yDollar', stack: 'put', order: 3, barPercentage: 0.95 },
+                    { label: 'Call $ Vol', data: callDollarVol, backgroundColor: 'rgba(72, 187, 120, 0.6)', borderColor: 'rgba(72, 187, 120, 0.9)', borderWidth: 1, yAxisID: 'yDollar', stack: 'call', order: 2, barPercentage: 0.6 },
+                    { label: 'Put $ Vol', data: putDollarVol, backgroundColor: 'rgba(245, 101, 101, 0.6)', borderColor: 'rgba(245, 101, 101, 0.9)', borderWidth: 1, yAxisID: 'yDollar', stack: 'put', order: 2, barPercentage: 0.6 },
+                    { label: 'Call IV', data: callIV, borderColor: 'rgba(72, 187, 120, 0.9)', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, type: 'line', yAxisID: 'yIV', order: 1, spanGaps: true },
+                    { label: 'Put IV', data: putIV, borderColor: 'rgba(245, 101, 101, 0.9)', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, type: 'line', yAxisID: 'yIV', order: 1, spanGaps: true },
+                  ],
+                },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  animation: { duration: 200 },
+                  plugins: {
+                    title: { display: true, text: 'Exp: ' + exp.label, color: '#b0b0b0', font: { size: 11 } },
+                    legend: { display: false },
+                    tooltip: {
+                      callbacks: {
+                        label: function(ctx) {
+                          if (ctx.dataset.yAxisID === 'yIV') return ctx.dataset.label + ': ' + (ctx.raw !== null ? ctx.raw.toFixed(1) + '%' : 'N/A');
+                          return ctx.dataset.label + ': ' + fmtDollar(ctx.raw);
+                        }
+                      }
+                    },
+                  },
+                  scales: {
+                    x: { stacked: true, ticks: { color: '#909090', font: { size: 8 }, maxRotation: 45 }, grid: { color: '#2a2a4a' } },
+                    yDollar: {
+                      position: 'left',
+                      stacked: false,
+                      ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return fmtDollar(v); } },
+                      grid: { color: '#2a2a4a' },
+                      beginAtZero: true,
+                    },
+                    yIV: {
+                      position: 'right',
+                      ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } },
+                      grid: { drawOnChartArea: false },
+                    },
+                  },
+                },
+              });
+            }
+
+            // IV history click handler — either label toggles the history chart
+            let ivHistChart = null;
+            const histWrap = document.getElementById('iv-history-wrap-' + ticker);
+            const histCanvas = document.getElementById('iv-history-chart-' + ticker);
+            const hist = ivHistoryMap[ticker];
+
+            function toggleHistory() {
+              if (!histWrap || !histCanvas || !hist || hist.length < 2) return;
+              if (histWrap.style.display !== 'none') {
+                histWrap.style.display = 'none';
+                return;
+              }
+              histWrap.style.display = 'block';
+              if (ivHistChart) return; // already rendered
+
+              const labels = hist.map(r => r.date);
+              const combined = hist.map(r => combineHist(r));
+
+              const callIVSeries = combined.map(c => c && c.callIV > 0 ? c.callIV : null);
+              const putIVSeries = combined.map(c => c && c.putIV > 0 ? c.putIV : null);
+              const callSpreadSeries = combined.map(c => c && c.callIV > 0 && c.atmCallIV != null ? c.callIV - c.atmCallIV : null);
+              const putSpreadSeries = combined.map(c => c && c.putIV > 0 && c.atmPutIV != null ? c.putIV - c.atmPutIV : null);
+
+              const lineBase = { type: 'line', borderWidth: 2, pointRadius: 2, fill: false, spanGaps: true, tension: 0.2 };
+              const datasets = [
+                { ...lineBase, label: 'Call IV', data: callIVSeries, borderColor: 'rgba(72,187,120,0.95)', backgroundColor: 'rgba(72,187,120,0.95)', yAxisID: 'y' },
+                { ...lineBase, label: 'Put IV', data: putIVSeries, borderColor: 'rgba(245,101,101,0.95)', backgroundColor: 'rgba(245,101,101,0.95)', yAxisID: 'y' },
+                { ...lineBase, label: 'Call Spread (vs ATM)', data: callSpreadSeries, borderColor: 'rgba(72,187,120,0.6)', backgroundColor: 'rgba(72,187,120,0.6)', borderDash: [4, 3], yAxisID: 'y1' },
+                { ...lineBase, label: 'Put Spread (vs ATM)', data: putSpreadSeries, borderColor: 'rgba(245,101,101,0.6)', backgroundColor: 'rgba(245,101,101,0.6)', borderDash: [4, 3], yAxisID: 'y1' },
+              ];
+
+              ivHistChart = new Chart(histCanvas, {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  animation: { duration: 200 },
+                  interaction: { mode: 'index', intersect: false },
+                  plugins: {
+                    title: { display: true, text: 'Weighted IV History — ' + ticker, color: '#b0b0b0', font: { size: 11 } },
+                    legend: { labels: { color: '#909090', boxWidth: 10, font: { size: 9 } } },
+                    tooltip: { callbacks: { label: function(ctx) { return ctx.dataset.label + ': ' + (ctx.raw != null ? ctx.raw.toFixed(1) + '%' : 'N/A'); } } },
+                  },
+                  scales: {
+                    x: { ticks: { color: '#909090', font: { size: 9 } }, grid: { color: '#2a2a4a' } },
+                    y: { position: 'left', title: { display: true, text: 'IV %', color: '#909090', font: { size: 10 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } }, grid: { color: '#2a2a4a' } },
+                    y1: { position: 'right', title: { display: true, text: 'Spread %', color: '#909090', font: { size: 10 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(1) + '%'; } }, grid: { drawOnChartArea: false } },
+                  },
+                },
+              });
+            }
+
+            for (let li = 0; li < 2; li++) {
+              const lbl = document.getElementById('opts-iv-label-' + li + '-' + ticker);
+              if (lbl) lbl.addEventListener('click', toggleHistory);
+            }
+          }
+        }
+
+      }
+    });
+  });
+
+  // Sorting — skip chart rows
+  const table = document.getElementById('screen-table');
+  const headers = table.querySelectorAll('th');
+  let currentCol = -1, ascending = true;
+
+  headers.forEach((th, colIdx) => {
+    th.addEventListener('click', () => {
+      if (currentCol === colIdx) {
+        ascending = !ascending;
+      } else {
+        currentCol = colIdx;
+        ascending = (colIdx === 1 || colIdx === 5);
+      }
+
+      headers.forEach(h => h.classList.remove('sorted-asc', 'sorted-desc'));
+      th.classList.add(ascending ? 'sorted-asc' : 'sorted-desc');
+
+      headers.forEach(h => h.querySelector('.sort-arrow').textContent = '');
+      th.querySelector('.sort-arrow').textContent = ascending ? ' \u25B2' : ' \u25BC';
+
+      const tbody = table.querySelector('tbody');
+      // Collect data-row + chart-row pairs
+      const pairs = [];
+      const dataRows = tbody.querySelectorAll('tr.data-row');
+      dataRows.forEach(dr => {
+        const ticker = dr.getAttribute('data-ticker');
+        const chartRow = tbody.querySelector('tr.chart-row[data-chart-for="' + ticker + '"]');
+        pairs.push({ dataRow: dr, chartRow });
+      });
+      // Also collect rows without data-row class (error/skipped tickers)
+      const allTrSet = new Set();
+      pairs.forEach(p => { allTrSet.add(p.dataRow); if (p.chartRow) allTrSet.add(p.chartRow); });
+      const otherRows = Array.from(tbody.querySelectorAll('tr')).filter(r => !allTrSet.has(r) && !r.classList.contains('chart-row'));
+      otherRows.forEach(r => pairs.push({ dataRow: r, chartRow: null }));
+
+      pairs.sort((a, b) => {
+        const aVal = a.dataRow.children[colIdx]?.getAttribute('data-v') || '';
+        const bVal = b.dataRow.children[colIdx]?.getAttribute('data-v') || '';
+        const aNum = parseFloat(aVal);
+        const bNum = parseFloat(bVal);
+
+        let cmp;
+        if (!isNaN(aNum) && !isNaN(bNum)) {
+          cmp = aNum - bNum;
+        } else {
+          cmp = aVal.localeCompare(bVal);
+        }
+        return ascending ? cmp : -cmp;
+      });
+
+      pairs.forEach(p => {
+        tbody.appendChild(p.dataRow);
+        if (p.chartRow) tbody.appendChild(p.chartRow);
+      });
+    });
+  });
+})();
+</script>
+</body></html>

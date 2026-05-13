@@ -1,0 +1,96 @@
+{
+  "runId": "2026-05-11T13-50-49-112Z",
+  "hostId": "fedora",
+  "trigger": "manual",
+  "startedAt": "2026-05-11T13:50:49.112Z",
+  "finishedAt": "2026-05-11T13:51:08.522Z",
+  "status": "completed",
+  "error": null,
+  "config": {
+    "tickers": [
+      "NVO",
+      "AVAV",
+      "GMAB",
+      "QCOM",
+      "XIACY",
+      "AIR.PA",
+      "EH"
+    ],
+    "benchmark": "SPY",
+    "days": 200,
+    "minEvents": 15,
+    "eventPercentileThreshold": 92,
+    "delayBetweenTickersMs": 3000,
+    "screenTickers": [
+      "QCOM",
+      "AXSM",
+      "AVAV",
+      "LEGN"
+    ],
+    "screenDays": 140,
+    "screenLookbackDays": 5,
+    "screenPercentileThreshold": 92,
+    "screenDelayMs": 1000,
+    "screenMaxTickers": 0
+  },
+  "counts": {
+    "bars": 480,
+    "chains": 981,
+    "events": 32,
+    "tickers": 4
+  },
+  "tickers": [
+    {
+      "ticker": "QCOM",
+      "r_squared": 0.19933393878299088,
+      "bars": 96,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "analyst_upgrade_wave",
+        "dilution"
+      ]
+    },
+    {
+      "ticker": "AXSM",
+      "r_squared": 0.029543538733248664,
+      "bars": 96,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "contract_win",
+        "mna_target"
+      ]
+    },
+    {
+      "ticker": "AVAV",
+      "r_squared": 0.08518933801091189,
+      "bars": 96,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "analyst_downgrade_wave",
+        "dilution"
+      ]
+    },
+    {
+      "ticker": "LEGN",
+      "r_squared": 0.006232726774397346,
+      "bars": 96,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "clinical_readout",
+        "earnings_beat"
+      ]
+    }
+  ]
+}

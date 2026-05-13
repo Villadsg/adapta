@@ -62,6 +62,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Ticker screening
   screenTickers: (options) => ipcRenderer.invoke('screen-tickers', options),
+  cancelScreening: () => ipcRenderer.invoke('cancel-screening'),
   reviseTickers: () => ipcRenderer.invoke('revise-tickers'),
   loadReviseResults: () => ipcRenderer.invoke('load-revise-results'),
   loadScreeningResults: (filePath) => ipcRenderer.invoke('load-screening-results', filePath),

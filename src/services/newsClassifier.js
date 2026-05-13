@@ -12,6 +12,7 @@
  */
 
 const embeddingService = require('./embeddings');
+const { EVENT_TAGS, tagApplies } = require('./eventTags');
 
 // --- Ticker-to-sector mapping ---
 // Covers the full UNIVERSE from ticker-screen.js + common extras
@@ -787,4 +788,92 @@ async function classifyTickerNews(allTickers) {
   console.log(`[NewsClassifier] Done: ${counts.technical} technical, ${counts.fear} fear, ${counts.win} win, ${counts.macro_fear} macro-fear, ${counts.macro_win} macro-win, ${counts.mixed} mixed`);
 }
 
-module.exports = { classifyTickerNews, SECTOR_MAP };
+// ── Event tag embeddings ─────────────────────────────────────────────────
+// One Float64Array[] per tag id, computed lazily on first call.
+const cachedTagAnchorEmb = {};
+
+async function ensureTagAnchors(tag) {
+  if (cachedTagAnchorEmb[tag.id]) return cachedTagAnchorEmb[tag.id];
+  cachedTagAnchorEmb[tag.id] = await embeddingService.embedBatch(
+    tag.anchors.map(t => `title: news headline | text: ${t}`),
+    { showProgress: false }
+  );
+  return cachedTagAnchorEmb[tag.id];
+}
+
+/**
+ * Score per-ticker event tags from headlines.
+ *
+ * For each ticker, embeds its headlines once and scores each headline against
+ * every applicable tag's anchor set. A tag fires if any headline's max
+ * cosine-similarity against that tag's anchors meets the tag threshold.
+ *
+ * Mutates each entry, adding:
+ *   - entry.eventTags: string[]                   (ordered by best score desc)
+ *   - entry.eventTagEvidence: {tagId: {headline, score}}
+ *
+ * @param {Array} allTickers
+ */
+async function tagTickerEvents(allTickers) {
+  // Gather (ticker, headline) pairs.
+  const items = [];
+  for (let ti = 0; ti < allTickers.length; ti++) {
+    const entry = allTickers[ti];
+    if (!entry.news || entry.news.length === 0) continue;
+    for (let ni = 0; ni < entry.news.length; ni++) {
+      const h = entry.news[ni].headline;
+      if (h) items.push({ tickerIdx: ti, headline: h });
+    }
+  }
+  if (items.length === 0) return;
+
+  // Pre-load all tag anchor embeddings up front.
+  for (const tag of EVENT_TAGS) await ensureTagAnchors(tag);
+
+  // Embed all headlines in one batch.
+  const embTexts = items.map(it => `title: news headline | text: ${it.headline}`);
+  const embeddings = await embeddingService.embedBatch(embTexts, { showProgress: false });
+
+  // For each ticker, find tags whose any-headline score >= threshold.
+  // Best-headline tracked per (ticker, tag) so we can surface evidence.
+  const perTicker = new Map(); // tickerIdx -> { tagId: {score, headline} }
+
+  for (let i = 0; i < items.length; i++) {
+    const { tickerIdx, headline } = items[i];
+    const emb = embeddings[i];
+    const sector = SECTOR_MAP[allTickers[tickerIdx].ticker] || 'general';
+
+    for (const tag of EVENT_TAGS) {
+      if (!tagApplies(tag, sector)) continue;
+      const anchors = cachedTagAnchorEmb[tag.id];
+      const score = maxSimilarity(emb, anchors);
+      if (score < tag.threshold) continue;
+
+      let bag = perTicker.get(tickerIdx);
+      if (!bag) { bag = {}; perTicker.set(tickerIdx, bag); }
+      const prev = bag[tag.id];
+      if (!prev || score > prev.score) {
+        bag[tag.id] = { score, headline };
+      }
+    }
+  }
+
+  // Keep only the top-K tags per ticker (highest score wins).
+  // Multiple loosely-matching tags clutter the report; the strongest 1–2 are
+  // what's actionable.
+  const MAX_TAGS_PER_TICKER = 2;
+  let totalTags = 0;
+  for (const [tickerIdx, bag] of perTicker.entries()) {
+    const ordered = Object.entries(bag)
+      .sort((a, b) => b[1].score - a[1].score)
+      .slice(0, MAX_TAGS_PER_TICKER);
+    allTickers[tickerIdx].eventTags = ordered.map(([id]) => id);
+    allTickers[tickerIdx].eventTagEvidence = Object.fromEntries(
+      ordered.map(([id, ev]) => [id, { headline: ev.headline, score: Math.round(ev.score * 1000) / 1000 }])
+    );
+    totalTags += ordered.length;
+  }
+  console.log(`[NewsClassifier] Event tags: ${totalTags} fired across ${perTicker.size} tickers`);
+}
+
+module.exports = { classifyTickerNews, tagTickerEvents, SECTOR_MAP };

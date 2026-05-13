@@ -28,7 +28,8 @@ const newsScraper = require('./src/services/newsScraper');
 const ChronosHoldPeriodService = require('./src/services/chronosHoldPeriod');
 const FlowstateAnalysisService = require('./src/services/flowstateAnalysis');
 const { screenTickers, reviseTickers } = require('./ci/ticker-screen');
-const { classifyTickerNews } = require('./src/services/newsClassifier');
+const { classifyTickerNews, tagTickerEvents } = require('./src/services/newsClassifier');
+const { TAG_LABELS: EVENT_TAG_LABELS } = require('./src/services/eventTags');
 const YahooFinance = require('yahoo-finance2').default;
 const bunBridge = require('./src/services/bunBridge');
 const { JSDOM } = require('jsdom');
@@ -86,7 +87,7 @@ function getExtractionBrowserView() {
 async function fetchFinvizNews(ticker) {
   const url = `https://finviz.com/quote.ashx?t=${encodeURIComponent(ticker)}&p=d`;
   const html = await bunBridge.fetchHTML(url, { timeout: 15000 });
-  const { document } = new JSDOM(html).window;
+  const { document } = new JSDOM(html, { url }).window;
 
   const rows = document.querySelectorAll('.body-table-news-wrapper tr, .news-table_wrapper tr, table.fullview-news-outer tr');
   const results = [];
@@ -1706,9 +1707,17 @@ function combineHistRecord(record) {
   };
 }
 
-// Ticker screening handler
+// Ticker screening handler — supports cancellation via 'cancel-screening' IPC
+let screeningCancelRequested = false;
+ipcMain.handle('cancel-screening', async () => {
+  screeningCancelRequested = true;
+  console.log('[Screen] Cancel requested');
+  return { success: true };
+});
+
 ipcMain.handle('screen-tickers', async (event, options = {}) => {
   try {
+    screeningCancelRequested = false;
     await backendReadyPromise;
     const fs = require('fs');
     const configPath = path.join(__dirname, 'ci', 'config.json');
@@ -1742,6 +1751,8 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
 
     const tickers = config.screenTickers || [];
     console.log(`\nRunning ticker screening on ${tickers.length} tickers...`);
+
+    config.isCancelled = () => screeningCancelRequested;
 
     const createYF = () => new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 
@@ -1777,6 +1788,32 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       } catch (err) {
         console.error('[Screen] News classification failed:', err.message);
       }
+      try {
+        await tagTickerEvents(result.allTickers);
+      } catch (err) {
+        console.error('[Screen] Event tagging failed:', err.message);
+      }
+
+      // Patch tags into run.json (archiver wrote it before classification ran).
+      if (result.runId) {
+        try {
+          const runJsonPath = path.join(__dirname, 'ci', 'screening-runs', `run-${result.runId}.run.json`);
+          const meta = JSON.parse(fs.readFileSync(runJsonPath, 'utf-8'));
+          const tagMap = new Map();
+          for (const e of result.allTickers) {
+            if (Array.isArray(e.eventTags) && e.eventTags.length > 0) tagMap.set(e.ticker, e.eventTags);
+          }
+          if (Array.isArray(meta.tickers)) {
+            for (const t of meta.tickers) {
+              const tags = tagMap.get(t.ticker);
+              if (tags) t.eventTags = tags;
+            }
+          }
+          fs.writeFileSync(runJsonPath, JSON.stringify(meta, null, 2), 'utf-8');
+        } catch (err) {
+          console.error('[Screen] Failed to patch run.json with tags:', err.message);
+        }
+      }
     }
 
     // Save weighted IV history
@@ -1789,6 +1826,9 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       if (!od || od.length === 0) continue;
       if (!ivHistory[entry.ticker]) ivHistory[entry.ticker] = [];
       const record = { date: today, sector: entry.sector || '' };
+      if (Array.isArray(entry.eventTags) && entry.eventTags.length > 0) {
+        record.eventTags = entry.eventTags.slice();
+      }
       // Store today's close-to-previous-close return (%) for any-day return-bucket analysis.
       const closes = entry.chartData?.closes;
       if (Array.isArray(closes) && closes.length >= 2) {
@@ -2052,7 +2092,7 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
 
     console.log(`[Screen] Results saved to ci/screening-results.html (snapshot: ${path.basename(snapshotPath)})`);
 
-    return { success: true, filePath: screenResultsPath, hitCount: result.hits.length };
+    return { success: true, filePath: screenResultsPath, hitCount: result.hits.length, cancelled: !!result.cancelled };
   } catch (error) {
     console.error('Screening error:', error);
     return { success: false, error: error.message };
@@ -2392,15 +2432,32 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
   }
   // Build per-sector spread distributions from all historical records
   const sectorSpreads = {}; // { sector: { callSpreads: [], putSpreads: [] } }
+  // Build per-tag spread distributions from all historical records that carry that tag.
+  // A historical record can contribute to multiple tag cohorts.
+  const tagSpreads = {}; // { tagId: { callSpreads: [], putSpreads: [] } }
   for (const [ticker, records] of Object.entries(ivHistoryData)) {
     const sec = tickerSectors[ticker];
-    if (!sec || !Array.isArray(records)) continue;
-    if (!sectorSpreads[sec]) sectorSpreads[sec] = { callSpreads: [], putSpreads: [] };
+    if (!Array.isArray(records)) continue;
+    if (sec && !sectorSpreads[sec]) sectorSpreads[sec] = { callSpreads: [], putSpreads: [] };
     for (const r of records) {
       const e = combineHistRecord(r);
       if (!e) continue;
-      if (e.callIV > 0 && e.atmCallIV != null) sectorSpreads[sec].callSpreads.push(e.callIV - e.atmCallIV);
-      if (e.putIV > 0 && e.atmPutIV != null) sectorSpreads[sec].putSpreads.push(e.putIV - e.atmPutIV);
+      const callOk = e.callIV > 0 && e.atmCallIV != null;
+      const putOk = e.putIV > 0 && e.atmPutIV != null;
+      const callSpr = callOk ? e.callIV - e.atmCallIV : null;
+      const putSpr = putOk ? e.putIV - e.atmPutIV : null;
+      if (sec) {
+        if (callOk) sectorSpreads[sec].callSpreads.push(callSpr);
+        if (putOk) sectorSpreads[sec].putSpreads.push(putSpr);
+      }
+      const recTags = Array.isArray(r.eventTags) ? r.eventTags : null;
+      if (recTags) {
+        for (const tag of recTags) {
+          if (!tagSpreads[tag]) tagSpreads[tag] = { callSpreads: [], putSpreads: [] };
+          if (callOk) tagSpreads[tag].callSpreads.push(callSpr);
+          if (putOk) tagSpreads[tag].putSpreads.push(putSpr);
+        }
+      }
     }
   }
   for (const [ticker, records] of Object.entries(ivHistoryData)) {
@@ -2553,6 +2610,7 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     const stats = ivHistStats[h.ticker];
     const rankTag = (r) => r != null ? ` <span style="color:#888; font-size:0.78em;">(p${r})</span>` : '';
     const sectorRankTag = (r) => r != null ? ` <span style="color:#6a8; font-size:0.78em;">[s${r}]</span>` : '';
+    const tagRankTag = (r, tag) => r != null ? ` <span style="color:#d4a657; font-size:0.78em;" title="vs ${tag} cohort">{t${r}}</span>` : '';
     const callIVRank = stats && tiv ? pctRank(stats.callIVs, tiv.callIV) : null;
     const putIVRank = stats && tiv ? pctRank(stats.putIVs, tiv.putIV) : null;
     const MIN_SPREAD_RECORDS = 3;
@@ -2563,12 +2621,18 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     const secData = sec ? sectorSpreads[sec] : null;
     const callSectorRank = secData && callSpread != null && secData.callSpreads.length >= MIN_HIST_RECORDS ? pctRank(secData.callSpreads, callSpread) : null;
     const putSectorRank = secData && putSpread != null && secData.putSpreads.length >= MIN_HIST_RECORDS ? pctRank(secData.putSpreads, putSpread) : null;
+    // Tag-cohort rank: percentile within historical records carrying the ticker's strongest tag.
+    // Uses first tag (highest score). Requires the same MIN_HIST_RECORDS as sector to keep it meaningful.
+    const primaryTag = Array.isArray(h.eventTags) && h.eventTags.length > 0 ? h.eventTags[0] : null;
+    const tagData = primaryTag ? tagSpreads[primaryTag] : null;
+    const callTagRank = tagData && callSpread != null && tagData.callSpreads.length >= MIN_HIST_RECORDS ? pctRank(tagData.callSpreads, callSpread) : null;
+    const putTagRank = tagData && putSpread != null && tagData.putSpreads.length >= MIN_HIST_RECORDS ? pctRank(tagData.putSpreads, putSpread) : null;
     const callIVStr = tiv ? tiv.callIV.toFixed(1) + '%' + rankTag(callIVRank) : '';
     const putIVStr = tiv ? tiv.putIV.toFixed(1) + '%' + rankTag(putIVRank) : '';
     const callIVVal = tiv ? tiv.callIV : -1;
     const putIVVal = tiv ? tiv.putIV : -1;
-    const callSpreadStr = callSpread != null ? (callSpread >= 0 ? '+' : '') + callSpread.toFixed(1) + rankTag(callSpreadRank) + sectorRankTag(callSectorRank) : '';
-    const putSpreadStr = putSpread != null ? (putSpread >= 0 ? '+' : '') + putSpread.toFixed(1) + rankTag(putSpreadRank) + sectorRankTag(putSectorRank) : '';
+    const callSpreadStr = callSpread != null ? (callSpread >= 0 ? '+' : '') + callSpread.toFixed(1) + rankTag(callSpreadRank) + sectorRankTag(callSectorRank) + tagRankTag(callTagRank, primaryTag) : '';
+    const putSpreadStr = putSpread != null ? (putSpread >= 0 ? '+' : '') + putSpread.toFixed(1) + rankTag(putSpreadRank) + sectorRankTag(putSectorRank) + tagRankTag(putTagRank, primaryTag) : '';
     const callSpreadVal = callSpread != null ? callSpread : -9999;
     const putSpreadVal = putSpread != null ? putSpread : -9999;
 
@@ -2582,10 +2646,22 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     const hasNote = !!noteText;
     const noteIndicator = hasNote ? ' <span title="Has note" style="font-size:0.75em;">📝</span>' : '';
 
-    return `<tr ${hasChart ? `class="data-row" data-ticker="${h.ticker}"` : ''} style="${inlineStyle}">
+    const evTags = Array.isArray(h.eventTags) ? h.eventTags : [];
+    const evEvidence = h.eventTagEvidence || {};
+    const tagsAttr = evTags.join(' ');
+    const tagsCell = evTags.map(id => {
+      const lbl = EVENT_TAG_LABELS[id] || id;
+      const ev = evEvidence[id];
+      const tip = ev ? `score ${ev.score} · ${ev.headline.replace(/"/g, '&quot;')}` : id;
+      return `<span class="event-tag" data-tag="${id}" title="${tip}" style="display:inline-block; margin:1px 3px 1px 0; padding:1px 6px; background:#2c3a4a; color:#cdd5e0; border:1px solid #3d4f63; border-radius:8px; font-size:0.74em; cursor:pointer; white-space:nowrap;">${lbl}</span>`;
+    }).join('');
+    const tagsSortKey = evTags.length > 0 ? evTags[0] : 'zzz';
+
+    return `<tr ${hasChart ? `class="data-row" data-ticker="${h.ticker}"` : ''} data-tags="${tagsAttr}" style="${inlineStyle}">
       <td style="text-align:center; width:28px; padding:4px;" data-v="${favLevel}"><span class="fav-star" data-ticker="${h.ticker}" style="cursor:pointer; font-size:1.1em; color:${favColor};" title="${favTitle}">${favGlyph}</span></td>
       <td data-v="${h.ticker}" style="font-weight:bold;">${h.ticker}${hasChart ? ' <span style="font-size:0.7em;color:#aaa;">▶</span>' : ''}${noteIndicator}</td>
       <td data-v="${sec || 'zzz'}" style="font-size:0.82em; color:#888;">${sec || ''}</td>
+      <td data-v="${tagsSortKey}" style="font-size:0.82em; max-width:240px;">${tagsCell}</td>
       <td data-v="${dateStr || 'zzz'}">${dateStr}</td>
       <td data-v="${h.gap || 0}">${h.gap ? h.gap.toFixed(2) + '%' : ''}</td>
       <td data-v="${h.percentile || 0}">${h.percentile ? h.percentile.toFixed(1) + '%' : ''}</td>
@@ -2600,7 +2676,7 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
       <td data-v="${putSpreadVal}" style="text-align:right; color:rgba(245,101,101,0.7); font-size:0.88em;">${putSpreadStr}</td>
     </tr>
     <tr class="chart-row" data-chart-for="${h.ticker}" style="display:none;">
-      <td colspan="15" style="padding:0; background:#1a1d23;">
+      <td colspan="16" style="padding:0; background:#1a1d23;">
         <div style="display:flex; gap:12px; align-items:stretch; margin:12px 20px 8px;">
           <div id="summary-${h.ticker}" style="flex:0 1 78ch; padding:14px 18px; background:#262a33; border-left:3px solid #4a5a8a; border-radius:6px; color:#cdd5e0; font-size:0.98em; line-height:1.65; max-height:200px; overflow-y:auto;"></div>
           <div style="flex:1 1 0; min-width:280px; height:200px; background:#262a33; border-radius:6px; padding:6px 10px;">
@@ -2797,11 +2873,16 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
     </div>
   </div>
 </div>` : ''}
+<div id="tag-filter-bar" style="margin:8px 0 6px; min-height:22px; font-size:0.82em; color:#888; display:none;">
+  Filter: <span id="tag-filter-active"></span>
+  <a href="#" id="tag-filter-clear" style="margin-left:8px; color:#7aa2c7; text-decoration:none;">clear</a>
+</div>
 <table id="screen-table">
 <thead><tr>
   <th style="width:28px; text-align:center; padding:4px;"><span class="sort-arrow"></span></th>
   <th>Ticker<span class="sort-arrow"></span></th>
   <th>Sector<span class="sort-arrow"></span></th>
+  <th>Tags<span class="sort-arrow"></span></th>
   <th>Date<span class="sort-arrow"></span></th>
   <th>Gap %<span class="sort-arrow"></span></th>
   <th>Percentile<span class="sort-arrow"></span></th>
@@ -2811,9 +2892,9 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
   <th style="text-align:right;">Mkt Cap<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Opt $ Vol<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Call IV<span class="sort-arrow"></span></th>
-  <th style="text-align:right;" title="Weighted OTM IV minus ATM IV. (pN) = self-history rank, [sN] = sector rank">C Spr<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Weighted OTM IV minus ATM IV. (pN) = self-history rank, [sN] = sector rank, {tN} = top-tag cohort rank">C Spr<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Put IV<span class="sort-arrow"></span></th>
-  <th style="text-align:right;" title="Weighted OTM IV minus ATM IV. (pN) = self-history rank, [sN] = sector rank">P Spr<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Weighted OTM IV minus ATM IV. (pN) = self-history rank, [sN] = sector rank, {tN} = top-tag cohort rank">P Spr<span class="sort-arrow"></span></th>
 </tr></thead>
 <tbody>${rows}</tbody>
 </table>
@@ -2929,6 +3010,47 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
       save();
     });
     ta.addEventListener('click', (e) => e.stopPropagation());
+  });
+
+  // ── Event-tag filter ──
+  // Click any tag chip to filter rows; only data-rows whose data-tags contains
+  // the active tag remain visible (their chart-row sibling is hidden too).
+  let activeTagFilter = null;
+  function applyTagFilter() {
+    const bar = document.getElementById('tag-filter-bar');
+    const activeEl = document.getElementById('tag-filter-active');
+    if (activeTagFilter) {
+      bar.style.display = '';
+      activeEl.textContent = activeTagFilter;
+    } else {
+      bar.style.display = 'none';
+      activeEl.textContent = '';
+    }
+    document.querySelectorAll('tr.data-row').forEach(row => {
+      const tags = (row.getAttribute('data-tags') || '').split(' ').filter(Boolean);
+      const show = !activeTagFilter || tags.includes(activeTagFilter);
+      row.style.display = show ? '' : 'none';
+      const ticker = row.getAttribute('data-ticker');
+      const chartRow = document.querySelector('tr.chart-row[data-chart-for="' + ticker + '"]');
+      if (chartRow && !show) chartRow.style.display = 'none';
+    });
+    document.querySelectorAll('.event-tag').forEach(chip => {
+      chip.style.outline = (chip.getAttribute('data-tag') === activeTagFilter) ? '2px solid #7aa2c7' : '';
+    });
+  }
+  document.querySelectorAll('.event-tag').forEach(chip => {
+    chip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const tag = chip.getAttribute('data-tag');
+      activeTagFilter = (activeTagFilter === tag) ? null : tag;
+      applyTagFilter();
+    });
+  });
+  const clearLink = document.getElementById('tag-filter-clear');
+  if (clearLink) clearLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    activeTagFilter = null;
+    applyTagFilter();
   });
 
   document.querySelectorAll('.fav-star').forEach(star => {

@@ -39,6 +39,7 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
     screenDelayMs = 2500,
     screenMaxTickers = 0,
     benchmark = 'SPY',
+    isCancelled = null,
   } = config;
 
   if (!tickers.length) {
@@ -81,7 +82,13 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
   const hits = [];
   const allTickers = []; // Every ticker with its best recent event (if any) + R²
 
+  let cancelled = false;
   for (let i = 0; i < list.length; i++) {
+    if (isCancelled && isCancelled()) {
+      console.log(`[Screen] Cancelled after ${i}/${list.length} tickers`);
+      cancelled = true;
+      break;
+    }
     const ticker = list[i];
 
     if (i > 0) {
@@ -491,14 +498,14 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
   let archiveResult = null;
   if (archiver && run) {
     try {
-      archiveResult = await archiver.finishRun(run, { status: 'completed' });
+      archiveResult = await archiver.finishRun(run, { status: cancelled ? 'cancelled' : 'completed' });
       console.log(`[Screen] Archive written: ${archiveResult.runId} (bars=${archiveResult.counts.bars}, chains=${archiveResult.counts.chains}, events=${archiveResult.counts.events})`);
     } catch (archiveErr) {
       console.error(`[Screen] Archive write failed: ${archiveErr.message}`);
     }
   }
 
-  return { hits, allTickers, runId: archiveResult?.runId || run?.runId || null };
+  return { hits, allTickers, runId: archiveResult?.runId || run?.runId || null, cancelled };
 }
 
 // ~400 liquid US tickers spanning defense, biotech, clean energy,

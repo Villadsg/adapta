@@ -707,7 +707,20 @@ async function refreshSuperFavoritesDisplay() {
   }
 }
 
+let screeningActive = false;
+
 btnScreen.addEventListener('click', async () => {
+  if (screeningActive) {
+    // While a screening is running, the button acts as a Stop button.
+    btnScreen.textContent = 'Stopping...';
+    btnScreen.disabled = true;
+    try {
+      await window.electronAPI.cancelScreening();
+    } catch (err) {
+      console.error('Cancel error:', err);
+    }
+    return;
+  }
   await window.electronAPI.showModal();
   screenModal.style.display = 'flex';
   screenPeriod.value = '100';
@@ -1035,23 +1048,29 @@ screenRun.addEventListener('click', async () => {
   const screenBtn = document.getElementById('btn-screen');
   const screenBtnOriginal = screenBtn.textContent;
   screenBtn.classList.add('is-loading');
-  screenBtn.disabled = true;
-  screenBtn.textContent = `Screening ${tickerCount}...`;
+  screenBtn.textContent = `⏹ Stop (${tickerCount})`;
+  screeningActive = true;
 
   try {
     const result = await window.electronAPI.screenTickers({ period, lookbackDays, percentileThreshold, overrideTickers, fetchNews, favoritesOnly, superOnly });
 
     if (!result.success) {
-      showToast('Error', result.error, 'error');
+      const isCancel = result.cancelled || /cancel/i.test(result.error || '');
+      showToast(isCancel ? 'Screening Stopped' : 'Error', result.error || 'Cancelled', isCancel ? 'info' : 'error');
       return;
     }
 
-    await createTab('file://' + result.filePath);
-    showToast('Screening Complete', `Found ${result.hitCount} hit${result.hitCount !== 1 ? 's' : ''}`, 'success');
+    if (result.cancelled) {
+      showToast('Screening Stopped', `Partial results: ${result.hitCount || 0} hit${result.hitCount === 1 ? '' : 's'}`, 'info');
+    } else {
+      showToast('Screening Complete', `Found ${result.hitCount} hit${result.hitCount !== 1 ? 's' : ''}`, 'success');
+    }
+    if (result.filePath) await createTab('file://' + result.filePath);
   } catch (error) {
     console.error('Screening error:', error);
     showToast('Error', error.message, 'error');
   } finally {
+    screeningActive = false;
     screenBtn.classList.remove('is-loading');
     screenBtn.disabled = false;
     screenBtn.textContent = screenBtnOriginal;
