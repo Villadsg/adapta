@@ -1,0 +1,110 @@
+{
+  "runId": "2026-05-18T19-49-48-514Z",
+  "hostId": "fedora",
+  "trigger": "manual",
+  "startedAt": "2026-05-18T19:49:48.514Z",
+  "finishedAt": "2026-05-18T19:50:05.073Z",
+  "status": "completed",
+  "error": null,
+  "config": {
+    "tickers": [
+      "NVO",
+      "AVAV",
+      "GMAB",
+      "QCOM",
+      "XIACY",
+      "AIR.PA",
+      "EH"
+    ],
+    "benchmark": "SPY",
+    "days": 200,
+    "minEvents": 15,
+    "eventPercentileThreshold": 92,
+    "delayBetweenTickersMs": 3000,
+    "screenTickers": [
+      "ONDS",
+      "AVAV",
+      "LEGN",
+      "NVO",
+      "AVAV"
+    ],
+    "screenDays": 140,
+    "screenLookbackDays": 5,
+    "screenPercentileThreshold": 92,
+    "screenDelayMs": 1000,
+    "screenMaxTickers": 0
+  },
+  "counts": {
+    "bars": 582,
+    "chains": 833,
+    "events": 40,
+    "tickers": 5
+  },
+  "tickers": [
+    {
+      "ticker": "ONDS",
+      "r_squared": 0.10320753476431899,
+      "bars": 97,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "guidance_raise",
+        "analyst_downgrade_wave"
+      ]
+    },
+    {
+      "ticker": "AVAV",
+      "r_squared": 0.08535566844106857,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "analyst_downgrade_wave",
+        "dilution"
+      ]
+    },
+    {
+      "ticker": "LEGN",
+      "r_squared": 0.005499557442003811,
+      "bars": 97,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "clinical_readout",
+        "earnings_beat"
+      ]
+    },
+    {
+      "ticker": "NVO",
+      "r_squared": 0.21925235667996568,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "analyst_upgrade_wave",
+        "analyst_downgrade_wave"
+      ]
+    },
+    {
+      "ticker": "AVAV",
+      "r_squared": 0.08535566844106857,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "analyst_downgrade_wave",
+        "dilution"
+      ]
+    }
+  ]
+}

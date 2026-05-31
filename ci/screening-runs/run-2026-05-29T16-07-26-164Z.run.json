@@ -1,0 +1,220 @@
+{
+  "runId": "2026-05-29T16-07-26-164Z",
+  "hostId": "fedora",
+  "trigger": "manual",
+  "startedAt": "2026-05-29T16:07:26.164Z",
+  "finishedAt": "2026-05-29T16:08:19.628Z",
+  "status": "completed",
+  "error": null,
+  "config": {
+    "tickers": [
+      "NVO",
+      "AVAV",
+      "GMAB",
+      "QCOM",
+      "XIACY",
+      "AIR.PA",
+      "EH"
+    ],
+    "benchmark": "SPY",
+    "days": 200,
+    "minEvents": 15,
+    "eventPercentileThreshold": 92,
+    "delayBetweenTickersMs": 3000,
+    "screenTickers": [
+      "SEDG",
+      "FLNC",
+      "SHLS",
+      "LEGN",
+      "RUN",
+      "AAON",
+      "AXSM",
+      "JOBY",
+      "EH",
+      "NVO",
+      "AVAV",
+      "QCOM",
+      "RELY",
+      "SMCI",
+      "DOCN",
+      "ONDS",
+      "NOW",
+      "RCAT"
+    ],
+    "screenDays": 140,
+    "screenLookbackDays": 5,
+    "screenPercentileThreshold": 92,
+    "screenDelayMs": 1000,
+    "screenMaxTickers": 0
+  },
+  "counts": {
+    "bars": 1843,
+    "chains": 3476,
+    "events": 144,
+    "tickers": 18
+  },
+  "tickers": [
+    {
+      "ticker": "SEDG",
+      "r_squared": 0.012573704620594484,
+      "bars": 97,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "FLNC",
+      "r_squared": 0.10590130080761317,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "SHLS",
+      "r_squared": 0.07778928355333825,
+      "bars": 97,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "LEGN",
+      "r_squared": 0.009921840581197383,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "RUN",
+      "r_squared": 0.17979499740708382,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "AAON",
+      "r_squared": 0.11960847842286981,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "AXSM",
+      "r_squared": 0.12056860013175597,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "JOBY",
+      "r_squared": 0.2907215304074279,
+      "bars": 97,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "EH",
+      "r_squared": 0.3679895429890122,
+      "bars": 97,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "NVO",
+      "r_squared": 0.2121834485571058,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "AVAV",
+      "r_squared": 0.08524019085518608,
+      "bars": 97,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "QCOM",
+      "r_squared": 0.15837988536022096,
+      "bars": 97,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "RELY",
+      "r_squared": 0.090041266506938,
+      "bars": 97,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "SMCI",
+      "r_squared": 0.30751065491757,
+      "bars": 97,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "DOCN",
+      "r_squared": 0.09483720198125445,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "ONDS",
+      "r_squared": 0.12164722638283698,
+      "bars": 97,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "NOW",
+      "r_squared": 0.010643155549281302,
+      "bars": 97,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "RCAT",
+      "r_squared": 0.09719461965139642,
+      "bars": 97,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    }
+  ]
+}

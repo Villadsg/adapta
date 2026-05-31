@@ -1,0 +1,380 @@
+{
+  "runId": "2026-05-13T18-51-42-024Z",
+  "hostId": "fedora",
+  "trigger": "manual",
+  "startedAt": "2026-05-13T18:51:42.024Z",
+  "finishedAt": "2026-05-13T18:53:08.011Z",
+  "status": "completed",
+  "error": null,
+  "config": {
+    "tickers": [
+      "NVO",
+      "AVAV",
+      "GMAB",
+      "QCOM",
+      "XIACY",
+      "AIR.PA",
+      "EH"
+    ],
+    "benchmark": "SPY",
+    "days": 200,
+    "minEvents": 15,
+    "eventPercentileThreshold": 92,
+    "delayBetweenTickersMs": 3000,
+    "screenTickers": [
+      "XIACY",
+      "PAYO",
+      "TOST",
+      "PODD",
+      "IOVA",
+      "EVER",
+      "IOT",
+      "CNX",
+      "ZBRA",
+      "NOW",
+      "S",
+      "ARM",
+      "MU",
+      "TSM",
+      "INTC",
+      "KVYO",
+      "RCAT",
+      "MEDP",
+      "SEDG",
+      "FLNC",
+      "SHLS",
+      "LEGN",
+      "RUN",
+      "AAON",
+      "AXSM",
+      "JOBY",
+      "EH",
+      "NVO",
+      "AVAV",
+      "QCOM",
+      "RELY",
+      "SMCI",
+      "DOCN",
+      "ONDS"
+    ],
+    "screenDays": 140,
+    "screenLookbackDays": 5,
+    "screenPercentileThreshold": 92,
+    "screenDelayMs": 1000,
+    "screenMaxTickers": 0
+  },
+  "counts": {
+    "bars": 0,
+    "chains": 0,
+    "events": 0,
+    "tickers": 34
+  },
+  "tickers": [
+    {
+      "ticker": "XIACY",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "PAYO",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "TOST",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "PODD",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "IOVA",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "EVER",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "IOT",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "CNX",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "ZBRA",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "NOW",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "S",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "ARM",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "MU",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "TSM",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "INTC",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "KVYO",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "RCAT",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "MEDP",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "SEDG",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "FLNC",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "SHLS",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "LEGN",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "RUN",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "AAON",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "AXSM",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "JOBY",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "EH",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "NVO",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "AVAV",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "QCOM",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "RELY",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "SMCI",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "DOCN",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    },
+    {
+      "ticker": "ONDS",
+      "r_squared": null,
+      "bars": null,
+      "events": null,
+      "hits": 0,
+      "status": "errored",
+      "error": "getaddrinfo EAI_AGAIN query1.finance.yahoo.com"
+    }
+  ]
+}

@@ -1707,6 +1707,113 @@ function combineHistRecord(record) {
   };
 }
 
+// ─── Dependency-free numerics for the Pre-Event supervised contrast ───
+// Small, exact-enough hand-rolls (no npm deps). All inputs are modest in size
+// (≤ a few hundred rows, ≤ ~12 features), so naive implementations are fine.
+
+// Two-sided p-value from a z/large-df-t statistic via the error function
+// (Abramowitz & Stegun 7.1.26). df > 100 here, so z ≈ t is acceptable.
+function peErf(x) {
+  const s = x < 0 ? -1 : 1;
+  x = Math.abs(x);
+  const t = 1 / (1 + 0.3275911 * x);
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return s * y;
+}
+function peTwoSidedP(z) {
+  return 2 * (1 - 0.5 * (1 + peErf(Math.abs(z) / Math.SQRT2)));
+}
+
+// Welch contrast between two samples → mean diff, pooled-SD Cohen's d, t, p.
+function peWelch(a, b) {
+  const m = (v) => v.reduce((s, x) => s + x, 0) / v.length;
+  const varOf = (v, mu) => v.length < 2 ? 0 : v.reduce((s, x) => s + (x - mu) * (x - mu), 0) / (v.length - 1);
+  const ma = m(a), mb = m(b), va = varOf(a, ma), vb = varOf(b, mb);
+  const na = a.length, nb = b.length;
+  const se = Math.sqrt(va / na + vb / nb) || 1e-9;
+  const t = (ma - mb) / se;
+  const pooledSD = Math.sqrt(((na - 1) * va + (nb - 1) * vb) / Math.max(1, na + nb - 2)) || 1e-9;
+  return { meanA: ma, meanB: mb, diff: ma - mb, d: (ma - mb) / pooledSD, t, p: peTwoSidedP(t) };
+}
+
+// Column-wise standardize; returns Z plus the mean/std used (std floored).
+function peStandardize(rows) {
+  const n = rows.length, p = rows[0].length;
+  const mean = new Array(p).fill(0), std = new Array(p).fill(0);
+  for (const r of rows) for (let j = 0; j < p; j++) mean[j] += r[j];
+  for (let j = 0; j < p; j++) mean[j] /= n;
+  for (const r of rows) for (let j = 0; j < p; j++) std[j] += (r[j] - mean[j]) ** 2;
+  for (let j = 0; j < p; j++) std[j] = Math.sqrt(std[j] / Math.max(1, n - 1)) || 1e-9;
+  const Z = rows.map(r => r.map((v, j) => (v - mean[j]) / std[j]));
+  return { Z, mean, std };
+}
+
+// Correlation matrix of already-standardized Z (= covariance of standardized).
+// L2-regularized logistic regression by full-batch gradient descent.
+// X is standardized (no bias column); intercept fit separately. y ∈ {0,1}.
+function peLogisticFit(X, y, { iters = 800, lr = 0.1, l2 = 1.0 } = {}) {
+  const n = X.length, p = X[0].length;
+  const w = new Array(p).fill(0);
+  let b = 0;
+  for (let it = 0; it < iters; it++) {
+    const gw = new Array(p).fill(0);
+    let gb = 0;
+    for (let i = 0; i < n; i++) {
+      let z = b;
+      for (let j = 0; j < p; j++) z += w[j] * X[i][j];
+      const pr = 1 / (1 + Math.exp(-z));
+      const e = pr - y[i];
+      gb += e;
+      for (let j = 0; j < p; j++) gw[j] += e * X[i][j];
+    }
+    b -= lr * gb / n;
+    for (let j = 0; j < p; j++) w[j] -= lr * (gw[j] / n + l2 * w[j] / n);
+  }
+  return { w, b };
+}
+function peSigmoidScore(model, x) {
+  let z = model.b;
+  for (let j = 0; j < x.length; j++) z += model.w[j] * x[j];
+  return 1 / (1 + Math.exp(-z));
+}
+
+// AUC via the Mann–Whitney rank identity (handles ties at 0.5).
+function peAUC(scores, y) {
+  const idx = scores.map((s, i) => i).sort((a, b) => scores[a] - scores[b]);
+  const ranks = new Array(scores.length);
+  for (let i = 0; i < idx.length;) {
+    let j = i;
+    while (j < idx.length && scores[idx[j]] === scores[idx[i]]) j++;
+    const r = (i + j - 1) / 2 + 1;
+    for (let k = i; k < j; k++) ranks[idx[k]] = r;
+    i = j;
+  }
+  let nPos = 0, sumPos = 0;
+  for (let i = 0; i < y.length; i++) if (y[i] === 1) { nPos++; sumPos += ranks[i]; }
+  const nNeg = y.length - nPos;
+  if (nPos === 0 || nNeg === 0) return 0.5;
+  return (sumPos - nPos * (nPos + 1) / 2) / (nPos * nNeg);
+}
+
+// Stratified k-fold cross-validated AUC (honest, vs in-sample optimism).
+function peCVAUC(X, y, k = 5, fitOpts) {
+  const pos = [], neg = [];
+  for (let i = 0; i < y.length; i++) (y[i] === 1 ? pos : neg).push(i);
+  const folds = Array.from({ length: k }, () => []);
+  pos.forEach((ix, i) => folds[i % k].push(ix));
+  neg.forEach((ix, i) => folds[i % k].push(ix));
+  const allScores = new Array(y.length);
+  for (let f = 0; f < k; f++) {
+    const test = new Set(folds[f]);
+    const trX = [], trY = [];
+    for (let i = 0; i < y.length; i++) if (!test.has(i)) { trX.push(X[i]); trY.push(y[i]); }
+    if (!trX.length) continue;
+    const m = peLogisticFit(trX, trY, fitOpts);
+    for (const i of folds[f]) allScores[i] = peSigmoidScore(m, X[i]);
+  }
+  return peAUC(allScores, y);
+}
+
 // Ticker screening handler — supports cancellation via 'cancel-screening' IPC
 let screeningCancelRequested = false;
 ipcMain.handle('cancel-screening', async () => {
@@ -1945,13 +2052,30 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
     // Uses point-in-time percentile rank: for each event, we rank the latest pre-event IV
     // snapshot against that ticker's own history strictly before the event date (no lookahead).
     // Averaging ranks across events normalizes away cross-ticker IV-level differences —
-    // deviation from 50 is the signal. Requires ≥10 prior history records per event.
+    // deviation from 0 is the signal. Requires ≥10 prior history records per event.
     const PRE_EVENT_MIN_HIST = 10;
+    const PE_WINDOW = 3;        // use up to the last 3 contiguous pre-event snapshots
+    const PE_MAX_GAP_DAYS = 4;  // 1 trading day + weekend + 1 day tolerance (calendar-offset alignment)
+    const PE_METRICS = ['callOtm', 'callAtm', 'callSpr', 'putOtm', 'putAtm', 'putSpr'];
+    const dayDiff = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
+    // Per-event we record the weighted-OTM-IV percentile rank, the weighted-ATM-IV
+    // percentile rank, and the IV-spread percentile rank separately (each 0–100,
+    // neutral = 50), for calls and puts.
+    const mkPE = () => ({ callOtm: [], callAtm: [], callSpr: [], putOtm: [], putAtm: [], putSpr: [] });
     const preEventByClass = {
-      surprising_positive: { callIVRanks: [], putIVRanks: [], callSpreadRanks: [], putSpreadRanks: [] },
-      positive_anticipated: { callIVRanks: [], putIVRanks: [], callSpreadRanks: [], putSpreadRanks: [] },
-      negative_anticipated: { callIVRanks: [], putIVRanks: [], callSpreadRanks: [], putSpreadRanks: [] },
-      surprising_negative: { callIVRanks: [], putIVRanks: [], callSpreadRanks: [], putSpreadRanks: [] },
+      surprising_positive: mkPE(),
+      positive_anticipated: mkPE(),
+      negative_anticipated: mkPE(),
+      surprising_negative: mkPE(),
+    };
+    // #2 Trajectory: per metric, the rank at each of T-1 / T-2 / T-3 trading days
+    // before the event, kept separate so the term structure of anticipation is visible.
+    const mkTraj = () => { const o = {}; for (const m of PE_METRICS) o[m] = { t1: [], t2: [], t3: [] }; return o; };
+    const trajByClass = {
+      surprising_positive: mkTraj(),
+      positive_anticipated: mkTraj(),
+      negative_anticipated: mkTraj(),
+      surprising_negative: mkTraj(),
     };
     const rankIn = (arr, val) => {
       if (!arr || arr.length < PRE_EVENT_MIN_HIST) return null;
@@ -1959,54 +2083,208 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       for (const v of arr) if (v <= val) below++;
       return (below / arr.length) * 100;
     };
+    // Per-event feature vectors for the supervised contrast
+    // (one row per event: denoised level ranks + window slopes + class label).
+    const peEventFeatures = [];
+    // Per-ticker pre-event slopes (latest event), surfaced as table columns.
+    const peSlopeByTicker = {};
+    // Total option dollar volume of a history record (sum across expirations,
+    // with legacy fallback to the top-level combined `dv`).
+    const recTotalDV = (r) => {
+      let dv = 0, any = false;
+      for (const key of ['exp1', 'exp2', 'exp3']) {
+        const e = r[key];
+        if (!e) continue;
+        if (e.dv != null) { dv += e.dv; any = true; }
+        else if (e.callDV != null || e.putDV != null) { dv += (e.callDV || 0) + (e.putDV || 0); any = true; }
+      }
+      if (!any && r.dv != null) { dv = r.dv; any = true; }
+      return any ? dv : null;
+    };
     for (const ev of eventLog) {
       const bucket = preEventByClass[ev.classification];
+      const tBucket = trajByClass[ev.classification];
       if (!bucket) continue;
       const history = ivHistory[ev.ticker];
       if (!Array.isArray(history) || history.length === 0) continue;
       // Point-in-time: only records strictly before the event date, with valid combined IV.
       const priorRecords = history.filter(r => r && r.date && combineHistRecord(r) && r.date < ev.eventDate);
       if (priorRecords.length < PRE_EVENT_MIN_HIST) continue;
-      // Latest of those is the "pre-event snapshot" to be ranked.
       priorRecords.sort((a, b) => a.date.localeCompare(b.date));
-      const prior = combineHistRecord(priorRecords[priorRecords.length - 1]);
-      // Build historical series from the point-in-time set (includes the prior itself).
-      const callIVs = [], putIVs = [], callSpreads = [], putSpreads = [];
+      // Ranking population: the full strictly-before-event series. This is the same
+      // population the single-snapshot method ranked the day-before snapshot against
+      // (which already included the snapshot itself), so every window snapshot —
+      // all within ~a week — is ranked consistently and the ≥10 min-history
+      // guarantee is preserved for T-2 / T-3 as well.
+      const callIVs = [], putIVs = [], atmCallIVs = [], atmPutIVs = [], callSpreads = [], putSpreads = [];
       for (const r of priorRecords) {
         const e = combineHistRecord(r);
         if (!e) continue;
         if (e.callIV > 0) callIVs.push(e.callIV);
         if (e.putIV > 0) putIVs.push(e.putIV);
+        if (e.atmCallIV != null && e.atmCallIV > 0) atmCallIVs.push(e.atmCallIV);
+        if (e.atmPutIV != null && e.atmPutIV > 0) atmPutIVs.push(e.atmPutIV);
         if (e.callIV != null && e.atmCallIV != null) callSpreads.push(e.callIV - e.atmCallIV);
         if (e.putIV != null && e.atmPutIV != null) putSpreads.push(e.putIV - e.atmPutIV);
       }
-      const cR = prior.callIV > 0 ? rankIn(callIVs, prior.callIV) : null;
-      const pR = prior.putIV > 0 ? rankIn(putIVs, prior.putIV) : null;
-      const cSR = (prior.callIV != null && prior.atmCallIV != null) ? rankIn(callSpreads, prior.callIV - prior.atmCallIV) : null;
-      const pSR = (prior.putIV != null && prior.atmPutIV != null) ? rankIn(putSpreads, prior.putIV - prior.atmPutIV) : null;
-      if (cR != null) bucket.callIVRanks.push(cR);
-      if (pR != null) bucket.putIVRanks.push(pR);
-      if (cSR != null) bucket.callSpreadRanks.push(cSR);
-      if (pSR != null) bucket.putSpreadRanks.push(pSR);
+      const ranksOf = (p) => ({
+        callOtm: p.callIV > 0 ? rankIn(callIVs, p.callIV) : null,
+        callAtm: (p.atmCallIV != null && p.atmCallIV > 0) ? rankIn(atmCallIVs, p.atmCallIV) : null,
+        callSpr: (p.callIV != null && p.atmCallIV != null) ? rankIn(callSpreads, p.callIV - p.atmCallIV) : null,
+        putOtm: p.putIV > 0 ? rankIn(putIVs, p.putIV) : null,
+        putAtm: (p.atmPutIV != null && p.atmPutIV > 0) ? rankIn(atmPutIVs, p.atmPutIV) : null,
+        putSpr: (p.putIV != null && p.atmPutIV != null) ? rankIn(putSpreads, p.putIV - p.atmPutIV) : null,
+      });
+      // Build the window most-recent-first, walking back only while the gap to the
+      // previously accepted date stays within tolerance. A data gap truncates the
+      // window rather than mislabeling, e.g., a 5-day-stale record as "T-2".
+      const window = [];
+      const dvWindow = [];
+      let prevDate = ev.eventDate;
+      for (let i = priorRecords.length - 1; i >= 0 && window.length < PE_WINDOW; i--) {
+        const d = priorRecords[i].date;
+        if (dayDiff(d, prevDate) > PE_MAX_GAP_DAYS) break;
+        window.push(ranksOf(combineHistRecord(priorRecords[i]))); // [0]=T-1, [1]=T-2, [2]=T-3
+        dvWindow.push(recTotalDV(priorRecords[i]));
+        prevDate = d;
+      }
+      if (window.length === 0) continue;
+      // #1 Denoise: per-event mean of each metric's rank across the window. Still one
+      // observation per event, so cross-event independence (and n) is preserved.
+      const peLvl = {}, peSlp = {};
+      for (const m of PE_METRICS) {
+        const vals = window.map(w => w[m]).filter(v => v != null);
+        if (vals.length) {
+          const mean = vals.reduce((s, v) => s + v, 0) / vals.length;
+          bucket[m].push(mean);
+          peLvl[m] = mean;
+        } else peLvl[m] = null;
+        // Slope across the available window (most-recent − oldest); >0 = ramping in.
+        const a = window[0][m], b = window[window.length - 1][m];
+        peSlp[m] = (window.length >= 2 && a != null && b != null) ? a - b : null;
+      }
+      // Option $vol change across the same window (T-1 vs T-oldest), as a percent.
+      const dvA = dvWindow[0], dvB = dvWindow[dvWindow.length - 1];
+      const dvDelta = (dvWindow.length >= 2 && dvA != null && dvB != null && dvB > 0) ? ((dvA - dvB) / dvB) * 100 : null;
+      peEventFeatures.push({ cls: ev.classification, lvl: peLvl, slp: peSlp, dvDelta });
+      const prevSlope = peSlopeByTicker[ev.ticker];
+      if (!prevSlope || ev.eventDate > prevSlope.eventDate) {
+        peSlopeByTicker[ev.ticker] = { eventDate: ev.eventDate, callAtm: peSlp.callAtm, callSpr: peSlp.callSpr, dvDelta };
+      }
+      // #2 Trajectory: keep each slot separate for the term-structure view.
+      const slots = ['t1', 't2', 't3'];
+      for (let s = 0; s < window.length; s++) {
+        for (const m of PE_METRICS) {
+          const v = window[s][m];
+          if (v != null) tBucket[m][slots[s]].push(v);
+        }
+      }
     }
     const meanOf = (arr) => {
       if (!arr || arr.length === 0) return null;
       return arr.reduce((s, v) => s + v, 0) / arr.length;
     };
+    const trajStat = (arr) => ({ mean: meanOf(arr), n: arr.length });
+    // Rank distribution: 20 bins of width 5 spanning 0 … 100 (for the expandable per-class detail).
+    const PE_HIST_MIN = 0, PE_HIST_BIN_W = 5, PE_HIST_NBINS = 20;
+    const peHistOf = (vals) => {
+      const counts = new Array(PE_HIST_NBINS).fill(0);
+      for (const v of vals) {
+        let idx = Math.floor((v - PE_HIST_MIN) / PE_HIST_BIN_W);
+        if (idx < 0) idx = 0;
+        if (idx >= PE_HIST_NBINS) idx = PE_HIST_NBINS - 1;
+        counts[idx]++;
+      }
+      return counts;
+    };
     const preEventStats = {};
     for (const [cls, data] of Object.entries(preEventByClass)) {
       preEventStats[cls] = {
-        callIVRank: meanOf(data.callIVRanks),
-        putIVRank: meanOf(data.putIVRanks),
-        callSpreadRank: meanOf(data.callSpreadRanks),
-        putSpreadRank: meanOf(data.putSpreadRanks),
-        nCallIV: data.callIVRanks.length,
-        nPutIV: data.putIVRanks.length,
-        nCallSpread: data.callSpreadRanks.length,
-        nPutSpread: data.putSpreadRanks.length,
-        n: Math.max(data.callIVRanks.length, data.putIVRanks.length, data.callSpreadRanks.length, data.putSpreadRanks.length),
+        callOtmMean: meanOf(data.callOtm), callOtmN: data.callOtm.length, callOtmHist: peHistOf(data.callOtm),
+        callAtmMean: meanOf(data.callAtm), callAtmN: data.callAtm.length, callAtmHist: peHistOf(data.callAtm),
+        callSprMean: meanOf(data.callSpr), callSprN: data.callSpr.length, callSprHist: peHistOf(data.callSpr),
+        putOtmMean: meanOf(data.putOtm), putOtmN: data.putOtm.length, putOtmHist: peHistOf(data.putOtm),
+        putAtmMean: meanOf(data.putAtm), putAtmN: data.putAtm.length, putAtmHist: peHistOf(data.putAtm),
+        putSprMean: meanOf(data.putSpr), putSprN: data.putSpr.length, putSprHist: peHistOf(data.putSpr),
+        n: Math.max(data.callOtm.length, data.callAtm.length, data.callSpr.length, data.putOtm.length, data.putAtm.length, data.putSpr.length),
+        histMin: PE_HIST_MIN, histBinW: PE_HIST_BIN_W, histNBins: PE_HIST_NBINS,
+        traj: (() => {
+          const t = trajByClass[cls], o = {};
+          for (const m of PE_METRICS) o[m] = { t1: trajStat(t[m].t1), t2: trajStat(t[m].t2), t3: trajStat(t[m].t3) };
+          return o;
+        })(),
       };
     }
+
+    // ── Pre-Event supervised contrast: positive vs negative outcomes, pooling the
+    // surprising and anticipated classes by direction so all directional events count.
+    // Answers "which IV combination precedes which eventual direction".
+    const preEventContrast = (() => {
+      const featDefs = [];
+      for (const m of PE_METRICS) featDefs.push({ key: m, group: 'lvl' });
+      for (const m of PE_METRICS) featDefs.push({ key: m, group: 'slp' });
+      featDefs.push({ key: 'dvDelta', group: 'dv' });
+      const labelOf = (m) => ({
+        callOtm: 'Call OTM', callAtm: 'Call ATM', callSpr: 'Call Spr',
+        putOtm: 'Put OTM', putAtm: 'Put ATM', putSpr: 'Put Spr',
+      }[m]);
+      const fLabel = (d) => (d.group === 'dv' ? 'Opt $Vol Δ' : labelOf(d.key) + (d.group === 'slp' ? ' Δ' : ''));
+      const rawVal = (ev, d) => (d.group === 'dv' ? ev.dvDelta : d.group === 'lvl' ? ev.lvl[d.key] : ev.slp[d.key]);
+
+      // Column means over all events that have the value (for imputation).
+      const colMean = featDefs.map((d) => {
+        const vs = peEventFeatures.map((e) => rawVal(e, d)).filter((v) => v != null);
+        return vs.length ? vs.reduce((s, v) => s + v, 0) / vs.length : null;
+      });
+      const usable = featDefs.map((_, j) => colMean[j] != null);
+      const cols = featDefs.map((d, j) => ({ d, j })).filter(({ j }) => usable[j]);
+      if (peEventFeatures.length < 30 || cols.length < 2) {
+        return { ok: false, reason: 'Not enough events with pre-event feature vectors yet.' };
+      }
+      let missCells = 0, totalCells = 0;
+      const matAll = peEventFeatures.map((e) => cols.map(({ d, j }) => {
+        const v = rawVal(e, d);
+        totalCells++;
+        if (v == null) { missCells++; return colMean[j]; }
+        return v;
+      }));
+
+      // Univariate Welch contrast on raw (un-imputed) values — no imputation bias.
+      // Grouped by eventual direction: positive (surprising + anticipated) vs
+      // negative (surprising + anticipated), so the anticipated classes contribute n.
+      const posIdx = [], negIdx = [];
+      peEventFeatures.forEach((e, i) => {
+        if (e.cls === 'surprising_positive' || e.cls === 'positive_anticipated') posIdx.push(i);
+        else if (e.cls === 'surprising_negative' || e.cls === 'negative_anticipated') negIdx.push(i);
+      });
+      if (posIdx.length < 20 || negIdx.length < 20) {
+        return { ok: false, reason: `Too few directional events (Pos ${posIdx.length}, Neg ${negIdx.length}; need ≥20 each).` };
+      }
+      const uni = cols.map(({ d }) => {
+        const a = posIdx.map((i) => rawVal(peEventFeatures[i], d)).filter((v) => v != null);
+        const b = negIdx.map((i) => rawVal(peEventFeatures[i], d)).filter((v) => v != null);
+        if (a.length < 10 || b.length < 10) return null;
+        const w = peWelch(a, b);
+        return { label: fLabel(d), group: d.group, meanPos: w.meanA, meanNeg: w.meanB, diff: w.diff, d: w.d, p: w.p, nPos: a.length, nNeg: b.length };
+      }).filter(Boolean).sort((x, y) => Math.abs(y.d) - Math.abs(x.d));
+
+      // Multivariate logistic on standardized imputed matrix (positive vs negative direction).
+      const subRows = [...posIdx, ...negIdx].map((i) => matAll[i]);
+      const subY = [...posIdx.map(() => 1), ...negIdx.map(() => 0)];
+      const { Z: subZ, mean: subMean, std: subStd } = peStandardize(subRows);
+      const model = peLogisticFit(subZ, subY, { iters: 1000, lr: 0.15, l2: 1.0 });
+      const inScores = subZ.map((r) => peSigmoidScore(model, r));
+      const auc = peAUC(inScores, subY);
+      const cvAuc = peCVAUC(subZ, subY, 5, { iters: 1000, lr: 0.15, l2: 1.0 });
+      const coefs = cols.map(({ d }, k) => ({ label: fLabel(d), w: model.w[k] }))
+        .sort((x, y) => Math.abs(y.w) - Math.abs(x.w));
+
+      return {
+        ok: true,
+        uni,
+        logit: { coefs, auc, cvAuc, nPos: posIdx.length, nNeg: negIdx.length, missFrac: totalCells ? missCells / totalCells : 0 },
+      };
+    })();
 
     // IV Profile by Daily Return Bucket: for every (ticker, day T) in IV history, rank that
     // day's IV/spread against the ticker's full history and pair with day T+1's return.
@@ -2034,8 +2312,12 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
         const pR = today.putIV > 0 ? rankIn(putIVs, today.putIV) : null;
         const cSR = (today.callIV != null && today.atmCallIV != null) ? rankIn(callSpreads, today.callIV - today.atmCallIV) : null;
         const pSR = (today.putIV != null && today.atmPutIV != null) ? rankIn(putSpreads, today.putIV - today.atmPutIV) : null;
-        if (cR == null && pR == null && cSR == null && pSR == null) continue;
-        perDay.push({ signedReturn: next.dailyReturn, cR, pR, cSR, pSR });
+        // Per-day weighted-OTM-IV rank minus spread rank (range -100 to +100, neutral = 0);
+        // these are then averaged across the bucket. ATM IV rank is not used.
+        const callAvg = (cR != null && cSR != null) ? cR - cSR : null;
+        const putAvg = (pR != null && pSR != null) ? pR - pSR : null;
+        if (callAvg == null && putAvg == null) continue;
+        perDay.push({ signedReturn: next.dailyReturn, callAvg, putAvg });
       }
     }
     let preEventByReturnBucket = null;
@@ -2043,27 +2325,26 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       perDay.sort((a, b) => a.signedReturn - b.signedReturn);
       const mid = Math.floor(perDay.length / 2);
       const makeBucket = (slice) => {
-        const cR = slice.map(e => e.cR).filter(v => v != null);
-        const pR = slice.map(e => e.pR).filter(v => v != null);
-        const cSR = slice.map(e => e.cSR).filter(v => v != null);
-        const pSR = slice.map(e => e.pSR).filter(v => v != null);
+        const callAvg = slice.map(e => e.callAvg).filter(v => v != null);
+        const putAvg = slice.map(e => e.putAvg).filter(v => v != null);
         return {
           n: slice.length,
           minReturn: slice[0].signedReturn,
           maxReturn: slice[slice.length - 1].signedReturn,
-          callIVRank: meanOf(cR), putIVRank: meanOf(pR),
-          callSpreadRank: meanOf(cSR), putSpreadRank: meanOf(pSR),
-          nCallIV: cR.length, nPutIV: pR.length, nCallSpread: cSR.length, nPutSpread: pSR.length,
+          callAvgRank: meanOf(callAvg), putAvgRank: meanOf(putAvg),
+          nCallAvg: callAvg.length, nPutAvg: putAvg.length,
         };
       };
-      preEventByReturnBucket = { low: makeBucket(perDay.slice(0, mid)), high: makeBucket(perDay.slice(mid)) };
+      const lo = perDay.slice(0, mid), hi = perDay.slice(mid);
+      preEventByReturnBucket = { low: makeBucket(lo), high: makeBucket(hi) };
     }
 
     // Generate HTML results page
     const currentFavorites = loadFavorites();
     const currentSuperFavorites = loadSuperFavorites();
     const currentNotes = loadNotes();
-    const html = generateScreeningHTML(result.allTickers, tickers.length, config, ivHistoryForHTML, currentFavorites, preEventStats, currentNotes, preEventByReturnBucket, currentSuperFavorites);
+    const currentToDelete = loadToDelete();
+    const html = generateScreeningHTML(result.allTickers, tickers.length, config, ivHistoryForHTML, currentFavorites, preEventStats, currentNotes, preEventByReturnBucket, currentSuperFavorites, preEventContrast, peSlopeByTicker, currentToDelete);
 
     // Save HTML for "Latest Run Results" (alias) and a timestamped snapshot in ci/screening-runs/
     const screenResultsPath = path.join(__dirname, 'ci', 'screening-results.html');
@@ -2294,6 +2575,26 @@ ipcMain.handle('get-favorites', async () => {
   return { favorites: loadFavorites(), superFavorites: loadSuperFavorites() };
 });
 
+const TO_DELETE_PATH = path.join(__dirname, 'ci', 'screening-to-delete.json');
+
+function loadToDelete() {
+  try { return JSON.parse(require('fs').readFileSync(TO_DELETE_PATH, 'utf-8')); } catch (_) { return []; }
+}
+
+function saveToDelete(list) {
+  require('fs').writeFileSync(TO_DELETE_PATH, JSON.stringify(list, null, 2) + '\n', 'utf-8');
+}
+
+// Toggles a ticker's "to delete" flag on/off (independent of favorite state).
+ipcMain.handle('toggle-delete', async (event, ticker) => {
+  const list = loadToDelete();
+  const idx = list.indexOf(ticker);
+  if (idx >= 0) list.splice(idx, 1);
+  else list.push(ticker);
+  saveToDelete(list);
+  return { toDelete: list };
+});
+
 const NOTES_PATH = path.join(__dirname, 'ci', 'screening-notes.json');
 
 function loadNotes() {
@@ -2320,7 +2621,7 @@ ipcMain.handle('save-note', async (event, ticker, note) => {
   return { ok: true, notes };
 });
 
-function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData = {}, favorites = [], preEventStats = {}, notes = {}, preEventByReturnBucket = null, superFavorites = []) {
+function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData = {}, favorites = [], preEventStats = {}, notes = {}, preEventByReturnBucket = null, superFavorites = [], preEventContrast = null, peSlopeByTicker = {}, toDelete = []) {
   const classColors = {
     surprising_positive: '#4caf50',
     positive_anticipated: '#8bc34a',
@@ -2338,6 +2639,7 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
   const hitCount = allTickers.filter(h => h.classification).length;
   const favSet = new Set(favorites);
   const superFavSet = new Set(superFavorites);
+  const deleteSet = new Set(toDelete);
 
   // Combine IV from up to 3 expirations, weighted by dollar volume per expiration.
   // Single-pool combination across up to 3 nearest expirations.
@@ -2462,18 +2764,22 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
   }
   for (const [ticker, records] of Object.entries(ivHistoryData)) {
     if (!Array.isArray(records) || records.length < MIN_HIST_RECORDS) continue;
-    const callIVs = [], putIVs = [], callSpreads = [], putSpreads = [];
+    const callIVs = [], putIVs = [], callSpreads = [], putSpreads = [], atmCallIVs = [], atmPutIVs = [];
     for (const r of records) {
       const e = combineHistRecord(r);
       if (!e) continue;
       if (e.callIV > 0) callIVs.push(e.callIV);
       if (e.putIV > 0) putIVs.push(e.putIV);
+      if (e.atmCallIV != null && e.atmCallIV > 0) atmCallIVs.push(e.atmCallIV);
+      if (e.atmPutIV != null && e.atmPutIV > 0) atmPutIVs.push(e.atmPutIV);
       if (e.callIV > 0 && e.atmCallIV != null) callSpreads.push(e.callIV - e.atmCallIV);
       if (e.putIV > 0 && e.atmPutIV != null) putSpreads.push(e.putIV - e.atmPutIV);
     }
     ivHistStats[ticker] = {
       callIVs: callIVs.length >= MIN_HIST_RECORDS ? callIVs : null,
       putIVs: putIVs.length >= MIN_HIST_RECORDS ? putIVs : null,
+      atmCallIVs: atmCallIVs.length >= MIN_HIST_RECORDS ? atmCallIVs : null,
+      atmPutIVs: atmPutIVs.length >= MIN_HIST_RECORDS ? atmPutIVs : null,
       callSpreads: callSpreads.length >= 3 ? callSpreads : null,
       putSpreads: putSpreads.length >= 3 ? putSpreads : null,
     };
@@ -2588,15 +2894,11 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
 
   const rows = allTickers.map((h, idx) => {
     const hasEvent = !!h.classification;
-    const dateStr = h.date
-      ? (h.date instanceof Date ? h.date.toISOString().split('T')[0] : new Date(h.date).toISOString().split('T')[0])
-      : '';
     const color = classColors[h.classification] || '#ccc';
     const label = classLabels[h.classification] || '';
-    const r2 = h.rSquared != null ? h.rSquared.toFixed(3) : '—';
-    const r2Val = h.rSquared != null ? h.rSquared : -1;
     const hasChart = !!chartDataMap[h.ticker];
-    const inlineStyle = (hasEvent ? '' : 'color:#aaa;') + (hasChart ? ' cursor:pointer;' : '');
+    const isDeleted = deleteSet.has(h.ticker);
+    const inlineStyle = (hasEvent ? '' : 'color:#aaa;') + (hasChart ? ' cursor:pointer;' : '') + (isDeleted ? ' opacity:0.4; text-decoration:line-through;' : '');
 
     const mcap = h.marketCap || 0;
     const mcapStr = mcap >= 1e9 ? (mcap / 1e9).toFixed(1) + 'B' : mcap >= 1e6 ? (mcap / 1e6).toFixed(0) + 'M' : '';
@@ -2635,6 +2937,16 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     const putSpreadStr = putSpread != null ? (putSpread >= 0 ? '+' : '') + putSpread.toFixed(1) + rankTag(putSpreadRank) + sectorRankTag(putSectorRank) + tagRankTag(putTagRank, primaryTag) : '';
     const callSpreadVal = callSpread != null ? callSpread : -9999;
     const putSpreadVal = putSpread != null ? putSpread : -9999;
+    const peSl = peSlopeByTicker[h.ticker];
+    const callAtmSlope = peSl && peSl.callAtm != null ? peSl.callAtm : null;
+    const callSprSlope = peSl && peSl.callSpr != null ? peSl.callSpr : null;
+    const slopeStr = (v) => v == null ? '' : (v > 0 ? '↑ +' : v < 0 ? '↓ ' : '') + v.toFixed(0);
+    const slopeColor = (v) => v == null ? '#888' : v > 0 ? 'rgba(72,187,120,0.9)' : v < 0 ? 'rgba(245,101,101,0.9)' : '#888';
+    const callAtmSlopeVal = callAtmSlope != null ? callAtmSlope : -9999;
+    const callSprSlopeVal = callSprSlope != null ? callSprSlope : -9999;
+    const dvDelta = peSl && peSl.dvDelta != null ? peSl.dvDelta : null;
+    const dvDeltaStr = dvDelta == null ? '' : (dvDelta > 0 ? '↑ +' : dvDelta < 0 ? '↓ ' : '') + dvDelta.toFixed(0) + '%';
+    const dvDeltaVal = dvDelta != null ? dvDelta : -1e9;
 
     const isSuper = superFavSet.has(h.ticker);
     const isFav = !isSuper && favSet.has(h.ticker);
@@ -2658,25 +2970,24 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     const tagsSortKey = evTags.length > 0 ? evTags[0] : 'zzz';
 
     return `<tr ${hasChart ? `class="data-row" data-ticker="${h.ticker}"` : ''} data-tags="${tagsAttr}" style="${inlineStyle}">
-      <td style="text-align:center; width:28px; padding:4px;" data-v="${favLevel}"><span class="fav-star" data-ticker="${h.ticker}" style="cursor:pointer; font-size:1.1em; color:${favColor};" title="${favTitle}">${favGlyph}</span></td>
+      <td style="text-align:center; width:44px; padding:4px; white-space:nowrap;" data-v="${favLevel}"><span class="fav-star" data-ticker="${h.ticker}" style="cursor:pointer; font-size:1.1em; color:${favColor};" title="${favTitle}">${favGlyph}</span><span class="del-mark" data-ticker="${h.ticker}" style="cursor:pointer; font-size:0.95em; margin-left:5px; color:${isDeleted ? '#e53935' : '#555'};" title="${isDeleted ? 'Marked to delete (click to unmark)' : 'Mark to delete'}">✕</span></td>
       <td data-v="${h.ticker}" style="font-weight:bold;">${h.ticker}${hasChart ? ' <span style="font-size:0.7em;color:#aaa;">▶</span>' : ''}${noteIndicator}</td>
       <td data-v="${sec || 'zzz'}" style="font-size:0.82em; color:#888;">${sec || ''}</td>
       <td data-v="${tagsSortKey}" style="font-size:0.82em; max-width:240px;">${tagsCell}</td>
-      <td data-v="${dateStr || 'zzz'}">${dateStr}</td>
-      <td data-v="${h.gap || 0}">${h.gap ? h.gap.toFixed(2) + '%' : ''}</td>
       <td data-v="${h.percentile || 0}">${h.percentile ? h.percentile.toFixed(1) + '%' : ''}</td>
       <td data-v="${h.classification || 'zzz'}" style="color:${color}; font-weight:bold;">${label}</td>
-      <td data-v="${h.volume || 0}" style="text-align:right;">${h.volume ? (h.volume / 1e6).toFixed(1) + 'M' : ''}</td>
-      <td data-v="${r2Val}" style="text-align:right;">${r2}</td>
       <td data-v="${mcap}" style="text-align:right;">${mcapStr}</td>
       <td data-v="${optDV}" style="text-align:right;">${optDVStr}</td>
+      <td data-v="${dvDeltaVal}" style="text-align:right; color:${slopeColor(dvDelta)}; font-size:0.88em;">${dvDeltaStr}</td>
       <td data-v="${callIVVal}" style="text-align:right; color:rgba(72,187,120,0.9);">${callIVStr}</td>
       <td data-v="${callSpreadVal}" style="text-align:right; color:rgba(72,187,120,0.7); font-size:0.88em;">${callSpreadStr}</td>
+      <td data-v="${callAtmSlopeVal}" style="text-align:right; color:${slopeColor(callAtmSlope)}; font-size:0.88em;">${slopeStr(callAtmSlope)}</td>
+      <td data-v="${callSprSlopeVal}" style="text-align:right; color:${slopeColor(callSprSlope)}; font-size:0.88em;">${slopeStr(callSprSlope)}</td>
       <td data-v="${putIVVal}" style="text-align:right; color:rgba(245,101,101,0.9);">${putIVStr}</td>
       <td data-v="${putSpreadVal}" style="text-align:right; color:rgba(245,101,101,0.7); font-size:0.88em;">${putSpreadStr}</td>
     </tr>
     <tr class="chart-row" data-chart-for="${h.ticker}" style="display:none;">
-      <td colspan="16" style="padding:0; background:#1a1d23;">
+      <td colspan="15" style="padding:0; background:#1a1d23;">
         <div style="display:flex; gap:12px; align-items:stretch; margin:12px 20px 8px;">
           <div id="summary-${h.ticker}" style="flex:0 1 78ch; padding:14px 18px; background:#262a33; border-left:3px solid #4a5a8a; border-radius:6px; color:#cdd5e0; font-size:0.98em; line-height:1.65; max-height:200px; overflow-y:auto;"></div>
           <div style="flex:1 1 0; min-width:280px; height:200px; background:#262a33; border-radius:6px; padding:6px 10px;">
@@ -2774,77 +3085,201 @@ ${(() => {
   ];
   const any = order.some(([k]) => preEventStats[k] && preEventStats[k].n > 0);
   if (!any) return '';
-  // Color by deviation from 50 (neutral): >60 is elevated, <40 is suppressed.
+  // Percentile rank, range 0–100, neutral = 50 (OTM IV rank and spread rank, calls & puts).
   const fmtRank = (v, n) => {
     if (v == null || !n) return '<span style="color:#bbb;">—</span>';
     let color = '#666';
-    if (v >= 65) color = '#d32f2f';
-    else if (v >= 55) color = '#ef6c00';
-    else if (v <= 35) color = '#1565c0';
-    else if (v <= 45) color = '#0277bd';
-    return `<span style="color:${color}; font-weight:600;">p${v.toFixed(0)}</span> <span style="color:#aaa; font-size:0.85em;">(${n})</span>`;
+    if (v >= 70) color = '#d32f2f';
+    else if (v >= 60) color = '#ef6c00';
+    else if (v <= 30) color = '#1565c0';
+    else if (v <= 40) color = '#0277bd';
+    return `<span style="color:${color}; font-weight:600;">${v.toFixed(0)}</span> <span style="color:#aaa; font-size:0.85em;">(${n})</span>`;
+  };
+  const binColor = (center) => {
+    if (center >= 70) return '#d32f2f';
+    if (center >= 60) return '#ef6c00';
+    if (center <= 30) return '#1565c0';
+    if (center <= 40) return '#0277bd';
+    return '#9e9e9e';
+  };
+  const MAXH = 56; // px, tallest bar
+  const renderHist = (counts, mean, n, hMin, hBinW, hN) => {
+    if (!n || !counts) return '<div style="color:#bbb; font-size:0.85em; padding:8px 0;">—</div>';
+    const maxC = Math.max(1, ...counts);
+    const bars = counts.map((c, i) => {
+      const lo = hMin + i * hBinW;
+      const center = lo + hBinW / 2;
+      const h = c === 0 ? 0 : Math.max(2, Math.round((c / maxC) * MAXH));
+      return `<div title="[${lo}, ${lo + hBinW}) — ${c}" style="flex:1; display:flex; flex-direction:column; justify-content:flex-end;">
+        <div style="height:${h}px; background:${binColor(center)}; border-radius:1px 1px 0 0;"></div></div>`;
+    }).join('');
+    const meanPct = ((mean - hMin) / (hBinW * hN)) * 100;
+    return `<div style="position:relative; min-width:200px;">
+      <div style="display:flex; align-items:flex-end; gap:1px; height:${MAXH}px; border-bottom:1px solid #ddd;">${bars}</div>
+      <div style="position:absolute; left:50%; top:0; bottom:18px; border-left:1px dashed #ccc;"></div>
+      <div title="mean ${mean == null ? '—' : mean.toFixed(1)}" style="position:absolute; left:${meanPct}%; top:-4px; bottom:18px; border-left:2px solid #111; transform:translateX(-1px);"></div>
+      <div style="display:flex; justify-content:space-between; color:#aaa; font-size:0.72em; margin-top:2px;"><span>0</span><span>50</span><span>100</span></div>
+      <div style="color:#888; font-size:0.78em; margin-top:1px;">mean <b>${mean == null ? '—' : mean.toFixed(1)}</b> · n=${n}</div>
+    </div>`;
+  };
+  const histCell = (lab, counts, mean, nn, s) => `<div><div style="color:#888; font-size:0.78em; margin-bottom:2px;">${lab}</div>${renderHist(counts, mean, nn, s.histMin, s.histBinW, s.histNBins)}</div>`;
+  // #2 Anticipation trajectory: point-in-time rank by trading days before the event.
+  const trajCell = (st) => (st && st.mean != null && st.n)
+    ? `<td style="padding:3px 10px; text-align:right;">${fmtRank(st.mean, st.n)}</td>`
+    : '<td style="padding:3px 10px; text-align:right; color:#bbb;">—</td>';
+  const trajRow = (lab, tr) => {
+    const slope = (tr && tr.t1.mean != null && tr.t3.mean != null) ? tr.t1.mean - tr.t3.mean : null;
+    const slopeCell = slope == null
+      ? '<td style="padding:3px 10px; text-align:right; color:#bbb;">—</td>'
+      : `<td style="padding:3px 10px; text-align:right; font-weight:600; color:${slope >= 8 ? '#d32f2f' : slope <= -8 ? '#1565c0' : '#666'};">${slope >= 0 ? '+' : ''}${slope.toFixed(0)}</td>`;
+    return `<tr><td style="padding:3px 10px; color:#888;">${lab}</td>${trajCell(tr && tr.t3)}${trajCell(tr && tr.t2)}${trajCell(tr && tr.t1)}${slopeCell}</tr>`;
+  };
+  const trajTable = (s) => {
+    if (!s.traj) return '';
+    const ms = [['callOtm', 'Call OTM'], ['callAtm', 'Call ATM'], ['callSpr', 'Call Spr'], ['putOtm', 'Put OTM'], ['putAtm', 'Put ATM'], ['putSpr', 'Put Spr']];
+    const body = ms.map(([m, l]) => trajRow(l, s.traj[m])).join('');
+    return `<div style="margin-top:12px;">
+      <div style="color:#888; font-size:0.78em; margin-bottom:3px;">Anticipation trajectory — point-in-time rank by trading days before the event (slope = T-1 − T-3; &gt;0 = IV ramping into the event, &lt;0 = bleeding off)</div>
+      <table style="border-collapse:collapse; font-size:0.9em;">
+        <thead><tr style="color:#999; font-size:0.78em; text-transform:uppercase;">
+          <th style="padding:3px 10px; text-align:left;">Metric</th>
+          <th style="padding:3px 10px; text-align:right;">T-3</th>
+          <th style="padding:3px 10px; text-align:right;">T-2</th>
+          <th style="padding:3px 10px; text-align:right;">T-1</th>
+          <th style="padding:3px 10px; text-align:right;">Slope</th>
+        </tr></thead><tbody>${body}</tbody>
+      </table></div>`;
   };
   const rows = order.map(([k, label, color]) => {
     const s = preEventStats[k] || {};
     const n = s.n || 0;
-    const dim = n === 0 ? ' style="color:#bbb;"' : '';
-    return `<tr${dim}>
-      <td style="padding:6px 10px; font-weight:bold; color:${color};">${label}</td>
-      <td style="padding:6px 10px; text-align:right;">${fmtRank(s.callIVRank, s.nCallIV)}</td>
-      <td style="padding:6px 10px; text-align:right;">${fmtRank(s.putIVRank, s.nPutIV)}</td>
-      <td style="padding:6px 10px; text-align:right;">${fmtRank(s.callSpreadRank, s.nCallSpread)}</td>
-      <td style="padding:6px 10px; text-align:right;">${fmtRank(s.putSpreadRank, s.nPutSpread)}</td>
+    if (n === 0) {
+      return `<tr style="color:#bbb;">
+        <td style="padding:6px 10px 6px 24px; font-weight:bold; color:${color};">${label}</td>
+        <td style="padding:6px 10px; text-align:right;">—</td>
+        <td style="padding:6px 10px; text-align:right;">—</td>
+        <td style="padding:6px 10px; text-align:right;">—</td>
+        <td style="padding:6px 10px; text-align:right;">—</td>
+        <td style="padding:6px 10px; text-align:right;">—</td>
+        <td style="padding:6px 10px; text-align:right;">—</td>
+      </tr>`;
+    }
+    const toggle = `var d=document.getElementById('pe-d-${k}');var o=d.style.display==='none';d.style.display=o?'':'none';this.querySelector('.pe-caret').textContent=o?'▾':'▸';`;
+    return `<tr style="cursor:pointer;" onclick="${toggle}" title="Click to show the distributions">
+      <td style="padding:6px 10px; font-weight:bold; color:${color};"><span class="pe-caret" style="display:inline-block; width:14px; color:#999;">▸</span>${label}</td>
+      <td style="padding:6px 10px; text-align:right;">${fmtRank(s.callOtmMean, s.callOtmN)}</td>
+      <td style="padding:6px 10px; text-align:right;">${fmtRank(s.callAtmMean, s.callAtmN)}</td>
+      <td style="padding:6px 10px; text-align:right;">${fmtRank(s.callSprMean, s.callSprN)}</td>
+      <td style="padding:6px 10px; text-align:right;">${fmtRank(s.putOtmMean, s.putOtmN)}</td>
+      <td style="padding:6px 10px; text-align:right;">${fmtRank(s.putAtmMean, s.putAtmN)}</td>
+      <td style="padding:6px 10px; text-align:right;">${fmtRank(s.putSprMean, s.putSprN)}</td>
+    </tr>
+    <tr id="pe-d-${k}" style="display:none;">
+      <td colspan="7" style="padding:4px 10px 12px 24px; background:#fafafa;">
+        <div style="display:flex; gap:24px; flex-wrap:wrap;">
+          ${histCell('Call OTM IV rank', s.callOtmHist, s.callOtmMean, s.callOtmN, s)}
+          ${histCell('Call ATM IV rank', s.callAtmHist, s.callAtmMean, s.callAtmN, s)}
+          ${histCell('Call spread rank', s.callSprHist, s.callSprMean, s.callSprN, s)}
+          ${histCell('Put OTM IV rank', s.putOtmHist, s.putOtmMean, s.putOtmN, s)}
+          ${histCell('Put ATM IV rank', s.putAtmHist, s.putAtmMean, s.putAtmN, s)}
+          ${histCell('Put spread rank', s.putSprHist, s.putSprMean, s.putSprN, s)}
+        </div>
+        <div style="color:#aaa; font-size:0.72em; margin-top:6px;">x-axis 0…100, 50 = neutral · dashed line = 50 · black line = mean</div>
+        ${trajTable(s)}
+      </td>
     </tr>`;
   }).join('');
   return `<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.92em;">
-    <div style="color:#666; font-weight:600; margin-bottom:4px;">Pre-Event IV Profile <span style="color:#999; font-weight:normal; font-size:0.9em;">(avg percentile rank of each pre-event snapshot within that ticker's own point-in-time history; 50 = neutral, &gt;60 = elevated, &lt;40 = suppressed)</span></div>
-    <div style="color:#aaa; font-size:0.78em; margin-bottom:6px;">Requires ≥10 history records before the event date. (n) = events contributing.</div>
+    <div style="color:#666; font-weight:600; margin-bottom:4px;">Pre-Event IV Profile <span style="color:#999; font-weight:normal; font-size:0.9em;">(per-event weighted-OTM-IV, weighted-ATM-IV and IV-spread percentile ranks within that ticker's own point-in-time history, denoised by averaging the last ≤3 contiguous daily snapshots before the event then averaged across events; range 0–100, 50 = neutral, &gt;60 = elevated, &lt;40 = suppressed)</span></div>
+    <div style="color:#aaa; font-size:0.78em; margin-bottom:6px;">Requires ≥10 history records before the event date. Headline = per-event mean of the last ≤3 contiguous daily snapshots before the event. (n) = events contributing. Click a row for distributions and the pre-event anticipation trajectory.</div>
     <table style="border-collapse:collapse;">
       <thead><tr style="color:#888; font-size:0.8em; text-transform:uppercase;">
         <th style="padding:4px 10px; text-align:left;">Classification</th>
-        <th style="padding:4px 10px; text-align:right;">Call IV</th>
-        <th style="padding:4px 10px; text-align:right;">Put IV</th>
-        <th style="padding:4px 10px; text-align:right;">C Spr</th>
-        <th style="padding:4px 10px; text-align:right;">P Spr</th>
+        <th style="padding:4px 10px; text-align:right;">Call OTM</th>
+        <th style="padding:4px 10px; text-align:right;">Call ATM</th>
+        <th style="padding:4px 10px; text-align:right;">Call Spr</th>
+        <th style="padding:4px 10px; text-align:right;">Put OTM</th>
+        <th style="padding:4px 10px; text-align:right;">Put ATM</th>
+        <th style="padding:4px 10px; text-align:right;">Put Spr</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
   </div>`;
 })()}
 ${(() => {
+  const C = preEventContrast;
+  const card = (inner) => `<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.92em;">${inner}</div>`;
+  const head = `<div style="color:#666; font-weight:600; margin-bottom:4px;">Pre-Event IV → Outcome Contrast <span style="color:#999; font-weight:normal; font-size:0.9em;">(positive vs negative outcomes — surprising + anticipated pooled by direction; tests whether the pre-event IV configuration leans toward the eventual direction. Δ = window slope feature.)</span></div>`;
+  if (!C || !C.ok) {
+    return card(`${head}<div style="color:#aaa; font-size:0.85em;">${C ? C.reason : 'No data.'}</div>`);
+  }
+  // Effect-size / coefficient coloring: matches the Pre-Event panel's rank palette
+  // — red/orange = elevated toward S+, blue = leaning toward S−, gray = weak.
+  const dColor = (v) => {
+    const a = Math.abs(v);
+    if (v > 0) return a >= 0.5 ? '#d32f2f' : a >= 0.2 ? '#ef6c00' : '#9e9e9e';
+    return a >= 0.5 ? '#1565c0' : a >= 0.2 ? '#0277bd' : '#9e9e9e';
+  };
+  const fmtP = (p) => p < 0.001 ? '&lt;0.001' : p.toFixed(3);
+  const uniRows = C.uni.map((u) => `<tr>
+    <td style="padding:5px 10px; ${u.group === 'slp' ? 'color:#888;' : 'font-weight:600;'}">${u.label}</td>
+    <td style="padding:5px 10px; text-align:right;">${u.meanPos.toFixed(1)}</td>
+    <td style="padding:5px 10px; text-align:right;">${u.meanNeg.toFixed(1)}</td>
+    <td style="padding:5px 10px; text-align:right; color:${dColor(u.diff)};">${u.diff >= 0 ? '+' : ''}${u.diff.toFixed(1)}</td>
+    <td style="padding:5px 10px; text-align:right; font-weight:600; color:${dColor(u.d)};">${u.d >= 0 ? '+' : ''}${u.d.toFixed(2)}</td>
+    <td style="padding:5px 10px; text-align:right; ${u.p < 0.05 ? 'font-weight:600; color:#333;' : 'color:#aaa;'}">${fmtP(u.p)}</td>
+  </tr>`).join('');
+  const uniTable = `<div style="color:#888; font-size:0.78em; margin:8px 0 3px;">Per-feature contrast (raw, un-imputed). Cohen's d = standardized effect size; |d|≈0.2 small, 0.5 medium. Sorted by |d|.</div>
+    <table style="border-collapse:collapse;">
+      <thead><tr style="color:#888; font-size:0.78em; text-transform:uppercase;">
+        <th style="padding:4px 10px; text-align:left;">Feature</th>
+        <th style="padding:4px 10px; text-align:right;">Pos mean</th>
+        <th style="padding:4px 10px; text-align:right;">Neg mean</th>
+        <th style="padding:4px 10px; text-align:right;">Δ</th>
+        <th style="padding:4px 10px; text-align:right;">Cohen's d</th>
+        <th style="padding:4px 10px; text-align:right;">p</th>
+      </tr></thead><tbody>${uniRows}</tbody>
+    </table>`;
+
+  return card(`${head}${uniTable}`);
+})()}
+${(() => {
   if (!preEventByReturnBucket) return '';
+  const fmtRet = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
   const fmtRank = (v, n) => {
     if (v == null || !n) return '<span style="color:#bbb;">—</span>';
     let color = '#666';
-    if (v >= 65) color = '#d32f2f';
-    else if (v >= 55) color = '#ef6c00';
-    else if (v <= 35) color = '#1565c0';
-    else if (v <= 45) color = '#0277bd';
-    return `<span style="color:${color}; font-weight:600;">p${v.toFixed(0)}</span> <span style="color:#aaa; font-size:0.85em;">(${n})</span>`;
+    if (v >= 30) color = '#d32f2f';
+    else if (v >= 15) color = '#ef6c00';
+    else if (v <= -30) color = '#1565c0';
+    else if (v <= -15) color = '#0277bd';
+    return `<span style="color:${color}; font-weight:600;">${v.toFixed(0)}</span> <span style="color:#aaa; font-size:0.85em;">(${n})</span>`;
   };
-  const fmtRet = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
+  const bLabel = (label, b) => `${label} <span style="color:#999; font-weight:normal; font-size:0.85em;">[${fmtRet(b.minReturn)} … ${fmtRet(b.maxReturn)}]</span> <span style="color:#aaa; font-size:0.85em;">n=${b.n}</span>`;
   const buckets = [
-    ['low', 'Low Returns', '#1565c0', preEventByReturnBucket.low],
-    ['high', 'High Returns', '#d32f2f', preEventByReturnBucket.high],
+    ['Low Returns', '#1565c0', 'low'],
+    ['High Returns', '#d32f2f', 'high'],
   ];
-  const rows = buckets.map(([, label, color, b]) => `<tr>
-    <td style="padding:6px 10px; font-weight:bold; color:${color};">${label} <span style="color:#999; font-weight:normal; font-size:0.85em;">[${fmtRet(b.minReturn)} … ${fmtRet(b.maxReturn)}]</span> <span style="color:#aaa; font-size:0.85em;">n=${b.n}</span></td>
-    <td style="padding:6px 10px; text-align:right;">${fmtRank(b.callIVRank, b.nCallIV)}</td>
-    <td style="padding:6px 10px; text-align:right;">${fmtRank(b.putIVRank, b.nPutIV)}</td>
-    <td style="padding:6px 10px; text-align:right;">${fmtRank(b.callSpreadRank, b.nCallSpread)}</td>
-    <td style="padding:6px 10px; text-align:right;">${fmtRank(b.putSpreadRank, b.nPutSpread)}</td>
-  </tr>`).join('');
+
+  // Original: Call/Put Δrank = R(OTM) - R(spread), averaged per bucket.
+  const rows1 = buckets.map(([label, color, k]) => {
+    const b = preEventByReturnBucket[k];
+    return `<tr>
+      <td style="padding:6px 10px; font-weight:bold; color:${color};">${bLabel(label, b)}</td>
+      <td style="padding:6px 10px; text-align:right;">${fmtRank(b.callAvgRank, b.nCallAvg)}</td>
+      <td style="padding:6px 10px; text-align:right;">${fmtRank(b.putAvgRank, b.nPutAvg)}</td>
+    </tr>`;
+  }).join('');
+
   return `<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.92em;">
-    <div style="color:#666; font-weight:600; margin-bottom:4px;">IV Profile by Daily Return Bucket <span style="color:#999; font-weight:normal; font-size:0.9em;">(median split on next-day return; average IV/spread ranks from the day before — tests if high rank precedes high vs low next-day return)</span></div>
+    <div style="color:#666; font-weight:600; margin-bottom:4px;">IV Profile by Daily Return Bucket <span style="color:#999; font-weight:normal; font-size:0.9em;">(median split on next-day return; per-day weighted-OTM-IV rank minus spread rank from the day before, averaged across the bucket — range -100 to +100, 0 = neutral; tests if high rank precedes high vs low next-day return)</span></div>
     <table style="border-collapse:collapse;">
       <thead><tr style="color:#888; font-size:0.8em; text-transform:uppercase;">
         <th style="padding:4px 10px; text-align:left;">Bucket</th>
-        <th style="padding:4px 10px; text-align:right;">Call IV</th>
-        <th style="padding:4px 10px; text-align:right;">Put IV</th>
-        <th style="padding:4px 10px; text-align:right;">C Spr</th>
-        <th style="padding:4px 10px; text-align:right;">P Spr</th>
+        <th style="padding:4px 10px; text-align:right;">Call &Delta;rank</th>
+        <th style="padding:4px 10px; text-align:right;">Put &Delta;rank</th>
       </tr></thead>
-      <tbody>${rows}</tbody>
+      <tbody>${rows1}</tbody>
     </table>
   </div>`;
 })()}
@@ -2879,20 +3314,19 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
 </div>
 <table id="screen-table">
 <thead><tr>
-  <th style="width:28px; text-align:center; padding:4px;"><span class="sort-arrow"></span></th>
+  <th style="width:44px; text-align:center; padding:4px;"><span class="sort-arrow"></span></th>
   <th>Ticker<span class="sort-arrow"></span></th>
   <th>Sector<span class="sort-arrow"></span></th>
   <th>Tags<span class="sort-arrow"></span></th>
-  <th>Date<span class="sort-arrow"></span></th>
-  <th>Gap %<span class="sort-arrow"></span></th>
   <th>Percentile<span class="sort-arrow"></span></th>
   <th>Classification<span class="sort-arrow"></span></th>
-  <th style="text-align:right;">Volume<span class="sort-arrow"></span></th>
-  <th style="text-align:right;">R&sup2; (SPY)<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Mkt Cap<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Opt $ Vol<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Pre-event change in total option dollar volume across the same window as the IV Δ columns: (T-1 − T-oldest) / T-oldest, as a percent. >0 = flow building into the event.">$Vol Δ<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Call IV<span class="sort-arrow"></span></th>
   <th style="text-align:right;" title="Weighted OTM IV minus ATM IV. (pN) = self-history rank, [sN] = sector rank, {tN} = top-tag cohort rank">C Spr<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Pre-event slope of ATM call IV percentile rank: rank(T-1) − rank(T-oldest) over the ~3 snapshots before the event. >0 = ramping in.">ATM C Δ<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Pre-event slope of call OTM−ATM spread percentile rank: rank(T-1) − rank(T-oldest) over the ~3 snapshots before the event. >0 = ramping in.">C Spr Δ<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Put IV<span class="sort-arrow"></span></th>
   <th style="text-align:right;" title="Weighted OTM IV minus ATM IV. (pN) = self-history rank, [sN] = sector rank, {tN} = top-tag cohort rank">P Spr<span class="sort-arrow"></span></th>
 </tr></thead>
@@ -3077,6 +3511,31 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
         showFavToast('Failed to update ' + ticker, false);
       }
       delete star.dataset.busy;
+    });
+  });
+
+  document.querySelectorAll('.del-mark').forEach(mark => {
+    mark.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const ticker = mark.getAttribute('data-ticker');
+      if (!ticker || !window.electronAPI || !window.electronAPI.toggleDelete) return;
+      if (mark.dataset.busy) return;
+      mark.dataset.busy = '1';
+      try {
+        const result = await window.electronAPI.toggleDelete(ticker);
+        const isDeleted = (result.toDelete || []).includes(ticker);
+        mark.style.color = isDeleted ? '#e53935' : '#555';
+        mark.title = isDeleted ? 'Marked to delete (click to unmark)' : 'Mark to delete';
+        const row = mark.closest('tr');
+        if (row) {
+          row.style.opacity = isDeleted ? '0.4' : '';
+          row.style.textDecoration = isDeleted ? 'line-through' : '';
+        }
+        showFavToast(isDeleted ? ticker + ' marked to delete' : ticker + ' unmarked', true);
+      } catch (err) {
+        showFavToast('Failed to update ' + ticker, false);
+      }
+      delete mark.dataset.busy;
     });
   });
 
@@ -3653,15 +4112,14 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
 
               const callIVSeries = combined.map(c => c && c.callIV > 0 ? c.callIV : null);
               const putIVSeries = combined.map(c => c && c.putIV > 0 ? c.putIV : null);
-              const callSpreadSeries = combined.map(c => c && c.callIV > 0 && c.atmCallIV != null ? c.callIV - c.atmCallIV : null);
-              const putSpreadSeries = combined.map(c => c && c.putIV > 0 && c.atmPutIV != null ? c.putIV - c.atmPutIV : null);
-
+              const atmCallIVSeries = combined.map(c => c && c.atmCallIV != null && c.atmCallIV > 0 ? c.atmCallIV : null);
+              const atmPutIVSeries = combined.map(c => c && c.atmPutIV != null && c.atmPutIV > 0 ? c.atmPutIV : null);
               const lineBase = { type: 'line', borderWidth: 2, pointRadius: 2, fill: false, spanGaps: true, tension: 0.2 };
               const datasets = [
                 { ...lineBase, label: 'Call IV', data: callIVSeries, borderColor: 'rgba(72,187,120,0.95)', backgroundColor: 'rgba(72,187,120,0.95)', yAxisID: 'y' },
                 { ...lineBase, label: 'Put IV', data: putIVSeries, borderColor: 'rgba(245,101,101,0.95)', backgroundColor: 'rgba(245,101,101,0.95)', yAxisID: 'y' },
-                { ...lineBase, label: 'Call Spread (vs ATM)', data: callSpreadSeries, borderColor: 'rgba(72,187,120,0.6)', backgroundColor: 'rgba(72,187,120,0.6)', borderDash: [4, 3], yAxisID: 'y1' },
-                { ...lineBase, label: 'Put Spread (vs ATM)', data: putSpreadSeries, borderColor: 'rgba(245,101,101,0.6)', backgroundColor: 'rgba(245,101,101,0.6)', borderDash: [4, 3], yAxisID: 'y1' },
+                { ...lineBase, label: 'Call ATM IV', data: atmCallIVSeries, borderColor: 'rgba(72,187,120,0.7)', backgroundColor: 'rgba(72,187,120,0.7)', borderDash: [2, 2], pointRadius: 1, yAxisID: 'y' },
+                { ...lineBase, label: 'Put ATM IV', data: atmPutIVSeries, borderColor: 'rgba(245,101,101,0.7)', backgroundColor: 'rgba(245,101,101,0.7)', borderDash: [2, 2], pointRadius: 1, yAxisID: 'y' },
               ];
 
               ivHistChart = new Chart(histCanvas, {
@@ -3680,7 +4138,6 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
                   scales: {
                     x: { ticks: { color: '#909090', font: { size: 9 } }, grid: { color: '#2a2a4a' } },
                     y: { position: 'left', title: { display: true, text: 'IV %', color: '#909090', font: { size: 10 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } }, grid: { color: '#2a2a4a' } },
-                    y1: { position: 'right', title: { display: true, text: 'Spread %', color: '#909090', font: { size: 10 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(1) + '%'; } }, grid: { drawOnChartArea: false } },
                   },
                 },
               });
@@ -3708,7 +4165,7 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
         ascending = !ascending;
       } else {
         currentCol = colIdx;
-        ascending = (colIdx === 1 || colIdx === 5);
+        ascending = (colIdx === 1);
       }
 
       headers.forEach(h => h.classList.remove('sorted-asc', 'sorted-desc'));
@@ -3902,7 +4359,7 @@ async function initBackend() {
   priceTracker = new PriceTrackingService(database);
   stockAnalyzer = new StockAnalysisService(database);
 
-  const ibProvider = new IBOptionsProvider({ port: 4002 });
+  const ibProvider = new IBOptionsProvider({ port: 4001 });
   optionsAnalyzer = new OptionsAnalysisService(database, ibProvider);
   chronosHoldService = new ChronosHoldPeriodService(database);
   flowstateAnalyzer = new FlowstateAnalysisService(database);

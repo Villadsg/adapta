@@ -1,0 +1,100 @@
+{
+  "runId": "2026-05-13T15-19-21-793Z",
+  "hostId": "fedora",
+  "trigger": "manual",
+  "startedAt": "2026-05-13T15:19:21.793Z",
+  "finishedAt": "2026-05-13T15:19:41.535Z",
+  "status": "completed",
+  "error": null,
+  "config": {
+    "tickers": [
+      "NVO",
+      "AVAV",
+      "GMAB",
+      "QCOM",
+      "XIACY",
+      "AIR.PA",
+      "EH"
+    ],
+    "benchmark": "SPY",
+    "days": 200,
+    "minEvents": 15,
+    "eventPercentileThreshold": 92,
+    "delayBetweenTickersMs": 3000,
+    "screenTickers": [
+      "NVO",
+      "AVAV",
+      "ONDS",
+      "LEGN",
+      "FLNC",
+      "AXSM"
+    ],
+    "screenDays": 140,
+    "screenLookbackDays": 5,
+    "screenPercentileThreshold": 92,
+    "screenDelayMs": 1000,
+    "screenMaxTickers": 0
+  },
+  "counts": {
+    "bars": 672,
+    "chains": 1088,
+    "events": 48,
+    "tickers": 6
+  },
+  "tickers": [
+    {
+      "ticker": "NVO",
+      "r_squared": 0.22636556638303396,
+      "bars": 96,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "AVAV",
+      "r_squared": 0.08330816857460499,
+      "bars": 96,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "ONDS",
+      "r_squared": 0.09416904661199776,
+      "bars": 96,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "LEGN",
+      "r_squared": 0.0040994254329893565,
+      "bars": 96,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "FLNC",
+      "r_squared": 0.10344745443339953,
+      "bars": 96,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "AXSM",
+      "r_squared": 0.029134617469743995,
+      "bars": 96,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    }
+  ]
+}

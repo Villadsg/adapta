@@ -345,7 +345,7 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
       let optionsStrikes = null;
       if (createYF) {
         try {
-          const ibProvider = new IBOptionsProvider({ port: 4002 });
+          const ibProvider = new IBOptionsProvider({ port: 4001 });
           const optSvc = new OptionsAnalysisService(null, ibProvider);
           const initialFetch = await optSvc.fetchOptionsChainWithSource(ticker);
           const initialChain = initialFetch?.chain;

@@ -1,0 +1,200 @@
+{
+  "runId": "2026-05-17T21-37-02-145Z",
+  "hostId": "fedora",
+  "trigger": "manual",
+  "startedAt": "2026-05-17T21:37:02.146Z",
+  "finishedAt": "2026-05-17T21:38:04.725Z",
+  "status": "completed",
+  "error": null,
+  "config": {
+    "tickers": [
+      "NVO",
+      "AVAV",
+      "GMAB",
+      "QCOM",
+      "XIACY",
+      "AIR.PA",
+      "EH"
+    ],
+    "benchmark": "SPY",
+    "days": 200,
+    "minEvents": 15,
+    "eventPercentileThreshold": 92,
+    "delayBetweenTickersMs": 3000,
+    "screenTickers": [
+      "SEDG",
+      "FLNC",
+      "SHLS",
+      "LEGN",
+      "RUN",
+      "AAON",
+      "AXSM",
+      "JOBY",
+      "EH",
+      "NVO",
+      "AVAV",
+      "QCOM",
+      "RELY",
+      "SMCI",
+      "DOCN",
+      "ONDS"
+    ],
+    "screenDays": 140,
+    "screenLookbackDays": 5,
+    "screenPercentileThreshold": 92,
+    "screenDelayMs": 1000,
+    "screenMaxTickers": 0
+  },
+  "counts": {
+    "bars": 1632,
+    "chains": 3167,
+    "events": 128,
+    "tickers": 16
+  },
+  "tickers": [
+    {
+      "ticker": "SEDG",
+      "r_squared": 0.010445237492392456,
+      "bars": 96,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "FLNC",
+      "r_squared": 0.09836358102700227,
+      "bars": 96,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "SHLS",
+      "r_squared": 0.07408210273917093,
+      "bars": 96,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "LEGN",
+      "r_squared": 0.005359377266724308,
+      "bars": 96,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "RUN",
+      "r_squared": 0.16515608208186572,
+      "bars": 96,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "AAON",
+      "r_squared": 0.11822827602126007,
+      "bars": 96,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "AXSM",
+      "r_squared": 0.03160568818982601,
+      "bars": 96,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "JOBY",
+      "r_squared": 0.2773496372728337,
+      "bars": 96,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "EH",
+      "r_squared": 0.3530405899717375,
+      "bars": 96,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "NVO",
+      "r_squared": 0.21890800288446766,
+      "bars": 96,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "AVAV",
+      "r_squared": 0.08656520727177996,
+      "bars": 96,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "QCOM",
+      "r_squared": 0.1568032113123936,
+      "bars": 96,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "RELY",
+      "r_squared": 0.09247041859610783,
+      "bars": 96,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "SMCI",
+      "r_squared": 0.2954224074449756,
+      "bars": 96,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "DOCN",
+      "r_squared": 0.0996102968347431,
+      "bars": 96,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "ONDS",
+      "r_squared": 0.10293167396356273,
+      "bars": 96,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    }
+  ]
+}

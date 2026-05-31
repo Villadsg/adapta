@@ -1,0 +1,264 @@
+{
+  "runId": "2026-05-18T16-31-25-719Z",
+  "hostId": "fedora",
+  "trigger": "manual",
+  "startedAt": "2026-05-18T16:31:25.720Z",
+  "finishedAt": "2026-05-18T16:32:20.391Z",
+  "status": "completed",
+  "error": null,
+  "config": {
+    "tickers": [
+      "NVO",
+      "AVAV",
+      "GMAB",
+      "QCOM",
+      "XIACY",
+      "AIR.PA",
+      "EH"
+    ],
+    "benchmark": "SPY",
+    "days": 200,
+    "minEvents": 15,
+    "eventPercentileThreshold": 92,
+    "delayBetweenTickersMs": 3000,
+    "screenTickers": [
+      "SEDG",
+      "FLNC",
+      "SHLS",
+      "LEGN",
+      "RUN",
+      "AAON",
+      "AXSM",
+      "JOBY",
+      "EH",
+      "NVO",
+      "AVAV",
+      "QCOM",
+      "RELY",
+      "SMCI",
+      "DOCN",
+      "ONDS"
+    ],
+    "screenDays": 140,
+    "screenLookbackDays": 5,
+    "screenPercentileThreshold": 92,
+    "screenDelayMs": 1000,
+    "screenMaxTickers": 0
+  },
+  "counts": {
+    "bars": 1649,
+    "chains": 3167,
+    "events": 128,
+    "tickers": 16
+  },
+  "tickers": [
+    {
+      "ticker": "SEDG",
+      "r_squared": 0.013294380263259575,
+      "bars": 97,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "executive_change",
+        "earnings_beat"
+      ]
+    },
+    {
+      "ticker": "FLNC",
+      "r_squared": 0.10237259607972615,
+      "bars": 97,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "dilution",
+        "earnings_beat"
+      ]
+    },
+    {
+      "ticker": "SHLS",
+      "r_squared": 0.0781717136861092,
+      "bars": 97,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "earnings_beat",
+        "dilution"
+      ]
+    },
+    {
+      "ticker": "LEGN",
+      "r_squared": 0.005338272983185011,
+      "bars": 97,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "clinical_readout",
+        "earnings_beat"
+      ]
+    },
+    {
+      "ticker": "RUN",
+      "r_squared": 0.16845550387157715,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "earnings_beat",
+        "dilution"
+      ]
+    },
+    {
+      "ticker": "AAON",
+      "r_squared": 0.12073570669043132,
+      "bars": 97,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "earnings_beat",
+        "earnings_miss"
+      ]
+    },
+    {
+      "ticker": "AXSM",
+      "r_squared": 0.032289133863110386,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "contract_win",
+        "mna_target"
+      ]
+    },
+    {
+      "ticker": "JOBY",
+      "r_squared": 0.2795494191278797,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "dilution",
+        "insider_buying"
+      ]
+    },
+    {
+      "ticker": "EH",
+      "r_squared": 0.35520056760909857,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "analyst_downgrade_wave",
+        "dilution"
+      ]
+    },
+    {
+      "ticker": "NVO",
+      "r_squared": 0.2193688168591177,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "analyst_upgrade_wave",
+        "analyst_downgrade_wave"
+      ]
+    },
+    {
+      "ticker": "AVAV",
+      "r_squared": 0.08406657688915908,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "analyst_downgrade_wave",
+        "dilution"
+      ]
+    },
+    {
+      "ticker": "QCOM",
+      "r_squared": 0.15950193343078434,
+      "bars": 97,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "dilution",
+        "analyst_upgrade_wave"
+      ]
+    },
+    {
+      "ticker": "RELY",
+      "r_squared": 0.09741637938949699,
+      "bars": 97,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "earnings_beat",
+        "dilution"
+      ]
+    },
+    {
+      "ticker": "SMCI",
+      "r_squared": 0.2981081421100803,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "analyst_upgrade_wave",
+        "guidance_raise"
+      ]
+    },
+    {
+      "ticker": "DOCN",
+      "r_squared": 0.10410904936190424,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "dilution",
+        "earnings_beat"
+      ]
+    },
+    {
+      "ticker": "ONDS",
+      "r_squared": 0.10854420187459324,
+      "bars": 97,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "guidance_raise",
+        "analyst_downgrade_wave"
+      ]
+    }
+  ]
+}

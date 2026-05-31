@@ -79,7 +79,7 @@ async function main() {
   await database.initialize();
 
   const stockAnalyzer = new StockAnalysisService(database);
-  const ibProvider = new IBOptionsProvider({ port: 4002 });
+  const ibProvider = new IBOptionsProvider({ port: 4001 });
   const optionsAnalyzer = new OptionsAnalysisService(database, ibProvider);
 
   const sent = [];

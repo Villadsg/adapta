@@ -1,0 +1,54 @@
+{
+  "runId": "2026-05-18T17-07-07-074Z",
+  "hostId": "fedora",
+  "trigger": "manual",
+  "startedAt": "2026-05-18T17:07:07.074Z",
+  "finishedAt": "2026-05-18T17:07:10.713Z",
+  "status": "completed",
+  "error": null,
+  "config": {
+    "tickers": [
+      "NVO",
+      "AVAV",
+      "GMAB",
+      "QCOM",
+      "XIACY",
+      "AIR.PA",
+      "EH"
+    ],
+    "benchmark": "SPY",
+    "days": 200,
+    "minEvents": 15,
+    "eventPercentileThreshold": 92,
+    "delayBetweenTickersMs": 3000,
+    "screenTickers": [
+      "ONDS"
+    ],
+    "screenDays": 140,
+    "screenLookbackDays": 5,
+    "screenPercentileThreshold": 92,
+    "screenDelayMs": 1000,
+    "screenMaxTickers": 0
+  },
+  "counts": {
+    "bars": 194,
+    "chains": 163,
+    "events": 8,
+    "tickers": 1
+  },
+  "tickers": [
+    {
+      "ticker": "ONDS",
+      "r_squared": 0.10452099408218885,
+      "bars": 97,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "guidance_raise",
+        "analyst_downgrade_wave"
+      ]
+    }
+  ]
+}

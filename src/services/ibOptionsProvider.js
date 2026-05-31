@@ -43,8 +43,9 @@ const OPTIONS_EXCHANGE_MAP = {
 class IBOptionsProvider {
   constructor(options = {}) {
     this.host = options.host || '127.0.0.1';
-    this.port = options.port || 4002; // 4002 = paper trading, 4001 = live
+    this.port = options.port || 4001; // 4001 = live, 4002 = paper
     this.clientId = options.clientId || 0;
+    this.marketDataType = options.marketDataType || 3; // 1=real-time, 2=frozen, 3=delayed, 4=delayed-frozen
     this.ib = null;
     this.connected = false;
     this._nextReqId = 1000;
@@ -81,8 +82,25 @@ class IBOptionsProvider {
 
         this.ib.on(EventName.connected, () => {
           this.connected = true;
-          console.log('[IB] Connected to IB Gateway');
+          try { this.ib.reqMarketDataType(this.marketDataType); } catch (_) {}
+          console.log(`[IB] Connected to IB Gateway (marketDataType=${this.marketDataType})`);
           resolveOnce(true);
+        });
+
+        // Persistent tick listeners — dispatch by reqId so we don't leak listeners per snapshot.
+        this.ib.on(EventName.tickPrice, (id, tickType, value) => {
+          this._pendingRequests.get(id)?.onTickPrice?.(tickType, value);
+        });
+        this.ib.on(EventName.tickSize, (id, tickType, value) => {
+          this._pendingRequests.get(id)?.onTickSize?.(tickType, value);
+        });
+        // @stoqey/ib v1.5 signature: (tickerId, field, impliedVol, delta, optPrice, pvDividend, gamma, vega, theta, undPrice)
+        // Note: NO tickAttrib parameter — previously we destructured one and everything shifted by a slot.
+        this.ib.on(EventName.tickOptionComputation, (id, tickType, iv, delta, optPrice, pvDiv, gamma, vega, theta, undPrice) => {
+          this._pendingRequests.get(id)?.onTickOptComp?.(tickType, iv, delta, gamma, vega, theta);
+        });
+        this.ib.on(EventName.tickSnapshotEnd, (id) => {
+          this._pendingRequests.get(id)?.onSnapshotEnd?.();
         });
 
         this.ib.on(EventName.error, (err, code, reqId) => {
@@ -94,12 +112,19 @@ class IBOptionsProvider {
             resolveOnce(false);
             return;
           }
-          // Route errors to pending requests
+          // Informational codes — not real errors. Notably:
+          //   10167 = "displaying delayed market data" (expected with marketDataType=3)
+          //   2104/2106/2107/2108/2158 = data farm connection status messages
+          //   2100..2200 range is generally informational
+          // 10091 = partial market data permission warning (data still flows in delayed mode)
+          // 300   = cancelMktData race after a request was rejected; harmless
+          const INFO_CODES = new Set([10167, 10197, 10091, 300, 2104, 2106, 2107, 2108, 2158, 2150]);
+          if (INFO_CODES.has(code)) return;
+          // Route real errors to pending requests
           if (reqId >= 0 && this._pendingRequests.has(reqId)) {
             const req = this._pendingRequests.get(reqId);
             req.onError?.(err, code);
-          } else if (code !== 2104 && code !== 2106 && code !== 2158) {
-            // Ignore data farm connection messages
+          } else {
             console.error(`[IB] Error: code=${code}, ${err?.message || err}`);
           }
         });
@@ -235,7 +260,7 @@ class IBOptionsProvider {
    * Request a snapshot of market data for a single option contract.
    * Returns { bid, ask, last, volume, openInterest, impliedVol, delta, gamma, theta, vega }
    */
-  async _getOptionSnapshot(contract, timeoutMs = 8000) {
+  async _getOptionSnapshot(contract, timeoutMs = 6000) {
     if (!this.connected) throw new Error('Not connected');
 
     return new Promise((resolve) => {
@@ -246,70 +271,63 @@ class IBOptionsProvider {
         modelIV: 0,
       };
       let receivedTicks = 0;
+      const seenTickTypes = new Set();
+      let finished = false;
 
-      const timeout = setTimeout(() => {
-        this.ib.cancelMktData(reqId);
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timeout);
+        try { this.ib.cancelMktData(reqId); } catch (_) {}
         this._pendingRequests.delete(reqId);
+        if (process.env.IB_DEBUG_TICKS) {
+          console.log(`[IB-DEBUG] ${contract.symbol} ${contract.right} ${contract.strike} exp=${contract.lastTradeDateOrContractMonth} ticks=${receivedTicks} types=[${[...seenTickTypes].join(',')}] data=${JSON.stringify(data)}`);
+        }
         resolve(receivedTicks > 0 ? data : null);
-      }, timeoutMs);
+      };
 
-      // Tick price events
-      this.ib.on(EventName.tickPrice, (id, tickType, value) => {
-        if (id !== reqId) return;
-        receivedTicks++;
-        // TickType: 1=bid, 2=ask, 4=last, 9=close
-        if (tickType === 1) data.bid = value;
-        else if (tickType === 2) data.ask = value;
-        else if (tickType === 4) data.last = value;
-        else if (tickType === 9) data.close = value;
-      });
-
-      // Tick size events
-      this.ib.on(EventName.tickSize, (id, tickType, value) => {
-        if (id !== reqId) return;
-        receivedTicks++;
-        // TickType: 8=volume, 27=optionCallOpenInterest, 28=optionPutOpenInterest
-        if (tickType === 8) data.volume = value;
-        else if (tickType === 27 || tickType === 28) data.openInterest = value;
-      });
-
-      // Tick option computation (Greeks + IV)
-      this.ib.on(EventName.tickOptionComputation, (id, tickType, tickAttrib, iv, delta, optPrice, pvDiv, gamma, vega, theta, undPrice) => {
-        if (id !== reqId) return;
-        receivedTicks++;
-        // tickType 13 = model option computation
-        if (tickType === 13 || tickType === 10 || tickType === 11 || tickType === 12) {
-          if (iv > 0 && iv < 10) data.impliedVol = iv;  // Sanity check
-          if (delta !== undefined && Math.abs(delta) <= 1) data.delta = delta;
-          if (gamma !== undefined) data.gamma = gamma;
-          if (theta !== undefined) data.theta = theta;
-          if (vega !== undefined) data.vega = vega;
-          if (tickType === 13) data.modelIV = iv;
-        }
-      });
-
-      // Snapshot end
-      this.ib.on(EventName.tickSnapshotEnd, (id) => {
-        if (id === reqId) {
-          clearTimeout(timeout);
-          this.ib.cancelMktData(reqId);
-          this._pendingRequests.delete(reqId);
-          resolve(receivedTicks > 0 ? data : null);
-        }
-      });
+      const timeout = setTimeout(finish, timeoutMs);
 
       this._pendingRequests.set(reqId, {
-        onError: (err, code) => {
-          clearTimeout(timeout);
-          this._pendingRequests.delete(reqId);
-          // 10167 = no market data permissions, 10090 = no data
-          resolve(null);
-        }
+        debugContract: contract,
+        onTickPrice: (tickType, value) => {
+          receivedTicks++;
+          seenTickTypes.add(`price:${tickType}`);
+          if (tickType === 1 || tickType === 66) data.bid = value;
+          else if (tickType === 2 || tickType === 67) data.ask = value;
+          else if (tickType === 4 || tickType === 68) data.last = value;
+          else if (tickType === 9 || tickType === 75) data.close = value;
+        },
+        onTickSize: (tickType, value) => {
+          receivedTicks++;
+          seenTickTypes.add(`size:${tickType}=${value}`);
+          // Volume tick types: 8 (RT), 74 (delayed). OI: 27/28 (RT), 86 (delayed).
+          if (tickType === 8 || tickType === 74) data.volume = value;
+          else if (tickType === 27 || tickType === 28 || tickType === 86) data.openInterest = value;
+        },
+        onTickOptComp: (tickType, iv, delta, gamma, vega, theta) => {
+          receivedTicks++;
+          seenTickTypes.add(`opt:${tickType}`);
+          // Real-time: 10/11/12/13. Delayed: 80/81/82/83.
+          if (tickType === 10 || tickType === 11 || tickType === 12 || tickType === 13 ||
+              tickType === 80 || tickType === 81 || tickType === 82 || tickType === 83) {
+            if (iv > 0 && iv < 10) data.impliedVol = iv;
+            if (delta !== undefined && Math.abs(delta) <= 1) data.delta = delta;
+            if (gamma !== undefined) data.gamma = gamma;
+            if (theta !== undefined) data.theta = theta;
+            if (vega !== undefined) data.vega = vega;
+            if (tickType === 13 || tickType === 83) data.modelIV = iv;
+          }
+        },
+        onSnapshotEnd: finish,
+        onError: () => finish(),
       });
 
-      // Request snapshot (snapshot=true, regulatorySnapshot=false)
-      // Generic tick 106 = impliedVol, 100 = optionVolume, 101 = optionOpenInterest
-      this.ib.reqMktData(reqId, contract, '106', true, false);
+      // Streaming mode: snapshot=false, regulatorySnapshot=false.
+      // Snapshot mode (true) is unreliable with delayed data (marketDataType=3);
+      // we stream briefly and cancel via finish().
+      // Generic tick 106 = impliedVol, 100 = optionVolume, 101 = optionOpenInterest.
+      this.ib.reqMktData(reqId, contract, '100,101,106', false, false);
     });
   }
 
@@ -445,8 +463,8 @@ class IBOptionsProvider {
 
       // Fetch call and put in parallel
       const [callSnap, putSnap] = await Promise.all([
-        this._getOptionSnapshot(makeContract(OptionType.Call), 6000),
-        this._getOptionSnapshot(makeContract(OptionType.Put), 6000),
+        this._getOptionSnapshot(makeContract(OptionType.Call), 3000),
+        this._getOptionSnapshot(makeContract(OptionType.Put), 3000),
       ]);
 
       if (callSnap) {

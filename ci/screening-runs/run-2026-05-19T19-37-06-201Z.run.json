@@ -1,0 +1,68 @@
+{
+  "runId": "2026-05-19T19-37-06-201Z",
+  "hostId": "fedora",
+  "trigger": "manual",
+  "startedAt": "2026-05-19T19:37:06.201Z",
+  "finishedAt": "2026-05-19T19:37:13.242Z",
+  "status": "completed",
+  "error": null,
+  "config": {
+    "tickers": [
+      "NVO",
+      "AVAV",
+      "GMAB",
+      "QCOM",
+      "XIACY",
+      "AIR.PA",
+      "EH"
+    ],
+    "benchmark": "SPY",
+    "days": 200,
+    "minEvents": 15,
+    "eventPercentileThreshold": 92,
+    "delayBetweenTickersMs": 3000,
+    "screenTickers": [
+      "ONDS",
+      "NVO"
+    ],
+    "screenDays": 140,
+    "screenLookbackDays": 5,
+    "screenPercentileThreshold": 92,
+    "screenDelayMs": 1000,
+    "screenMaxTickers": 0
+  },
+  "counts": {
+    "bars": 291,
+    "chains": 366,
+    "events": 16,
+    "tickers": 2
+  },
+  "tickers": [
+    {
+      "ticker": "ONDS",
+      "r_squared": 0.10818932950529037,
+      "bars": 97,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "guidance_raise",
+        "analyst_downgrade_wave"
+      ]
+    },
+    {
+      "ticker": "NVO",
+      "r_squared": 0.21651298197120927,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "analyst_upgrade_wave",
+        "analyst_downgrade_wave"
+      ]
+    }
+  ]
+}

@@ -69,6 +69,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   listScreeningRuns: () => ipcRenderer.invoke('list-screening-runs'),
   toggleFavorite: (ticker) => ipcRenderer.invoke('toggle-favorite', ticker),
   getFavorites: () => ipcRenderer.invoke('get-favorites'),
+  toggleDelete: (ticker) => ipcRenderer.invoke('toggle-delete', ticker),
   onReviseProgress: (callback) => ipcRenderer.on('revise-progress', (event, data) => callback(data)),
 
   // Get current state

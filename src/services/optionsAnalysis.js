@@ -39,7 +39,7 @@ class OptionsAnalysisService {
    * attribute raw contracts to 'yahoo' or 'ib' (used by RunArchiver).
    */
   async fetchOptionsChainWithSource(ticker, expirationDate, retries = 2) {
-    // Try Yahoo Finance first
+    // Yahoo Finance is the primary source (IB is currently disabled — set USE_IB_OPTIONS=1 to re-enable as fallback)
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const yf = this._createYF();
@@ -48,27 +48,24 @@ class OptionsAnalysisService {
           queryOptions.date = new Date(expirationDate);
         }
         const chain = await yf.options(ticker, queryOptions);
-        // Check if Yahoo actually returned option contracts (not just quote data)
         const hasCalls = chain?.options?.[0]?.calls?.length > 0;
         const hasPuts = chain?.options?.[0]?.puts?.length > 0;
         if (hasCalls || hasPuts) return { chain, source: 'yahoo' };
-        // Yahoo returned a chain structure but no contracts — fall through to IB
-        console.log(`  Yahoo returned no option contracts for ${ticker}, trying IB...`);
         break;
       } catch (error) {
         const isLastAttempt = attempt === retries;
         if (isLastAttempt) {
           console.log(`  Yahoo options failed for ${ticker}: ${error.message}`);
-          break; // Fall through to IB
+          break;
         }
         const delay = 3000 * (attempt + 1);
-        console.log(`  Options fetch attempt ${attempt + 1} failed (${error.message}), retrying in ${delay / 1000}s...`);
+        console.log(`  Yahoo options attempt ${attempt + 1} failed (${error.message}), retrying in ${delay / 1000}s...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
 
-    // Fall back to IB Gateway if available
-    if (this.ibProvider) {
+    // Optional IB fallback — only when explicitly enabled via env var
+    if (this.ibProvider && process.env.USE_IB_OPTIONS) {
       try {
         const opts = expirationDate ? { date: new Date(expirationDate) } : {};
         const chain = await this.ibProvider.fetchOptionsChain(ticker, opts);
