@@ -2117,6 +2117,10 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       // all within ~a week — is ranked consistently and the ≥10 min-history
       // guarantee is preserved for T-2 / T-3 as well.
       const callIVs = [], putIVs = [], atmCallIVs = [], atmPutIVs = [], callSpreads = [], putSpreads = [];
+      // Dollar-volume ranking population: the same strictly-before-event series, so each
+      // window snapshot's total option $vol is ranked within the ticker's own history —
+      // exactly mirroring the IV rank features (removes cross-ticker liquidity/scale bias).
+      const dvHistory = [];
       for (const r of priorRecords) {
         const e = combineHistRecord(r);
         if (!e) continue;
@@ -2126,6 +2130,8 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
         if (e.atmPutIV != null && e.atmPutIV > 0) atmPutIVs.push(e.atmPutIV);
         if (e.callIV != null && e.atmCallIV != null) callSpreads.push(e.callIV - e.atmCallIV);
         if (e.putIV != null && e.atmPutIV != null) putSpreads.push(e.putIV - e.atmPutIV);
+        const dv = recTotalDV(r);
+        if (dv != null) dvHistory.push(dv);
       }
       const ranksOf = (p) => ({
         callOtm: p.callIV > 0 ? rankIn(callIVs, p.callIV) : null,
@@ -2145,7 +2151,7 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
         const d = priorRecords[i].date;
         if (dayDiff(d, prevDate) > PE_MAX_GAP_DAYS) break;
         window.push(ranksOf(combineHistRecord(priorRecords[i]))); // [0]=T-1, [1]=T-2, [2]=T-3
-        dvWindow.push(recTotalDV(priorRecords[i]));
+        dvWindow.push(rankIn(dvHistory, recTotalDV(priorRecords[i]))); // [0]=T-1 rank … (0–100)
         prevDate = d;
       }
       if (window.length === 0) continue;
@@ -2163,9 +2169,10 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
         const a = window[0][m], b = window[window.length - 1][m];
         peSlp[m] = (window.length >= 2 && a != null && b != null) ? a - b : null;
       }
-      // Option $vol change across the same window (T-1 vs T-oldest), as a percent.
+      // Option $vol percentile-rank slope across the same window (T-1 − T-oldest), in rank
+      // points (-100..+100) — same definition as the IV slope features. >0 = flow building.
       const dvA = dvWindow[0], dvB = dvWindow[dvWindow.length - 1];
-      const dvDelta = (dvWindow.length >= 2 && dvA != null && dvB != null && dvB > 0) ? ((dvA - dvB) / dvB) * 100 : null;
+      const dvDelta = (dvWindow.length >= 2 && dvA != null && dvB != null) ? dvA - dvB : null;
       peEventFeatures.push({ cls: ev.classification, lvl: peLvl, slp: peSlp, dvDelta });
       const prevSlope = peSlopeByTicker[ev.ticker];
       if (!prevSlope || ev.eventDate > prevSlope.eventDate) {
@@ -2228,7 +2235,7 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
         callOtm: 'Call OTM', callAtm: 'Call ATM', callSpr: 'Call Spr',
         putOtm: 'Put OTM', putAtm: 'Put ATM', putSpr: 'Put Spr',
       }[m]);
-      const fLabel = (d) => (d.group === 'dv' ? 'Opt $Vol Δ' : labelOf(d.key) + (d.group === 'slp' ? ' Δ' : ''));
+      const fLabel = (d) => (d.group === 'dv' ? 'Opt $Vol Δrank' : labelOf(d.key) + (d.group === 'slp' ? ' Δ' : ''));
       const rawVal = (ev, d) => (d.group === 'dv' ? ev.dvDelta : d.group === 'lvl' ? ev.lvl[d.key] : ev.slp[d.key]);
 
       // Column means over all events that have the value (for imputation).
@@ -2892,6 +2899,26 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     avgAtmPutIV = Math.round(ivTickers.reduce((s, t) => s + tickerIVs[t].atmPutIV, 0) / ivTickers.length * 10) / 10;
   }
 
+  // Map Outcome-Contrast features by "group:label" for per-cell outcome-lean tinting.
+  const contrastByKey = {};
+  if (preEventContrast && preEventContrast.ok) {
+    for (const u of preEventContrast.uni) contrastByKey[u.group + ':' + u.label] = u;
+  }
+  // Background tint reflecting which eventual-event direction a ticker's value leans toward,
+  // per the Pre-Event IV → Outcome Contrast. Green = leans positive event, red = leans negative.
+  // '' when no contrast data (cell falls back to its existing styling).
+  const leanBg = (group, label, v) => {
+    if (v == null) return '';
+    const u = contrastByKey[group + ':' + label];
+    if (!u || u.diff === 0) return '';
+    const mid = (u.meanPos + u.meanNeg) / 2;
+    const signal = (v - mid) * Math.sign(u.diff); // >0 → positive side, <0 → negative side
+    if (signal === 0) return '';
+    const alpha = Math.min(0.30, 0.08 + Math.abs(u.d) * 0.28); // floor + scale by |Cohen's d|
+    const rgb = signal > 0 ? '72,187,120' : '245,101,101';     // existing green / red palette
+    return ` background:rgba(${rgb},${alpha.toFixed(2)});`;
+  };
+
   const rows = allTickers.map((h, idx) => {
     const hasEvent = !!h.classification;
     const color = classColors[h.classification] || '#ccc';
@@ -2945,7 +2972,7 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     const callAtmSlopeVal = callAtmSlope != null ? callAtmSlope : -9999;
     const callSprSlopeVal = callSprSlope != null ? callSprSlope : -9999;
     const dvDelta = peSl && peSl.dvDelta != null ? peSl.dvDelta : null;
-    const dvDeltaStr = dvDelta == null ? '' : (dvDelta > 0 ? '↑ +' : dvDelta < 0 ? '↓ ' : '') + dvDelta.toFixed(0) + '%';
+    const dvDeltaStr = dvDelta == null ? '' : (dvDelta > 0 ? '↑ +' : dvDelta < 0 ? '↓ ' : '') + dvDelta.toFixed(0);
     const dvDeltaVal = dvDelta != null ? dvDelta : -1e9;
 
     const isSuper = superFavSet.has(h.ticker);
@@ -2978,13 +3005,13 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
       <td data-v="${h.classification || 'zzz'}" style="color:${color}; font-weight:bold;">${label}</td>
       <td data-v="${mcap}" style="text-align:right;">${mcapStr}</td>
       <td data-v="${optDV}" style="text-align:right;">${optDVStr}</td>
-      <td data-v="${dvDeltaVal}" style="text-align:right; color:${slopeColor(dvDelta)}; font-size:0.88em;">${dvDeltaStr}</td>
-      <td data-v="${callIVVal}" style="text-align:right; color:rgba(72,187,120,0.9);">${callIVStr}</td>
-      <td data-v="${callSpreadVal}" style="text-align:right; color:rgba(72,187,120,0.7); font-size:0.88em;">${callSpreadStr}</td>
-      <td data-v="${callAtmSlopeVal}" style="text-align:right; color:${slopeColor(callAtmSlope)}; font-size:0.88em;">${slopeStr(callAtmSlope)}</td>
-      <td data-v="${callSprSlopeVal}" style="text-align:right; color:${slopeColor(callSprSlope)}; font-size:0.88em;">${slopeStr(callSprSlope)}</td>
-      <td data-v="${putIVVal}" style="text-align:right; color:rgba(245,101,101,0.9);">${putIVStr}</td>
-      <td data-v="${putSpreadVal}" style="text-align:right; color:rgba(245,101,101,0.7); font-size:0.88em;">${putSpreadStr}</td>
+      <td data-v="${dvDeltaVal}" style="text-align:right; color:${slopeColor(dvDelta)}; font-size:0.88em;${leanBg('dv','Opt $Vol Δrank',dvDelta)}">${dvDeltaStr}</td>
+      <td data-v="${callIVVal}" style="text-align:right; color:rgba(72,187,120,0.9);${leanBg('lvl','Call OTM',callIVRank)}">${callIVStr}</td>
+      <td data-v="${callSpreadVal}" style="text-align:right; color:rgba(72,187,120,0.7); font-size:0.88em;${leanBg('lvl','Call Spr',callSpreadRank)}">${callSpreadStr}</td>
+      <td data-v="${callAtmSlopeVal}" style="text-align:right; color:${slopeColor(callAtmSlope)}; font-size:0.88em;${leanBg('slp','Call ATM Δ',callAtmSlope)}">${slopeStr(callAtmSlope)}</td>
+      <td data-v="${callSprSlopeVal}" style="text-align:right; color:${slopeColor(callSprSlope)}; font-size:0.88em;${leanBg('slp','Call Spr Δ',callSprSlope)}">${slopeStr(callSprSlope)}</td>
+      <td data-v="${putIVVal}" style="text-align:right; color:rgba(245,101,101,0.9);${leanBg('lvl','Put OTM',putIVRank)}">${putIVStr}</td>
+      <td data-v="${putSpreadVal}" style="text-align:right; color:rgba(245,101,101,0.7); font-size:0.88em;${leanBg('lvl','Put Spr',putSpreadRank)}">${putSpreadStr}</td>
     </tr>
     <tr class="chart-row" data-chart-for="${h.ticker}" style="display:none;">
       <td colspan="15" style="padding:0; background:#1a1d23;">
@@ -3312,6 +3339,7 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
   Filter: <span id="tag-filter-active"></span>
   <a href="#" id="tag-filter-clear" style="margin-left:8px; color:#7aa2c7; text-decoration:none;">clear</a>
 </div>
+<div style="font-size:0.78em; color:#999; margin:4px 0 6px;">Cell background tint = which eventual-event direction this value leans toward, per the Pre-Event IV → Outcome Contrast (green = positive, red = negative; deeper = stronger effect).</div>
 <table id="screen-table">
 <thead><tr>
   <th style="width:44px; text-align:center; padding:4px;"><span class="sort-arrow"></span></th>
@@ -3322,7 +3350,7 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
   <th>Classification<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Mkt Cap<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Opt $ Vol<span class="sort-arrow"></span></th>
-  <th style="text-align:right;" title="Pre-event change in total option dollar volume across the same window as the IV Δ columns: (T-1 − T-oldest) / T-oldest, as a percent. >0 = flow building into the event.">$Vol Δ<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Pre-event slope of total option dollar-volume percentile rank within the ticker's own history, across the same window as the IV Δ columns: rank(T-1) − rank(T-oldest), in rank points (-100..+100). >0 = flow building into the event.">$Vol Δrank<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Call IV<span class="sort-arrow"></span></th>
   <th style="text-align:right;" title="Weighted OTM IV minus ATM IV. (pN) = self-history rank, [sN] = sector rank, {tN} = top-tag cohort rank">C Spr<span class="sort-arrow"></span></th>
   <th style="text-align:right;" title="Pre-event slope of ATM call IV percentile rank: rank(T-1) − rank(T-oldest) over the ~3 snapshots before the event. >0 = ramping in.">ATM C Δ<span class="sort-arrow"></span></th>

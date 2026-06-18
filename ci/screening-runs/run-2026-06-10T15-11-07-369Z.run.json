@@ -1,0 +1,54 @@
+{
+  "runId": "2026-06-10T15-11-07-369Z",
+  "hostId": "fedora",
+  "trigger": "manual",
+  "startedAt": "2026-06-10T15:11:07.369Z",
+  "finishedAt": "2026-06-10T15:11:09.512Z",
+  "status": "completed",
+  "error": null,
+  "config": {
+    "tickers": [
+      "NVO",
+      "AVAV",
+      "GMAB",
+      "QCOM",
+      "XIACY",
+      "AIR.PA",
+      "EH"
+    ],
+    "benchmark": "SPY",
+    "days": 200,
+    "minEvents": 15,
+    "eventPercentileThreshold": 92,
+    "delayBetweenTickersMs": 3000,
+    "screenTickers": [
+      "ONDS"
+    ],
+    "screenDays": 140,
+    "screenLookbackDays": 5,
+    "screenPercentileThreshold": 92,
+    "screenDelayMs": 1000,
+    "screenMaxTickers": 0
+  },
+  "counts": {
+    "bars": 196,
+    "chains": 221,
+    "events": 8,
+    "tickers": 1
+  },
+  "tickers": [
+    {
+      "ticker": "ONDS",
+      "r_squared": 0.21338454206668678,
+      "bars": 98,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "guidance_raise",
+        "dilution"
+      ]
+    }
+  ]
+}
