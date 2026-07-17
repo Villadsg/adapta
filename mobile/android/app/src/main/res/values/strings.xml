@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Adapta Screening</string>
+    <string name="title_activity_main">Adapta Screening</string>
+    <string name="package_name">com.adapta.screening</string>
+    <string name="custom_url_scheme">com.adapta.screening</string>
+</resources>

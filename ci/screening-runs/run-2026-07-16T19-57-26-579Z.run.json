@@ -1,0 +1,68 @@
+{
+  "runId": "2026-07-16T19-57-26-579Z",
+  "hostId": "fedora",
+  "trigger": "manual",
+  "startedAt": "2026-07-16T19:57:26.579Z",
+  "finishedAt": "2026-07-16T19:57:33.005Z",
+  "status": "completed",
+  "error": null,
+  "config": {
+    "tickers": [
+      "NVO",
+      "AVAV",
+      "GMAB",
+      "QCOM",
+      "XIACY",
+      "AIR.PA",
+      "EH"
+    ],
+    "benchmark": "SPY",
+    "days": 200,
+    "minEvents": 15,
+    "eventPercentileThreshold": 92,
+    "delayBetweenTickersMs": 3000,
+    "screenTickers": [
+      "SMCI",
+      "AVAV"
+    ],
+    "screenDays": 140,
+    "screenLookbackDays": 5,
+    "screenPercentileThreshold": 92,
+    "screenDelayMs": 1000,
+    "screenMaxTickers": 0
+  },
+  "counts": {
+    "bars": 291,
+    "chains": 681,
+    "events": 16,
+    "tickers": 2
+  },
+  "tickers": [
+    {
+      "ticker": "SMCI",
+      "r_squared": 0.31143466719909774,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "contract_win",
+        "analyst_upgrade_wave"
+      ]
+    },
+    {
+      "ticker": "AVAV",
+      "r_squared": 0.06705631518766353,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null,
+      "eventTags": [
+        "guidance_raise",
+        "dilution"
+      ]
+    }
+  ]
+}

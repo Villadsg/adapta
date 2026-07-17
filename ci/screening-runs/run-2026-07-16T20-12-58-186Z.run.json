@@ -1,0 +1,70 @@
+{
+  "runId": "2026-07-16T20-12-58-186Z",
+  "hostId": "192.168.1.185",
+  "trigger": "manual",
+  "startedAt": "2026-07-16T20:12:58.186Z",
+  "finishedAt": "2026-07-16T20:13:08.598Z",
+  "status": "completed",
+  "error": null,
+  "config": {
+    "tickers": [
+      "NVO",
+      "AVAV",
+      "GMAB",
+      "QCOM",
+      "XIACY",
+      "AIR.PA",
+      "EH"
+    ],
+    "benchmark": "SPY",
+    "days": 200,
+    "minEvents": 15,
+    "eventPercentileThreshold": 92,
+    "delayBetweenTickersMs": 3000,
+    "screenTickers": [
+      "NOW",
+      "AVAV",
+      "SMCI"
+    ],
+    "screenDays": 140,
+    "screenLookbackDays": 5,
+    "screenPercentileThreshold": 92,
+    "screenDelayMs": 1000,
+    "screenMaxTickers": 0
+  },
+  "counts": {
+    "bars": 388,
+    "chains": 1061,
+    "events": 24,
+    "tickers": 3
+  },
+  "tickers": [
+    {
+      "ticker": "NOW",
+      "r_squared": 0.008490761694110449,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "AVAV",
+      "r_squared": 0.06764551714854317,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "SMCI",
+      "r_squared": 0.31085571517842425,
+      "bars": 97,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    }
+  ]
+}
