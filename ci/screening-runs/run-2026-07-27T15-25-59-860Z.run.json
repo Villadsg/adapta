@@ -1,0 +1,110 @@
+{
+  "runId": "2026-07-27T15-25-59-860Z",
+  "hostId": "192.168.1.133",
+  "trigger": "manual",
+  "startedAt": "2026-07-27T15:25:59.860Z",
+  "finishedAt": "2026-07-27T15:26:12.206Z",
+  "status": "completed",
+  "error": null,
+  "config": {
+    "tickers": [
+      "NVO",
+      "AVAV",
+      "GMAB",
+      "QCOM",
+      "XIACY",
+      "AIR.PA",
+      "EH"
+    ],
+    "benchmark": "SPY",
+    "days": 200,
+    "minEvents": 15,
+    "eventPercentileThreshold": 92,
+    "delayBetweenTickersMs": 3000,
+    "screenTickers": [
+      "NOW",
+      "NVO",
+      "SMCI",
+      "AVAV",
+      "NVDA",
+      "AMD",
+      "INTL"
+    ],
+    "screenDays": 140,
+    "screenLookbackDays": 5,
+    "screenPercentileThreshold": 92,
+    "screenDelayMs": 1000,
+    "screenMaxTickers": 0
+  },
+  "counts": {
+    "bars": 768,
+    "chains": 2207,
+    "events": 56,
+    "tickers": 7
+  },
+  "tickers": [
+    {
+      "ticker": "NOW",
+      "r_squared": 0.01622307284679514,
+      "bars": 96,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "NVO",
+      "r_squared": 0.08907212724355273,
+      "bars": 96,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "SMCI",
+      "r_squared": 0.2691265584232796,
+      "bars": 96,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "AVAV",
+      "r_squared": 0.09691262310812554,
+      "bars": 96,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "NVDA",
+      "r_squared": 0.4457665954768846,
+      "bars": 96,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "AMD",
+      "r_squared": 0.3910775420408906,
+      "bars": 96,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "INTL",
+      "r_squared": 0.7673659770528396,
+      "bars": 96,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    }
+  ]
+}

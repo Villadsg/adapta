@@ -1,5 +1,5 @@
 // Screening runner — mirrors the desktop per-ticker orchestration
-// (main.js:1407-1496) minus the desktop-only steps (Chronos/Flowstate Python
+// (main.js:1407-1496) minus the desktop-only steps (Chronos Python
 // forecasts, quote-summary tracker). Each run enriches the shared Supabase DB by
 // writing price bars, classified events, and options snapshots.
 

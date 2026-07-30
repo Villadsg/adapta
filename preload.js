@@ -56,10 +56,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   showModal: () => ipcRenderer.invoke('show-modal'),
   hideModal: () => ipcRenderer.invoke('hide-modal'),
 
-  // Flowstate analysis (next-day price band forecast)
-  runFlowstateForecast: (options) => ipcRenderer.invoke('run-flowstate-forecast', options),
-  runFlowstateBacktest: (options) => ipcRenderer.invoke('run-flowstate-backtest', options),
-
   // Ticker screening
   screenTickers: (options) => ipcRenderer.invoke('screen-tickers', options),
   cancelScreening: () => ipcRenderer.invoke('cancel-screening'),

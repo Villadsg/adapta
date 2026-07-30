@@ -1,0 +1,70 @@
+{
+  "runId": "2026-07-29T14-25-11-945Z",
+  "hostId": "fedora",
+  "trigger": "manual",
+  "startedAt": "2026-07-29T14:25:11.945Z",
+  "finishedAt": "2026-07-29T14:25:17.966Z",
+  "status": "completed",
+  "error": null,
+  "config": {
+    "tickers": [
+      "NVO",
+      "AVAV",
+      "GMAB",
+      "QCOM",
+      "XIACY",
+      "AIR.PA",
+      "EH"
+    ],
+    "benchmark": "SPY",
+    "days": 200,
+    "minEvents": 15,
+    "eventPercentileThreshold": 92,
+    "delayBetweenTickersMs": 3000,
+    "screenTickers": [
+      "AVAV",
+      "SMCI",
+      "NOW"
+    ],
+    "screenDays": 140,
+    "screenLookbackDays": 5,
+    "screenPercentileThreshold": 92,
+    "screenDelayMs": 1000,
+    "screenMaxTickers": 0
+  },
+  "counts": {
+    "bars": 384,
+    "chains": 828,
+    "events": 24,
+    "tickers": 3
+  },
+  "tickers": [
+    {
+      "ticker": "AVAV",
+      "r_squared": 0.09586789442416288,
+      "bars": 96,
+      "events": 8,
+      "hits": 0,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "SMCI",
+      "r_squared": 0.27366599689038784,
+      "bars": 96,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    },
+    {
+      "ticker": "NOW",
+      "r_squared": 0.013808602457154318,
+      "bars": 96,
+      "events": 8,
+      "hits": 1,
+      "status": "ok",
+      "error": null
+    }
+  ]
+}

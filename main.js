@@ -26,7 +26,6 @@ const IBOptionsProvider = require('./src/services/ibOptionsProvider');
 const articleExtractor = require('./src/services/articleExtractor');
 const newsScraper = require('./src/services/newsScraper');
 const ChronosHoldPeriodService = require('./src/services/chronosHoldPeriod');
-const FlowstateAnalysisService = require('./src/services/flowstateAnalysis');
 const { screenTickers, reviseTickers } = require('./ci/ticker-screen');
 const { classifyTickerNews, tagTickerEvents } = require('./src/services/newsClassifier');
 const { TAG_LABELS: EVENT_TAG_LABELS } = require('./src/services/eventTags');
@@ -40,7 +39,6 @@ let priceTracker;
 let stockAnalyzer;
 let optionsAnalyzer;
 let chronosHoldService;
-let flowstateAnalyzer;
 let runArchiver;
 
 // TTS state
@@ -2086,8 +2084,6 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
     // Per-event feature vectors for the supervised contrast
     // (one row per event: denoised level ranks + window slopes + class label).
     const peEventFeatures = [];
-    // Per-ticker pre-event slopes (latest event), surfaced as table columns.
-    const peSlopeByTicker = {};
     // Total option dollar volume of a history record (sum across expirations,
     // with legacy fallback to the top-level combined `dv`).
     const recTotalDV = (r) => {
@@ -2174,10 +2170,6 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       const dvA = dvWindow[0], dvB = dvWindow[dvWindow.length - 1];
       const dvDelta = (dvWindow.length >= 2 && dvA != null && dvB != null) ? dvA - dvB : null;
       peEventFeatures.push({ cls: ev.classification, lvl: peLvl, slp: peSlp, dvDelta });
-      const prevSlope = peSlopeByTicker[ev.ticker];
-      if (!prevSlope || ev.eventDate > prevSlope.eventDate) {
-        peSlopeByTicker[ev.ticker] = { eventDate: ev.eventDate, callAtm: peSlp.callAtm, callSpr: peSlp.callSpr, dvDelta };
-      }
       // #2 Trajectory: keep each slot separate for the term-structure view.
       const slots = ['t1', 't2', 't3'];
       for (let s = 0; s < window.length; s++) {
@@ -2187,6 +2179,44 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
         }
       }
     }
+
+    // Live recent-window slopes surfaced as the ATM C Δ / C SPR Δ / $VOL ΔRANK columns.
+    // Unlike peSlopeByTicker (anchored to each ticker's last earnings event, hence static
+    // between events), this walks the most recent contiguous window ending at the newest
+    // snapshot — so the columns move each run as new snapshots land. Ranks are computed
+    // within the ticker's own full history, mirroring the level columns' population.
+    const peLiveSlopeByTicker = {};
+    for (const [ticker, history] of Object.entries(ivHistory)) {
+      if (!Array.isArray(history) || history.length < PRE_EVENT_MIN_HIST) continue;
+      // Full-history ranking populations (same construction as the event-window path).
+      const sorted = history.filter(r => r && r.date && combineHistRecord(r))
+        .sort((a, b) => a.date.localeCompare(b.date));
+      if (sorted.length < PRE_EVENT_MIN_HIST) continue;
+      const atmCallIVs = [], callSpreads = [], dvHistory = [];
+      for (const r of sorted) {
+        const e = combineHistRecord(r);
+        if (e.atmCallIV != null && e.atmCallIV > 0) atmCallIVs.push(e.atmCallIV);
+        if (e.callIV != null && e.atmCallIV != null) callSpreads.push(e.callIV - e.atmCallIV);
+        const dv = recTotalDV(r);
+        if (dv != null) dvHistory.push(dv);
+      }
+      // Walk the most recent contiguous window (newest first), truncating on a data gap.
+      const winAtm = [], winSpr = [], winDv = [];
+      let prevDate = null;
+      for (let i = sorted.length - 1; i >= 0 && winAtm.length < PE_WINDOW; i--) {
+        const d = sorted[i].date;
+        if (prevDate != null && dayDiff(d, prevDate) > PE_MAX_GAP_DAYS) break;
+        const e = combineHistRecord(sorted[i]);
+        winAtm.push((e.atmCallIV != null && e.atmCallIV > 0) ? rankIn(atmCallIVs, e.atmCallIV) : null);
+        winSpr.push((e.callIV != null && e.atmCallIV != null) ? rankIn(callSpreads, e.callIV - e.atmCallIV) : null);
+        winDv.push(rankIn(dvHistory, recTotalDV(sorted[i])));
+        prevDate = d;
+      }
+      // Slope across the available window (most-recent − oldest); >0 = ramping in.
+      const slope = (w) => (w.length >= 2 && w[0] != null && w[w.length - 1] != null) ? w[0] - w[w.length - 1] : null;
+      peLiveSlopeByTicker[ticker] = { callAtm: slope(winAtm), callSpr: slope(winSpr), dvDelta: slope(winDv) };
+    }
+
     const meanOf = (arr) => {
       if (!arr || arr.length === 0) return null;
       return arr.reduce((s, v) => s + v, 0) / arr.length;
@@ -2351,7 +2381,7 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
     const currentSuperFavorites = loadSuperFavorites();
     const currentNotes = loadNotes();
     const currentToDelete = loadToDelete();
-    const html = generateScreeningHTML(result.allTickers, tickers.length, config, ivHistoryForHTML, currentFavorites, preEventStats, currentNotes, preEventByReturnBucket, currentSuperFavorites, preEventContrast, peSlopeByTicker, currentToDelete);
+    const html = generateScreeningHTML(result.allTickers, tickers.length, config, ivHistoryForHTML, currentFavorites, preEventStats, currentNotes, preEventByReturnBucket, currentSuperFavorites, preEventContrast, peLiveSlopeByTicker, currentToDelete);
 
     // Save HTML for "Latest Run Results" (alias) and a timestamped snapshot in ci/screening-runs/
     const screenResultsPath = path.join(__dirname, 'ci', 'screening-results.html');
@@ -2501,45 +2531,6 @@ ipcMain.handle('list-screening-runs', async () => {
   }
 });
 
-// Flowstate Analysis — IBM Granite Flowstate-R1 next-day price forecast
-ipcMain.handle('run-flowstate-forecast', async (event, options = {}) => {
-  try {
-    const tickers = Array.isArray(options.tickers) ? options.tickers : [options.ticker].filter(Boolean);
-    if (tickers.length === 0) throw new Error('No tickers provided');
-    console.log(`\n[Flowstate] Forecasting next-day band for ${tickers.length} ticker(s)...`);
-    const result = await flowstateAnalyzer.forecastNextDay(tickers, {
-      contextDays: options.contextDays,
-      scaleFactor: options.scaleFactor,
-      qLowIdx: options.qLowIdx,
-      qHighIdx: options.qHighIdx,
-    });
-    console.log(`[Flowstate] Done. ${result.forecasts.length} forecast(s), ${result.skipped.length} skipped.`);
-    return { success: true, ...result };
-  } catch (error) {
-    console.error('Flowstate forecast error:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('run-flowstate-backtest', async (event, options = {}) => {
-  try {
-    if (!options.ticker) throw new Error('ticker is required');
-    console.log(`\n[Flowstate] Walk-forward backtest for ${options.ticker} (${options.nDays || 60}d)...`);
-    const result = await flowstateAnalyzer.walkForwardBacktest(options.ticker, {
-      contextDays: options.contextDays,
-      nDays: options.nDays,
-      scaleFactor: options.scaleFactor,
-      qLowIdx: options.qLowIdx,
-      qHighIdx: options.qHighIdx,
-    });
-    console.log(`[Flowstate] Backtest done. n=${result.nDays}, MAE=${result.mae.toFixed(3)}, coverage=${(result.coverage * 100).toFixed(1)}% (nominal ${(result.nominalCoverage * 100).toFixed(0)}%), hit-rate=${result.directionalHitRate ? (result.directionalHitRate * 100).toFixed(1) + '%' : 'n/a'}`);
-    return { success: true, ...result };
-  } catch (error) {
-    console.error('Flowstate backtest error:', error);
-    return { success: false, error: error.message };
-  }
-});
-
 const FAVORITES_PATH = path.join(__dirname, 'ci', 'screening-favorites.json');
 const SUPER_FAVORITES_PATH = path.join(__dirname, 'ci', 'screening-super-favorites.json');
 
@@ -2628,7 +2619,7 @@ ipcMain.handle('save-note', async (event, ticker, note) => {
   return { ok: true, notes };
 });
 
-function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData = {}, favorites = [], preEventStats = {}, notes = {}, preEventByReturnBucket = null, superFavorites = [], preEventContrast = null, peSlopeByTicker = {}, toDelete = []) {
+function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData = {}, favorites = [], preEventStats = {}, notes = {}, preEventByReturnBucket = null, superFavorites = [], preEventContrast = null, peLiveSlopeByTicker = {}, toDelete = []) {
   const classColors = {
     surprising_positive: '#4caf50',
     positive_anticipated: '#8bc34a',
@@ -2964,7 +2955,7 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     const putSpreadStr = putSpread != null ? (putSpread >= 0 ? '+' : '') + putSpread.toFixed(1) + rankTag(putSpreadRank) + sectorRankTag(putSectorRank) + tagRankTag(putTagRank, primaryTag) : '';
     const callSpreadVal = callSpread != null ? callSpread : -9999;
     const putSpreadVal = putSpread != null ? putSpread : -9999;
-    const peSl = peSlopeByTicker[h.ticker];
+    const peSl = peLiveSlopeByTicker[h.ticker];
     const callAtmSlope = peSl && peSl.callAtm != null ? peSl.callAtm : null;
     const callSprSlope = peSl && peSl.callSpr != null ? peSl.callSpr : null;
     const slopeStr = (v) => v == null ? '' : (v > 0 ? '↑ +' : v < 0 ? '↓ ' : '') + v.toFixed(0);
@@ -3045,6 +3036,10 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
             <div style="flex:1; min-width:0;">
               <div id="opts-iv-label-1-${h.ticker}" style="color:#aaa; font-size:0.82em; padding:2px 4px; cursor:pointer; user-select:none;" title="Click for historical weighted IV"></div>
               <div style="height:360px;"><canvas id="opts-chart-1-${h.ticker}"></canvas></div>
+            </div>
+            <div style="flex:1; min-width:0;">
+              <div id="opts-iv-label-2-${h.ticker}" style="color:#aaa; font-size:0.82em; padding:2px 4px; cursor:pointer; user-select:none;" title="Click for historical weighted IV"></div>
+              <div style="height:360px;"><canvas id="opts-chart-2-${h.ticker}"></canvas></div>
             </div>
           </div>
           <div id="iv-history-wrap-${h.ticker}" style="display:none; padding:8px 0; height:420px;">
@@ -4031,7 +4026,7 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
           }
         }
 
-        // Render options strike charts (nearest 2 expirations side by side)
+        // Render options strike charts (nearest 3 expirations side by side)
         const od = cd.optionsStrikes;
         if (od && od.length > 0) {
           const optsWrap = document.getElementById('opts-wrap-' + ticker);
@@ -4039,7 +4034,7 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
             optsWrap.style.display = 'block';
             const fmtDollar = (v) => v >= 1e6 ? '$'+(v/1e6).toFixed(1)+'M' : v >= 1e3 ? '$'+(v/1e3).toFixed(0)+'K' : '$'+v.toFixed(0);
 
-            for (let ei = 0; ei < Math.min(2, od.length); ei++) {
+            for (let ei = 0; ei < Math.min(3, od.length); ei++) {
               const exp = od[ei];
               const canvas = document.getElementById('opts-chart-' + ei + '-' + ticker);
               if (!exp || !canvas) continue;
@@ -4171,7 +4166,7 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
               });
             }
 
-            for (let li = 0; li < 2; li++) {
+            for (let li = 0; li < 3; li++) {
               const lbl = document.getElementById('opts-iv-label-' + li + '-' + ticker);
               if (lbl) lbl.addEventListener('click', toggleHistory);
             }
@@ -4390,7 +4385,6 @@ async function initBackend() {
   const ibProvider = new IBOptionsProvider({ port: 4001 });
   optionsAnalyzer = new OptionsAnalysisService(database, ibProvider);
   chronosHoldService = new ChronosHoldPeriodService(database);
-  flowstateAnalyzer = new FlowstateAnalysisService(database);
   runArchiver = new RunArchiver({
     database,
     outputDir: path.join(__dirname, 'ci', 'screening-runs'),

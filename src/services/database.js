@@ -559,6 +559,20 @@ class ArticleDatabase {
       });
 
       await this.setSetting('schema_version', String(CURRENT_SCHEMA_VERSION));
+
+      // Fold all migration DDL (ALTER COLUMN ... TYPE, ADD COLUMN, etc.) into the main
+      // database file and empty the WAL. Without this, DuckDB 1.4.x leaves the schema-
+      // altering statements in articles.db.wal; on the next open it replays them and
+      // crashes in BindDefaultValues while re-binding sequence/timestamp column defaults
+      // ("Failure while replaying WAL file ... no default database set"), which poisons
+      // the WAL on every subsequent run. Checkpointing here breaks that loop.
+      await new Promise((resolve) => {
+        this.connection.run('CHECKPOINT', (err) => {
+          if (err) console.warn('⚠️  CHECKPOINT after migrations failed (non-fatal):', err.message);
+          resolve();
+        });
+      });
+
       console.log(`✓ Database migrations completed (schema v${CURRENT_SCHEMA_VERSION})`);
     } catch (error) {
       console.error('Error running migrations:', error);
