@@ -424,7 +424,7 @@ class ArticleDatabase {
    * Run database migrations to handle schema changes
    */
   async runMigrations() {
-    const CURRENT_SCHEMA_VERSION = 12;
+    const CURRENT_SCHEMA_VERSION = 14;
     try {
       const storedVersion = parseInt(await this.getSetting('schema_version', '0'), 10) || 0;
       if (storedVersion >= CURRENT_SCHEMA_VERSION) {
@@ -556,6 +556,106 @@ class ArticleDatabase {
         this.connection.run(`ALTER TABLE event_options_features ALTER COLUMN feature_vector TYPE FLOAT[25]`, (err) => {
           resolve(); // Ignore error if already correct type
         });
+      });
+
+      // Migration 13: Raw historical options chains (one row per contract per day) +
+      // derived per-day IV aggregates. Raw rows are the source of truth;
+      // options_daily_iv is recomputed from them by deriveDailyIV().
+      await new Promise((resolve, reject) => {
+        this.connection.run(`
+          CREATE TABLE IF NOT EXISTS options_chain_history (
+            ticker TEXT NOT NULL,
+            date DATE NOT NULL,
+            option_symbol TEXT NOT NULL,
+            expiration_date DATE NOT NULL,
+            side TEXT NOT NULL,
+            strike DECIMAL(12,4),
+            bid DECIMAL(12,4),
+            ask DECIMAL(12,4),
+            mid DECIMAL(12,4),
+            last_price DECIMAL(12,4),
+            volume BIGINT,
+            open_interest BIGINT,
+            iv DECIMAL(10,4),
+            delta DECIMAL(10,6),
+            gamma DECIMAL(10,6),
+            theta DECIMAL(10,6),
+            vega DECIMAL(10,6),
+            underlying_price DECIMAL(12,4),
+            source TEXT,
+            fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(ticker, date, option_symbol)
+          )
+        `, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      await new Promise((resolve, reject) => {
+        this.connection.run(`
+          CREATE TABLE IF NOT EXISTS options_daily_iv (
+            ticker TEXT NOT NULL,
+            date DATE NOT NULL,
+            exp1_label TEXT,
+            exp1_call_iv DECIMAL(10,4),
+            exp1_put_iv DECIMAL(10,4),
+            exp1_atm_call_iv DECIMAL(10,4),
+            exp1_atm_put_iv DECIMAL(10,4),
+            exp1_call_dv DECIMAL(18,2),
+            exp1_put_dv DECIMAL(18,2),
+            exp2_label TEXT,
+            exp2_call_iv DECIMAL(10,4),
+            exp2_put_iv DECIMAL(10,4),
+            exp2_atm_call_iv DECIMAL(10,4),
+            exp2_atm_put_iv DECIMAL(10,4),
+            exp2_call_dv DECIMAL(18,2),
+            exp2_put_dv DECIMAL(18,2),
+            source TEXT,
+            fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(ticker, date)
+          )
+        `, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      await new Promise((resolve, reject) => {
+        this.connection.run(
+          'CREATE INDEX IF NOT EXISTS idx_options_chain_history_ticker_date ON options_chain_history(ticker, date)',
+          (err) => { if (err) reject(err); else resolve(); }
+        );
+      });
+
+      // Migration 14: full IV-history records, replacing ci/weighted-iv-history.json.
+      // options_daily_iv holds only pooled exp1/exp2 aggregates, but the screening UI
+      // also needs exp3, per-strike calls/puts, atmBand*/deepOTM* metrics and the
+      // screening metadata (sector, eventTags, dailyReturn). Rather than spread those
+      // across a dozen typed columns, the record is stored as JSON in its existing
+      // shape -- the format every consumer already parses -- keyed by (ticker, date).
+      // Scalars that are queried/sorted stay as real columns.
+      await new Promise((resolve, reject) => {
+        this.connection.run(`
+          CREATE TABLE IF NOT EXISTS iv_history_records (
+            ticker TEXT NOT NULL,
+            date DATE NOT NULL,
+            sector TEXT,
+            daily_return DOUBLE,
+            event_tags TEXT,
+            record JSON NOT NULL,
+            source TEXT,
+            fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(ticker, date)
+          )
+        `, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      await new Promise((resolve, reject) => {
+        this.connection.run(
+          'CREATE INDEX IF NOT EXISTS idx_iv_history_records_ticker_date ON iv_history_records(ticker, date)',
+          (err) => { if (err) reject(err); else resolve(); }
+        );
       });
 
       await this.setSetting('schema_version', String(CURRENT_SCHEMA_VERSION));
@@ -1621,10 +1721,10 @@ class ArticleDatabase {
    * @param {string} ticker - Stock ticker symbol
    * @param {string} date - Date in YYYY-MM-DD format
    * @param {Object} priceData - Price data object {open, high, low, close, volume}
-   * @param {string} source - Data source (e.g., 'yahoo_finance')
+   * @param {string} source - Data source (e.g., 'marketdata')
    * @returns {Promise<Object>} Saved record
    */
-  async saveStockPrice(ticker, date, priceData, source = 'yahoo_finance') {
+  async saveStockPrice(ticker, date, priceData, source = 'marketdata') {
     const sql = `
       INSERT INTO stock_prices (ticker, date, open, high, low, close, volume, source)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -1909,6 +2009,346 @@ class ArticleDatabase {
       });
     });
   }
+
+  // ===== Options Chain History Methods (MarketData backfill) =====
+
+  /**
+   * Bulk-insert raw option contract rows into options_chain_history.
+   * Rows are stored exactly as returned by the API — no metric computation here.
+   * @param {Array<Object>} rows - Contract rows from MarketDataClient.fetchHistoricalChain,
+   *   each augmented with ticker, date, source
+   * @returns {Promise<number>} Number of rows processed
+   */
+  async saveChainRows(rows) {
+    if (!rows || rows.length === 0) return 0;
+
+    const COLS = 20;
+    const BATCH = 500; // 500 rows × 20 cols = 10k params per statement
+    let processed = 0;
+
+    for (let i = 0; i < rows.length; i += BATCH) {
+      const batch = rows.slice(i, i + BATCH);
+      const values = [];
+      const params = [];
+      batch.forEach((r, j) => {
+        const p = [];
+        for (let k = 1; k <= COLS; k++) p.push(`$${j * COLS + k}`);
+        values.push(`(${p.join(',')})`);
+        params.push(
+          r.ticker.toUpperCase(), r.date, r.optionSymbol, r.expiration, r.side,
+          r.strike, r.bid, r.ask, r.mid, r.last,
+          r.volume, r.openInterest, r.iv, r.delta, r.gamma, r.theta, r.vega,
+          r.underlyingPrice, r.source, r.fetchedAt || new Date().toISOString()
+        );
+      });
+
+      const sql = `
+        INSERT INTO options_chain_history (
+          ticker, date, option_symbol, expiration_date, side,
+          strike, bid, ask, mid, last_price,
+          volume, open_interest, iv, delta, gamma, theta, vega,
+          underlying_price, source, fetched_at
+        ) VALUES ${values.join(',')}
+        ON CONFLICT (ticker, date, option_symbol) DO UPDATE SET
+          bid = EXCLUDED.bid, ask = EXCLUDED.ask, mid = EXCLUDED.mid,
+          last_price = EXCLUDED.last_price, volume = EXCLUDED.volume,
+          open_interest = EXCLUDED.open_interest, iv = EXCLUDED.iv,
+          delta = EXCLUDED.delta, gamma = EXCLUDED.gamma,
+          theta = EXCLUDED.theta, vega = EXCLUDED.vega,
+          underlying_price = EXCLUDED.underlying_price,
+          source = EXCLUDED.source, fetched_at = EXCLUDED.fetched_at
+      `;
+
+      await new Promise((resolve, reject) => {
+        this.connection.run(sql, ...params, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      processed += batch.length;
+    }
+    return processed;
+  }
+
+  /**
+   * Get the set of (ticker, date) pairs already present in options_chain_history.
+   * Used by the backfill to skip already-downloaded days.
+   * @returns {Promise<Set<string>>} Set of "TICKER|YYYY-MM-DD" keys
+   */
+  async getExistingChainDays() {
+    return new Promise((resolve, reject) => {
+      this.connection.all(
+        `SELECT DISTINCT ticker, date::TEXT AS d FROM options_chain_history`,
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(new Set((rows || []).map(r => `${r.ticker}|${String(r.d).split(' ')[0]}`)));
+        }
+      );
+    });
+  }
+
+  /**
+   * Clear options_daily_iv (derived table — rebuilt from options_chain_history).
+   * @returns {Promise<void>}
+   */
+  async clearDailyIV() {
+    return new Promise((resolve, reject) => {
+      this.connection.run('DELETE FROM options_daily_iv', (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  }
+
+  /**
+   * Bulk-insert derived per-day IV rows into options_daily_iv.
+   * Rows are produced by ci/backfill-marketdata.js (BSM-implied IV computed
+   * from the raw chain rows, then aggregated per day/expiration).
+   * @param {Array<Object>} rows - One row per (ticker, date)
+   * @returns {Promise<number>} Number of rows processed
+   */
+  async saveDailyIVRows(rows) {
+    if (!rows || rows.length === 0) return 0;
+
+    const COLS = 17;
+    const BATCH = 500;
+    let processed = 0;
+
+    for (let i = 0; i < rows.length; i += BATCH) {
+      const batch = rows.slice(i, i + BATCH);
+      const values = [];
+      const params = [];
+      batch.forEach((r, j) => {
+        const p = [];
+        for (let k = 1; k <= COLS; k++) p.push(`$${j * COLS + k}`);
+        values.push(`(${p.join(',')})`);
+        params.push(
+          r.ticker.toUpperCase(), r.date,
+          r.exp1_label, r.exp1_call_iv, r.exp1_put_iv, r.exp1_atm_call_iv, r.exp1_atm_put_iv,
+          r.exp1_call_dv, r.exp1_put_dv,
+          r.exp2_label, r.exp2_call_iv, r.exp2_put_iv, r.exp2_atm_call_iv, r.exp2_atm_put_iv,
+          r.exp2_call_dv, r.exp2_put_dv,
+          r.source || 'derived'
+        );
+      });
+
+      const sql = `
+        INSERT INTO options_daily_iv (
+          ticker, date,
+          exp1_label, exp1_call_iv, exp1_put_iv, exp1_atm_call_iv, exp1_atm_put_iv,
+          exp1_call_dv, exp1_put_dv,
+          exp2_label, exp2_call_iv, exp2_put_iv, exp2_atm_call_iv, exp2_atm_put_iv,
+          exp2_call_dv, exp2_put_dv,
+          source
+        ) VALUES ${values.join(',')}
+        ON CONFLICT (ticker, date) DO UPDATE SET
+          exp1_label = EXCLUDED.exp1_label, exp1_call_iv = EXCLUDED.exp1_call_iv,
+          exp1_put_iv = EXCLUDED.exp1_put_iv, exp1_atm_call_iv = EXCLUDED.exp1_atm_call_iv,
+          exp1_atm_put_iv = EXCLUDED.exp1_atm_put_iv,
+          exp1_call_dv = EXCLUDED.exp1_call_dv, exp1_put_dv = EXCLUDED.exp1_put_dv,
+          exp2_label = EXCLUDED.exp2_label, exp2_call_iv = EXCLUDED.exp2_call_iv,
+          exp2_put_iv = EXCLUDED.exp2_put_iv, exp2_atm_call_iv = EXCLUDED.exp2_atm_call_iv,
+          exp2_atm_put_iv = EXCLUDED.exp2_atm_put_iv,
+          exp2_call_dv = EXCLUDED.exp2_call_dv, exp2_put_dv = EXCLUDED.exp2_put_dv,
+          source = EXCLUDED.source, fetched_at = now()
+      `;
+
+      await new Promise((resolve, reject) => {
+        this.connection.run(sql, ...params, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      processed += batch.length;
+    }
+    return processed;
+  }
+
+  /**
+   * Get the derived daily IV series, optionally filtered to one ticker.
+   * @param {string} [ticker]
+   * @returns {Promise<Array>} Rows ordered by ticker, date
+   */
+  async getDailyIVHistory(ticker = null) {
+    const sql = ticker
+      ? 'SELECT * FROM options_daily_iv WHERE ticker = $1 ORDER BY date'
+      : 'SELECT * FROM options_daily_iv ORDER BY ticker, date';
+    return new Promise((resolve, reject) => {
+      const cb = (err, rows) => { if (err) reject(err); else resolve(rows || []); };
+      if (ticker) this.connection.all(sql, ticker.toUpperCase(), cb);
+      else this.connection.all(sql, cb);
+    });
+  }
+
+  /**
+   * Daily bars for one ticker from a start date onward, newest row per date.
+   * stock_prices is unique on (ticker, date, source), so a date can carry both a
+   * 'marketdata' and a 'screening' row; the most recently fetched one wins,
+   * matching how the analytics queries above dedupe.
+   * @param {string} ticker
+   * @param {string} fromDate - YYYY-MM-DD, inclusive
+   * @returns {Promise<Array>} [{date, open, high, low, close, volume}] oldest-first
+   */
+  async getDailyBars(ticker, fromDate) {
+    const sql = `
+      SELECT date, open, high, low, close, volume FROM (
+        SELECT date, open, high, low, close, volume,
+          ROW_NUMBER() OVER (PARTITION BY date ORDER BY fetched_at DESC) AS rn
+        FROM stock_prices
+        WHERE ticker = $1 AND date >= $2
+      ) WHERE rn = 1
+      ORDER BY date
+    `;
+    const rows = await new Promise((resolve, reject) => {
+      this.connection.all(sql, ticker.toUpperCase(), fromDate, (err, r) => {
+        if (err) reject(err);
+        else resolve(r || []);
+      });
+    });
+    return rows.map(r => ({
+      date: r.date instanceof Date ? r.date.toISOString().slice(0, 10) : String(r.date).split('T')[0].split(' ')[0],
+      open: r.open == null ? null : Number(r.open),
+      high: r.high == null ? null : Number(r.high),
+      low: r.low == null ? null : Number(r.low),
+      close: r.close == null ? null : Number(r.close),
+      volume: r.volume == null ? null : Number(r.volume),
+    }));
+  }
+
+  /**
+   * Load full IV-history records as {ticker: [record, ...]}, the shape that
+   * replaced ci/weighted-iv-history.json. Records come back sorted by date and
+   * carry their stored screening metadata (sector/eventTags/dailyReturn) merged
+   * back onto the JSON body, so callers see exactly the old file's structure.
+   * @param {string} [ticker] - Optional single-ticker filter
+   * @returns {Promise<Object>} {ticker: [records]}
+   */
+  async getIVHistoryRecords(ticker = null) {
+    const sql = ticker
+      ? 'SELECT * FROM iv_history_records WHERE ticker = $1 ORDER BY date'
+      : 'SELECT * FROM iv_history_records ORDER BY ticker, date';
+    const rows = await new Promise((resolve, reject) => {
+      const cb = (err, r) => { if (err) reject(err); else resolve(r || []); };
+      if (ticker) this.connection.all(sql, ticker.toUpperCase(), cb);
+      else this.connection.all(sql, cb);
+    });
+
+    const out = {};
+    for (const row of rows) {
+      let rec;
+      try {
+        rec = typeof row.record === 'string' ? JSON.parse(row.record) : row.record;
+      } catch (_) {
+        continue; // skip unparseable rows rather than breaking the whole load
+      }
+      if (!rec || typeof rec !== 'object') continue;
+      // The DuckDB driver hands back DATE columns as JS Date objects, whose
+      // String() form is "Thu Jul 31 2025 …" rather than an ISO date. Normalize
+      // via toISOString() so records keep the plain YYYY-MM-DD keys that the
+      // screening UI matches on. Use UTC parts: the Date is midnight UTC, so a
+      // local-time format would shift the day west of Greenwich.
+      rec.date = row.date instanceof Date
+        ? row.date.toISOString().slice(0, 10)
+        : String(row.date).split('T')[0].split(' ')[0];
+      if (row.sector) rec.sector = row.sector;
+      if (row.daily_return != null) rec.dailyReturn = Number(row.daily_return);
+      if (row.event_tags) {
+        try {
+          const tags = JSON.parse(row.event_tags);
+          if (Array.isArray(tags) && tags.length > 0) rec.eventTags = tags;
+        } catch (_) { /* leave tags off if malformed */ }
+      }
+      if (!out[row.ticker]) out[row.ticker] = [];
+      out[row.ticker].push(rec);
+    }
+    return out;
+  }
+
+  /**
+   * Upsert IV-history records. Accepts {ticker: [records]} in the same shape
+   * getIVHistoryRecords returns. Metadata fields are lifted into columns and
+   * also left on the JSON body so a record round-trips unchanged.
+   * @param {Object} history - {ticker: [records]}
+   * @returns {Promise<number>} Number of records written
+   */
+  async saveIVHistoryRecords(history) {
+    if (!history || typeof history !== 'object') return 0;
+
+    const flat = [];
+    for (const [ticker, records] of Object.entries(history)) {
+      if (!Array.isArray(records)) continue;
+      for (const rec of records) {
+        if (!rec || !rec.date) continue;
+        flat.push({ ticker: ticker.toUpperCase(), rec });
+      }
+    }
+    if (flat.length === 0) return 0;
+
+    const COLS = 7;
+    const BATCH = 200;
+    let processed = 0;
+
+    for (let i = 0; i < flat.length; i += BATCH) {
+      const batch = flat.slice(i, i + BATCH);
+      const values = [];
+      const params = [];
+      batch.forEach(({ ticker, rec }, j) => {
+        const p = [];
+        for (let k = 1; k <= COLS; k++) p.push(`$${j * COLS + k}`);
+        values.push(`(${p.join(',')})`);
+        params.push(
+          ticker,
+          rec.date,
+          rec.sector || null,
+          rec.dailyReturn != null ? Number(rec.dailyReturn) : null,
+          Array.isArray(rec.eventTags) && rec.eventTags.length > 0 ? JSON.stringify(rec.eventTags) : null,
+          JSON.stringify(rec),
+          rec.source || 'derived'
+        );
+      });
+
+      const sql = `
+        INSERT INTO iv_history_records (
+          ticker, date, sector, daily_return, event_tags, record, source
+        ) VALUES ${values.join(',')}
+        ON CONFLICT (ticker, date) DO UPDATE SET
+          sector = EXCLUDED.sector,
+          daily_return = EXCLUDED.daily_return,
+          event_tags = EXCLUDED.event_tags,
+          record = EXCLUDED.record,
+          source = EXCLUDED.source,
+          fetched_at = now()
+      `;
+
+      await new Promise((resolve, reject) => {
+        this.connection.run(sql, ...params, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      processed += batch.length;
+    }
+    return processed;
+  }
+
+  /**
+   * Replace every stored record for the given tickers. Used by the Phase D
+   * rebuild, where derived records supersede all prior snapshots for a ticker
+   * (tickers absent from the list keep their existing rows).
+   * @param {Array<string>} tickers
+   * @returns {Promise<void>}
+   */
+  async clearIVHistoryForTickers(tickers) {
+    if (!tickers || tickers.length === 0) return;
+    const list = tickers.map(t => `'${String(t).toUpperCase().replace(/'/g, "''")}'`).join(',');
+    await new Promise((resolve, reject) => {
+      this.connection.run(
+        `DELETE FROM iv_history_records WHERE ticker IN (${list})`,
+        (err) => { if (err) reject(err); else resolve(); }
+      );
+    });
+  }
+
 
   /**
    * Get per-event, per-day forward returns (not aggregated)
@@ -2353,7 +2793,7 @@ class ArticleDatabase {
       startDate = null,
       endDate = null,
       limit = 365,
-      source = 'yahoo_finance'
+      source = 'marketdata'
     } = options;
 
     let sql = `
@@ -2391,7 +2831,7 @@ class ArticleDatabase {
    * @param {string} source - Data source
    * @returns {Promise<Object|null>} Latest price record or null
    */
-  async getLatestPrice(ticker, source = 'yahoo_finance') {
+  async getLatestPrice(ticker, source = 'marketdata') {
     const sql = `
       SELECT ticker, date, open, high, low, close, volume, source, fetched_at
       FROM stock_prices

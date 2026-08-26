@@ -202,29 +202,6 @@ body {
   color: #6a7590;
 }
 
-/* Ticker input field */
-#ticker-input {
-  width: 200px;
-  height: 36px;
-  background: #15171c;
-  border: 1px solid #333;
-  border-radius: 4px;
-  color: #ddd;
-  padding: 0 12px;
-  font-size: 13px;
-  margin-right: 8px;
-}
-
-#ticker-input:focus {
-  outline: none;
-  border-color: #66bb6a;
-  box-shadow: 0 0 0 2px rgba(102, 187, 106, 0.2);
-}
-
-#ticker-input::placeholder {
-  color: #6a7590;
-}
-
 .action-controls {
   display: flex;
   gap: 8px;
@@ -270,167 +247,18 @@ body {
   animation: toastSpin 0.8s linear infinite;
 }
 
-/* Save Stock News button - soft green */
-.btn-analyze {
-  background: #66bb6a;
-}
-
-.btn-analyze:hover {
-  background: #4caf50;
-}
-
-.btn-analyze:active {
-  background: #43a047;
-}
-
-.btn-analyze:disabled {
-  background: #3a414d;
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-/* Count News button - soft purple */
-.btn-count-news {
-  background: #9575cd;
-}
-
-.btn-count-news:hover {
-  background: #7e57c2;
-}
-
-.btn-count-news:active {
-  background: #673ab7;
-}
-
-.btn-count-news:disabled {
-  background: #3a414d;
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-/* Not Good button - soft coral */
-.btn-not-good {
-  background: #ef9a9a;
-}
-
-.btn-not-good:hover {
-  background: #e57373;
-}
-
-.btn-not-good:active {
-  background: #ef5350;
-}
-
-/* Analysis bar at bottom of browser (below content) */
-#analysis-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 40px;
-  background: #1f2229;
-  border-top: 1px solid #2e333d;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 12px;
-  font-size: 12px;
-  z-index: 1000;
-  gap: 12px;
-}
-
-.bottom-bar-left {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.all-stocks-label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: #a0aec0;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.all-stocks-label input[type="checkbox"] {
-  width: 14px;
-  height: 14px;
-  cursor: pointer;
-  accent-color: #66bb6a;
-}
-
-#analysis-bar #ticker-input {
-  width: 140px;
-  height: 26px;
-  background: #15171c;
-  border: 1px solid #333;
-  border-radius: 4px;
-  color: #ddd;
-  padding: 0 8px;
-  font-size: 11px;
-}
-
-#analysis-bar #ticker-input:focus {
-  outline: none;
-  border-color: #66bb6a;
-}
-
-.action-btn-sm {
-  height: 26px;
-  padding: 0 12px;
-  border: none;
-  border-radius: 4px;
-  font-size: 11px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background-color 0.2s;
-}
-
-.action-btn-sm.btn-analyze {
-  background: #66bb6a;
+.action-btn.btn-forecast-event {
+  background: #4db6ac;
   color: white;
 }
 
-.action-btn-sm.btn-analyze:hover {
-  background: #4caf50;
+.action-btn.btn-forecast-event:hover {
+  background: #26a69a;
 }
 
-.action-btn-sm.btn-count-news {
-  background: #9575cd;
-  color: white;
-}
-
-.action-btn-sm.btn-count-news:hover {
-  background: #7e57c2;
-}
-
-.action-btn-sm.btn-not-good {
-  background: #ef9a9a;
-  color: white;
-}
-
-.action-btn-sm.btn-not-good:hover {
-  background: #e57373;
-}
-
-#stats-text-bottom {
-  font-size: 11px;
-  color: #a0aec0;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-#analysis-text {
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex-grow: 1;
-  text-align: right;
+.action-btn.btn-forecast-event.is-loading {
+  opacity: 0.7;
+  cursor: wait;
 }
 
 /* Settings button */
@@ -530,7 +358,7 @@ body {
   top: 96px; /* Below tab bar and toolbar */
   left: 0;
   width: 100%;
-  height: calc(100% - 136px); /* Account for top bars and bottom bar */
+  height: calc(100% - 96px); /* Account for top bars only */
   background: rgba(0, 0, 0, 0.6);
   z-index: 3000;
   display: flex;
@@ -966,24 +794,4 @@ body {
   color: #a0aec0;
 }
 
-/* TTS buttons in bottom bar */
-.tts-bar-divider {
-  width: 1px;
-  height: 16px;
-  background: #3a414d;
-  margin: 0 4px;
-  flex-shrink: 0;
-}
 
-.action-btn-sm.btn-tts-toggle {
-  background: #4db6ac;
-  color: white;
-}
-.action-btn-sm.btn-tts-toggle:hover { background: #38a599; }
-.action-btn-sm.btn-tts-toggle.tts-disabled { background: #546e7a; color: #90a4ae; }
-
-.action-btn-sm.btn-tts-stop {
-  background: #ef5350;
-  color: white;
-}
-.action-btn-sm.btn-tts-stop:hover { background: #e53935; }

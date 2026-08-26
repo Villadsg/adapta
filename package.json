@@ -8,7 +8,8 @@
     "start:clean": "electron . --no-sandbox",
     "dev": "electron . --no-sandbox --enable-logging",
     "bun:install": "cd bun-workers && bun install",
-    "bun:check": "bun --version"
+    "bun:check": "bun --version",
+    "data-api": "node src/services/dataApiServer.js"
   },
   "keywords": [
     "browser",

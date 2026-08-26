@@ -6,13 +6,15 @@
  * options metrics and sends a Telegram message.
  *
  * Run: TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... \
- *      TWELVE_DATA_API_KEY=... EODHD_API_KEY=... \
+ *      MARKET_DATA_API_KEY=... TWELVE_DATA_API_KEY=... EODHD_API_KEY=... \
  *      node ci/daily-event-scan.js
  *
  * Override tickers (e.g. for manual dispatch): TICKERS=AXON,QCOM
  */
 
-require('dotenv').config();
+const path = require('path');
+// .env.local first (real keys, gitignored), then .env as fallback.
+require('dotenv').config({ path: [path.join(__dirname, '..', '.env.local'), path.join(__dirname, '..', '.env')] });
 
 const BROWSER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -38,7 +40,6 @@ Module._resolveFilename = function (request, parent, ...rest) {
 };
 
 const fs = require('fs');
-const path = require('path');
 const config = require('./config.json');
 const { sendMessage, formatSuperFavoriteMessage } = require('./telegram');
 

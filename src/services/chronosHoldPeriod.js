@@ -45,7 +45,7 @@ class ChronosHoldPeriodService {
       // Fetch from database
       const rows = await this.database.getPriceHistory(ticker, {
         limit: contextDays,
-        source: 'yahoo_finance',
+        source: 'marketdata',
       });
       if (!rows || rows.length < 30) {
         const analysisRows = await this.database.getPriceHistory(ticker, {

@@ -26,6 +26,7 @@ jobs:
 
       - run: node ci/daily-event-scan.js
         env:
+          MARKET_DATA_API_KEY: ${{ secrets.MARKET_DATA_API_KEY }}
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
           EODHD_API_KEY: ${{ secrets.EODHD_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

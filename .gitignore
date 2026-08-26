@@ -4,6 +4,27 @@ node_modules/
 # Database files
 *.db
 *.db.wal
+*.db.bak
+
+# Large regenerable data artifacts.
+# weighted-iv-history.json is retired: IV history now lives in DuckDB
+# (iv_history_records, schema v14). These patterns stay so a stale copy left in
+# a working tree — it reached ~217MB — can never be committed by accident.
+ci/weighted-iv-history.json
+ci/weighted-iv-history.json.bak
+ci/weighted-iv-history.live-backup.json
+
+# Per-run screening artifacts (HTML snapshots + parquet sidecars). Regenerable
+# from DuckDB, and the parquet writer had been leaving most files truncated.
+ci/screening-runs/
+
+# TTM training datasets — rebuilt in seconds by python/ttm_event_dataset.py
+data/ttm-events/
+data/ttm-direction/*.jsonl
+data/ttm-direction/stats.json
+
+# ML model checkpoints — large, regenerable from training
+python/models/
 
 # OS files
 .DS_Store
@@ -29,6 +50,10 @@ yarn-error.log*
 dist/
 build/
 out/
+
+# Python cache
+python/__pycache__/
+*.pyc
 
 # Cache
 .cache/

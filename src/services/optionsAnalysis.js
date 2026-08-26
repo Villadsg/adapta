@@ -1,25 +1,35 @@
 /**
  * OptionsAnalysisService - Fetches and analyzes options market activity
  *
- * Uses yahoo-finance2 options() method to fetch options chains, then computes
- * put/call ratios, implied volatility, and unusual volume metrics to gauge
- * market sentiment before stock events.
+ * Uses MarketData.app to fetch options chains, then computes put/call ratios,
+ * implied volatility, and unusual volume metrics to gauge market sentiment
+ * before stock events. Chains arrive in yahoo-finance2 shape (see
+ * MarketDataProvider), so the metric code below is provider-agnostic.
  */
 
-const YahooFinance = require('yahoo-finance2').default;
+const MarketDataProvider = require('./marketDataProvider');
 
 class OptionsAnalysisService {
-  constructor(database, ibProvider) {
+  /**
+   * @param {Object} database
+   * @param {Object} [ibProvider] - Optional IB fallback (USE_IB_OPTIONS=1)
+   * @param {Object} [marketDataProvider] - Injectable; one is created on demand otherwise
+   */
+  constructor(database, ibProvider, marketDataProvider) {
     this.database = database;
     this.ibProvider = ibProvider || null;
+    this.marketData = marketDataProvider || null;
   }
 
   /**
-   * Get a fresh YahooFinance instance.
-   * Creating per-call avoids stale crumb/cookie state in long-running Electron processes.
+   * Lazily construct the MarketData provider so that consumers which never
+   * fetch chains don't require an API key.
    */
-  _createYF() {
-    return new YahooFinance({ suppressNotices: ['yahooSurvey'] });
+  _getMarketData() {
+    if (!this.marketData) {
+      this.marketData = new MarketDataProvider();
+    }
+    return this.marketData;
   }
 
   /**
@@ -27,39 +37,36 @@ class OptionsAnalysisService {
    * @param {string} ticker - Stock ticker symbol
    * @param {string} [expirationDate] - Optional expiration date (YYYY-MM-DD)
    * @param {number} [retries=2] - Number of retries on failure
+   * @param {Object} [chainOptions] - Forwarded to MarketDataProvider.fetchOptionsChain
+   *   (e.g. { maxOtmPct } — defaults to the provider's 0.15 strike band)
    * @returns {Promise<Object|null>} Raw options chain or null on error
    */
-  async fetchOptionsChain(ticker, expirationDate, retries = 2) {
-    const result = await this.fetchOptionsChainWithSource(ticker, expirationDate, retries);
+  async fetchOptionsChain(ticker, expirationDate, retries = 2, chainOptions) {
+    const result = await this.fetchOptionsChainWithSource(ticker, expirationDate, retries, chainOptions);
     return result ? result.chain : null;
   }
 
   /**
    * Like fetchOptionsChain, but returns { chain, source } so callers can
-   * attribute raw contracts to 'yahoo' or 'ib' (used by RunArchiver).
+   * attribute raw contracts to 'marketdata' or 'ib' (used by RunArchiver).
    */
-  async fetchOptionsChainWithSource(ticker, expirationDate, retries = 2) {
-    // Yahoo Finance is the primary source (IB is currently disabled — set USE_IB_OPTIONS=1 to re-enable as fallback)
+  async fetchOptionsChainWithSource(ticker, expirationDate, retries = 2, chainOptions) {
+    // MarketData is the primary source (IB is disabled — set USE_IB_OPTIONS=1 to re-enable as fallback)
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const yf = this._createYF();
-        const queryOptions = {};
-        if (expirationDate) {
-          queryOptions.date = new Date(expirationDate);
-        }
-        const chain = await yf.options(ticker, queryOptions);
+        const chain = await this._getMarketData().fetchOptionsChain(ticker, expirationDate, chainOptions);
         const hasCalls = chain?.options?.[0]?.calls?.length > 0;
         const hasPuts = chain?.options?.[0]?.puts?.length > 0;
-        if (hasCalls || hasPuts) return { chain, source: 'yahoo' };
+        if (hasCalls || hasPuts) return { chain, source: 'marketdata' };
         break;
       } catch (error) {
         const isLastAttempt = attempt === retries;
         if (isLastAttempt) {
-          console.log(`  Yahoo options failed for ${ticker}: ${error.message}`);
+          console.log(`  MarketData options failed for ${ticker}: ${error.message}`);
           break;
         }
         const delay = 3000 * (attempt + 1);
-        console.log(`  Yahoo options attempt ${attempt + 1} failed (${error.message}), retrying in ${delay / 1000}s...`);
+        console.log(`  MarketData options attempt ${attempt + 1} failed (${error.message}), retrying in ${delay / 1000}s...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
@@ -93,9 +100,6 @@ class OptionsAnalysisService {
     const { maxExpirations = 4 } = options;
 
     console.log(`\nFetching options data for ${ticker}...`);
-
-    // Delay to avoid Yahoo Finance rate limiting (429) after prior API calls
-    await new Promise(resolve => setTimeout(resolve, 2000));
 
     // First fetch to get available expirations and current price
     const initialChain = await this.fetchOptionsChain(ticker);
@@ -139,7 +143,7 @@ class OptionsAnalysisService {
 
     // Fetch remaining expirations individually
     for (let i = 1; i < nearestExpirations.length; i++) {
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Rate limit
+      // No client-side throttle needed: MarketDataClient retries/backs off on 429.
       const chain = await this.fetchOptionsChain(ticker, this.formatDate(nearestExpirations[i]));
       if (chain) {
         const metrics = this.computeExpirationMetrics(chain, currentPrice, globalLatestTradeDay);
@@ -198,7 +202,13 @@ class OptionsAnalysisService {
     const atmCall = this.findATMOption(calls, currentPrice);
     const atmPut = this.findATMOption(puts, currentPrice);
 
-    // Fresh trade filter — only count volume from the latest trade day
+    // Fresh trade filter — only count volume from the latest trade day.
+    // Under MarketData, lastTradeDate is a per-snapshot `updated` timestamp
+    // (uniform across the chain), not a per-contract last-trade time, so this
+    // filter is effectively a no-op there. That is safe: MarketData's `volume`
+    // is already the current session's volume, so the (volume > 0) conditions
+    // below exclude stale contracts on their own. The filter is retained for
+    // the IB fallback path, which does report per-contract trade times.
     const allRaw = [...calls, ...puts];
     const localLatestTradeDay = allRaw.reduce((max, c) => {
       const d = c.lastTradeDate ? new Date(c.lastTradeDate).toISOString().split('T')[0] : '';
@@ -995,15 +1005,15 @@ class OptionsAnalysisService {
   // ===== Helper methods =====
 
   /**
-   * Normalize raw impliedVolatility from Yahoo Finance to annualized decimal.
-   * Yahoo returns daily variance (σ²/day), not annualized stdev.
-   * Detect format by magnitude and convert accordingly.
+   * Normalize raw impliedVolatility to annualized decimal.
+   * MarketData (like Yahoo before it) returns annualized IV as a decimal
+   * (e.g. 0.35 = 35%), so this is a passthrough guard against zero/negative
+   * values. Kept as a seam in case a future provider reports IV differently.
    * @param {number} rawIV - Raw impliedVolatility value
    * @returns {number} Annualized IV as decimal (0.30 = 30%)
    */
   normalizeIV(rawIV) {
     if (!rawIV || rawIV <= 0) return 0;
-    // Yahoo Finance returns annualized IV as decimal (e.g. 0.35 = 35%)
     return rawIV;
   }
 

@@ -1,11 +1,15 @@
 const https = require('https');
 const bunBridge = require('./bunBridge');
+const MarketDataProvider = require('./marketDataProvider');
+
+/** Source label written to stock_prices for provider-sourced bars. */
+const PRICE_SOURCE = 'marketdata';
 
 /**
  * Price Tracking Service
- * Fetches stock price data from Yahoo Finance and manages price updates
+ * Fetches stock price data from MarketData.app and manages price updates
  *
- * Supports optional Bun worker for faster HTTP requests.
+ * Bun worker support is retained for the generic fetchJSON helper.
  */
 class PriceTrackingService {
   constructor(database, options = {}) {
@@ -16,6 +20,15 @@ class PriceTrackingService {
     this.bunChecked = false;
     this.bunAvailable = false;
     this.optionsAnalyzer = null;
+    this.marketData = options.marketDataProvider || null;
+  }
+
+  /** Lazily construct the provider so an API key is only needed when fetching. */
+  _getMarketData() {
+    if (!this.marketData) {
+      this.marketData = new MarketDataProvider();
+    }
+    return this.marketData;
   }
 
   /**
@@ -43,62 +56,96 @@ class PriceTrackingService {
   }
 
   /**
-   * Fetch historical stock prices from Yahoo Finance
+   * Fetch historical daily stock prices from MarketData.app.
+   * Bars are returned oldest-first, matching the previous Yahoo chart behaviour.
    * @param {string} ticker - Stock ticker symbol
    * @param {Object} options - Fetch options
-   * @param {string} options.period1 - Start timestamp (seconds since epoch)
-   * @param {string} options.period2 - End timestamp (seconds since epoch)
-   * @param {string} options.interval - Data interval ('1d', '1wk', '1mo')
+   * @param {number} options.period1 - Start timestamp (seconds since epoch)
+   * @param {number} options.period2 - End timestamp (seconds since epoch)
    * @returns {Promise<Array>} Array of price data
    */
   async fetchHistoricalPrices(ticker, options = {}) {
     const {
       period1 = Math.floor(Date.now() / 1000) - (365 * 24 * 60 * 60), // 1 year ago
       period2 = Math.floor(Date.now() / 1000), // Now
-      interval = '1d'
+      refresh = false, // force a full provider pull, ignoring stored bars
     } = options;
 
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?period1=${period1}&period2=${period2}&interval=${interval}`;
+    const fromDate = new Date(period1 * 1000).toISOString().slice(0, 10);
+    const toDate = new Date(period2 * 1000).toISOString().slice(0, 10);
+
+    // Serve the window from stored bars and ask the provider only for the tail
+    // after the newest stored date. Re-downloading a settled multi-month history
+    // on every run is what exhausts the daily credit budget; the older bars can
+    // never change (splits aside, which the backfill handles separately).
+    if (this.database && !refresh) {
+      let stored = [];
+      try {
+        stored = await this.database.getDailyBars(ticker, fromDate);
+      } catch (err) {
+        console.warn(`  ⚠️  ${ticker}: could not read stored bars (${err.message}) — falling back to full fetch`);
+        stored = [];
+      }
+
+      if (stored.length > 0) {
+        const lastStored = stored[stored.length - 1].date;
+        if (lastStored >= toDate) {
+          console.log(`  ✓ ${ticker}: ${stored.length} bars from DB (current through ${lastStored}, no fetch)`);
+          return stored;
+        }
+
+        // Re-request from the last stored day so that day's bar is refreshed too
+        // (an intraday run stores a partial bar that settles after the close).
+        const tailFrom = Math.floor(new Date(`${lastStored}T00:00:00Z`).getTime() / 1000);
+        console.log(`📈 ${ticker}: ${stored.length} bars from DB through ${lastStored}, fetching ${lastStored}→${toDate}...`);
+        try {
+          const fresh = await this._getMarketData().fetchHistoricalPrices(ticker, {
+            period1: tailFrom, period2,
+          });
+          const merged = this._mergeBars(stored, fresh);
+          console.log(`  ✓ ${ticker}: +${fresh.length} fetched, ${merged.length} bars total`);
+          return merged;
+        } catch (error) {
+          // A failed top-up should not sink the run when the stored history is
+          // still usable — the caller only loses the most recent day or two.
+          console.warn(`  ⚠️  ${ticker}: top-up fetch failed (${error.message}) — using ${stored.length} stored bars`);
+          return stored;
+        }
+      }
+    }
 
     console.log(`📈 Fetching historical prices for ${ticker}...`);
 
     try {
-      const data = await this.fetchJSON(url);
-
-      if (!data || !data.chart || !data.chart.result || data.chart.result.length === 0) {
-        throw new Error(`No data found for ticker ${ticker}`);
-      }
-
-      const result = data.chart.result[0];
-      const timestamps = result.timestamp;
-      const quote = result.indicators.quote[0];
-
-      if (!timestamps || !quote) {
-        throw new Error(`Invalid data format for ticker ${ticker}`);
-      }
-
-      // Convert to array of price objects
-      const prices = [];
-      for (let i = 0; i < timestamps.length; i++) {
-        const date = new Date(timestamps[i] * 1000);
-        const dateStr = date.toISOString().split('T')[0]; // YYYY-MM-DD
-
-        prices.push({
-          date: dateStr,
-          open: quote.open[i],
-          high: quote.high[i],
-          low: quote.low[i],
-          close: quote.close[i],
-          volume: quote.volume[i]
-        });
-      }
-
+      const prices = await this._getMarketData().fetchHistoricalPrices(ticker, { period1, period2 });
       console.log(`  ✓ Fetched ${prices.length} price records for ${ticker}`);
       return prices;
     } catch (error) {
       console.error(`  ❌ Error fetching prices for ${ticker}:`, error.message);
       throw error;
     }
+  }
+
+  /**
+   * Merge freshly fetched bars over stored ones, keyed by date (fresh wins), and
+   * return them oldest-first.
+   * @param {Array} stored
+   * @param {Array} fresh
+   * @returns {Array}
+   */
+  _mergeBars(stored, fresh) {
+    const byDate = new Map();
+    for (const b of stored) {
+      if (b && b.date) byDate.set(b.date, b);
+    }
+    for (const b of (fresh || [])) {
+      if (!b || !b.date) continue;
+      const key = b.date instanceof Date
+        ? b.date.toISOString().slice(0, 10)
+        : String(b.date).split('T')[0].split(' ')[0];
+      byDate.set(key, { ...b, date: key });
+    }
+    return [...byDate.values()].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   }
 
   /**
@@ -122,12 +169,13 @@ class PriceTrackingService {
           continue;
         }
 
-        await this.database.saveStockPrice(ticker, priceData.date, priceData, 'yahoo_finance');
+        await this.database.saveStockPrice(ticker, priceData.date, priceData, PRICE_SOURCE);
         savedCount++;
       }
 
-      const earliestDate = prices[prices.length - 1].date;
-      const latestDate = prices[0].date;
+      // Bars are oldest-first
+      const earliestDate = prices[0].date;
+      const latestDate = prices[prices.length - 1].date;
 
       console.log(`  ✓ Saved ${savedCount} price records for ${ticker} (${earliestDate} to ${latestDate})`);
 
@@ -161,7 +209,6 @@ class PriceTrackingService {
       const prices = await this.fetchHistoricalPrices(ticker, {
         period1: fiveDaysAgo,
         period2: now,
-        interval: '1d'
       });
 
       if (prices.length === 0) {
@@ -175,11 +222,12 @@ class PriceTrackingService {
           continue;
         }
 
-        await this.database.saveStockPrice(ticker, priceData.date, priceData, 'yahoo_finance');
+        await this.database.saveStockPrice(ticker, priceData.date, priceData, PRICE_SOURCE);
         savedCount++;
       }
 
-      const latestPrice = prices[0];
+      // Bars are oldest-first
+      const latestPrice = prices[prices.length - 1];
 
       return {
         success: true,
@@ -325,56 +373,11 @@ class PriceTrackingService {
    * @returns {Promise<Object>} Quote data
    */
   async getQuoteSummary(ticker) {
-    // Use the chart endpoint (same one used for historical data) because
-    // /v7/finance/quote requires a crumb+cookie and rejects bare requests.
-    const period2 = Math.floor(Date.now() / 1000);
-    const period1 = period2 - 5 * 24 * 60 * 60; // last 5 days
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?period1=${period1}&period2=${period2}&interval=1d`;
-
     try {
-      const data = await this.fetchJSON(url);
-
-      if (!data || !data.chart || !data.chart.result || data.chart.result.length === 0) {
-        throw new Error(`No quote data found for ${ticker}`);
-      }
-
-      const chartResult = data.chart.result[0];
-      const meta = chartResult.meta;
-      const timestamps = chartResult.timestamp || [];
-      const quotes = chartResult.indicators?.quote?.[0] || {};
-
-      // Latest bar gives us today's OHLCV (partial if market is open)
-      const lastIdx = timestamps.length - 1;
-      const todayOpen = lastIdx >= 0 ? quotes.open?.[lastIdx] : null;
-      const todayHigh = lastIdx >= 0 ? quotes.high?.[lastIdx] : null;
-      const todayLow = lastIdx >= 0 ? quotes.low?.[lastIdx] : null;
-      const todayClose = lastIdx >= 0 ? quotes.close?.[lastIdx] : null;
-      const todayVolume = lastIdx >= 0 ? quotes.volume?.[lastIdx] : null;
-
-      // previousClose: use the close of the second-to-last bar, or meta field
-      const previousClose = lastIdx >= 1
-        ? quotes.close?.[lastIdx - 1]
-        : (meta.chartPreviousClose ?? meta.previousClose ?? null);
-
-      const price = meta.regularMarketPrice ?? todayClose;
-      const prevCl = meta.previousClose ?? previousClose;
-      const change = price && prevCl ? price - prevCl : 0;
-      const changePercent = prevCl ? (change / prevCl) * 100 : 0;
-
-      return {
-        ticker: meta.symbol || ticker,
-        price,
-        change,
-        changePercent,
-        volume: todayVolume ?? meta.regularMarketVolume ?? 0,
-        marketCap: null, // not available from chart endpoint
-        shortName: null,
-        longName: null,
-        open: todayOpen ?? null,
-        dayHigh: todayHigh ?? null,
-        dayLow: todayLow ?? null,
-        previousClose: previousClose ?? prevCl ?? null
-      };
+      // marketCap/shortName/longName come back null — MarketData carries no
+      // company metadata. The previous Yahoo chart-endpoint implementation
+      // returned null for those fields too, so callers are unaffected.
+      return await this._getMarketData().getQuoteSummary(ticker);
     } catch (error) {
       console.error(`Error fetching quote for ${ticker}:`, error);
       throw error;

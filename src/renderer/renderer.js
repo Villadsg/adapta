@@ -1,46 +1,21 @@
 // Get DOM elements
 const urlBar = document.getElementById('url-bar');
-const tickerInput = document.getElementById('ticker-input');
-const allStocksCheckbox = document.getElementById('all-stocks-checkbox');
 const btnBack = document.getElementById('btn-back');
 const btnForward = document.getElementById('btn-forward');
 const btnReload = document.getElementById('btn-reload');
-const btnAnalyze = document.getElementById('btn-analyze');
-const btnCountNews = document.getElementById('btn-count-news');
-const btnNotGood = document.getElementById('btn-not-good');
+const btnForecastEvent = document.getElementById('btn-forecast-event');
+const forecastEventModal = document.getElementById('forecast-event-modal');
+const forecastEventBody = document.getElementById('forecast-event-body');
+const forecastTickerInput = document.getElementById('forecast-ticker-input');
+const forecastRunBtn = document.getElementById('forecast-run-btn');
+const forecastEventClose = document.getElementById('forecast-event-close');
 const btnSettings = document.getElementById('btn-settings');
-const statsText = document.getElementById('stats-text-bottom');
-const analysisBar = document.getElementById('analysis-bar');
-const analysisText = document.getElementById('analysis-text');
 const tabsContainer = document.getElementById('tabs-container');
 const btnNewTab = document.getElementById('btn-new-tab');
 const btnMinimize = document.getElementById('btn-minimize');
 const btnMaximize = document.getElementById('btn-maximize');
 const btnClose = document.getElementById('btn-close');
 const toastContainer = document.getElementById('toast-container');
-
-// TTS controls
-const btnStopTts = document.getElementById('btn-stop-tts');
-const btnToggleTts = document.getElementById('btn-toggle-tts');
-let ttsEnabled = true;
-
-btnStopTts.addEventListener('click', () => window.electronAPI.stopSpeaking());
-
-btnToggleTts.addEventListener('click', async () => {
-  ttsEnabled = !ttsEnabled;
-  await window.electronAPI.toggleTts(ttsEnabled);
-  btnToggleTts.classList.toggle('tts-disabled', !ttsEnabled);
-  btnToggleTts.title = ttsEnabled ? 'TTS enabled (claude.ai)' : 'TTS disabled';
-});
-
-window.electronAPI.onTtsStateChanged((data) => {
-  btnStopTts.style.display = data.speaking ? 'inline-flex' : 'none';
-});
-
-document.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-  if (e.key === 'Escape') window.electronAPI.stopSpeaking();
-});
 
 // Toast notification function
 function showToast(title, message, type = 'success', duration = 3000, options = {}) {
@@ -85,99 +60,6 @@ const tabs = new Map(); // tabId -> {element, title, url}
 // Performance optimization: batch DOM updates
 let pendingUpdates = new Map(); // tabId -> {url, title}
 let rafScheduled = false;
-
-// Auto-analysis debounce timer for "not good" detection
-let autoAnalysisTimer = null;
-const AUTO_ANALYSIS_DELAY = 2500; // Wait 2.5s after page load before analyzing (increased for snappier navigation)
-
-// Navigation velocity tracking - skip analysis during rapid browsing
-const navigationHistory = [];
-const MAX_NAV_HISTORY = 5;
-const NAV_COOLDOWN = 5000; // 5 seconds
-
-// Quick check if URL is worth analyzing (skip homepages, search pages, etc.)
-function shouldAttemptAnalysis(url) {
-  if (!url || !url.startsWith('http')) return false;
-  try {
-    const urlObj = new URL(url);
-    // Skip homepages
-    if (urlObj.pathname === '/' || urlObj.pathname === '') return false;
-    // Skip search pages
-    if (urlObj.search.includes('q=') || urlObj.pathname.includes('/search')) return false;
-    // Skip known search engines
-    if (urlObj.hostname.includes('duckduckgo') || urlObj.hostname.includes('google.com')) return false;
-    // Skip common non-article paths
-    if (/^\/(login|signup|account|cart|checkout|settings)/i.test(urlObj.pathname)) return false;
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// Automatically analyze page for "not good" similarity when navigating
-async function autoAnalyzeForNotGood() {
-  // Quick rejection based on URL
-  const tab = tabs.get(currentTabId);
-  if (!tab || !shouldAttemptAnalysis(tab.url)) {
-    analysisText.style.display = 'none';
-    return;
-  }
-
-  try {
-    const result = await window.electronAPI.analyzePage();
-
-    if (!result.success || result.skipped) {
-      // Clear any previous warning
-      analysisText.style.display = 'none';
-      return;
-    }
-
-    // Filter for "not_good" matches only
-    const notGoodMatches = (result.matches || []).filter(m => m.category === 'not_good');
-
-    if (notGoodMatches.length > 0) {
-      const topMatch = notGoodMatches[0];
-      const similarityPercent = (topMatch.similarity * 100).toFixed(0);
-
-      // Always show similarity to "not good" content
-      analysisText.textContent = `${similarityPercent}% similar to "Not Good": ${topMatch.title.substring(0, 40)}${topMatch.title.length > 40 ? '...' : ''}`;
-      analysisText.style.color = '#333333'; // Black
-      analysisText.style.display = 'inline';
-    } else {
-      // No "not good" matches - clear any warning
-      analysisText.style.display = 'none';
-    }
-  } catch (error) {
-    console.error('Auto-analysis error:', error);
-    analysisText.style.display = 'none';
-  }
-}
-
-// Debounced version of auto-analysis with velocity tracking
-function scheduleAutoAnalysis() {
-  // Clear any pending analysis
-  if (autoAnalysisTimer) {
-    clearTimeout(autoAnalysisTimer);
-  }
-
-  // Track navigation velocity
-  const now = Date.now();
-  navigationHistory.push(now);
-  if (navigationHistory.length > MAX_NAV_HISTORY) navigationHistory.shift();
-
-  // Skip analysis if navigating too fast (more than 3 navigations in 5 seconds)
-  const recentNavs = navigationHistory.filter(t => now - t < NAV_COOLDOWN);
-  if (recentNavs.length > 3) return;
-
-  // Schedule analysis after delay, using idle callback for better performance
-  autoAnalysisTimer = setTimeout(() => {
-    if (typeof requestIdleCallback !== 'undefined') {
-      requestIdleCallback(() => autoAnalyzeForNotGood(), { timeout: 5000 });
-    } else {
-      autoAnalyzeForNotGood();
-    }
-  }, AUTO_ANALYSIS_DELAY);
-}
 
 // Create a new tab
 async function createTab(url = '') {
@@ -344,135 +226,6 @@ urlBar.addEventListener('focus', () => {
   urlBar.select();
 });
 
-// Save article as 'stock_news' with similarity analysis first
-async function saveStockNews() {
-  try {
-    // Step 1: Extract article data to show tickers
-    btnAnalyze.disabled = true;
-    btnAnalyze.textContent = '⏳ Extracting...';
-    analysisText.textContent = 'Extracting article data...';
-    analysisText.style.color = '#999999';
-    analysisText.style.display = 'inline';
-
-    const articleData = await window.electronAPI.downloadText();
-
-    if (articleData.error) {
-      analysisText.textContent = `Error: ${articleData.error}`;
-      analysisText.style.color = '#f44336';
-      analysisText.style.display = 'inline';
-      btnAnalyze.disabled = false;
-      btnAnalyze.textContent = '📈 Save Stock News';
-      return;
-    }
-
-    // Show extracted tickers
-    const autoTickers = articleData.tickers || [];
-    if (autoTickers.length > 0) {
-      analysisText.textContent = `Found tickers: ${autoTickers.join(', ')}`;
-      analysisText.style.color = '#2196f3'; // Blue for info
-      analysisText.style.display = 'inline';
-    } else {
-      analysisText.textContent = 'No tickers found automatically';
-      analysisText.style.color = '#ff9800'; // Orange for warning
-      analysisText.style.display = 'inline';
-    }
-
-    // Step 2: Determine tickers - either "all stocks" or manual/auto tickers
-    let tickersToSave;
-    if (allStocksCheckbox.checked) {
-      // "All stocks" mode - use special marker
-      tickersToSave = ['*'];
-    } else {
-      // Parse manual tickers from input field
-      const manualTickersInput = tickerInput.value.trim();
-      tickersToSave = manualTickersInput
-        ? manualTickersInput.split(/[\s,]+/).map(t => t.toUpperCase()).filter(t => t.length > 0)
-        : [];
-    }
-
-    // Step 3: Save the article as 'stock_news' with tickers
-    btnAnalyze.textContent = '💾 Saving...';
-    const saveResult = await window.electronAPI.saveArticle('stock_news', tickersToSave);
-
-    if (!saveResult.success) {
-      analysisText.textContent = `Error saving: ${saveResult.error}`;
-      analysisText.style.color = '#f44336';
-      analysisText.style.display = 'inline';
-      btnAnalyze.disabled = false;
-      btnAnalyze.textContent = '📈 Save Stock News';
-      return;
-    }
-
-    // Build success message with final tickers and date
-    const article = saveResult.article;
-    let successMsg = `✓ Saved: ${article.title}`;
-    if (article.tickers && article.tickers.length > 0) {
-      // Show "All Stocks" instead of "*"
-      const tickerDisplay = article.tickers.includes('*') ? 'All Stocks' : article.tickers.join(', ');
-      successMsg += ` [${tickerDisplay}]`;
-    }
-    if (article.publishedDate) {
-      const date = new Date(article.publishedDate);
-      successMsg += ` (${date.toLocaleDateString()})`;
-    }
-
-    analysisText.textContent = successMsg;
-    analysisText.style.color = '#4caf50'; // Green for success
-    analysisText.style.display = 'inline';
-
-    // Show toast notification
-    const tickerDisplay = article.tickers?.includes('*') ? 'All Stocks' : (article.tickers?.join(', ') || 'No tickers');
-    showToast('Article Saved', `${article.title.substring(0, 50)}${article.title.length > 50 ? '...' : ''} [${tickerDisplay}]`, 'success');
-
-    // Clear inputs after successful save
-    tickerInput.value = '';
-    allStocksCheckbox.checked = false;
-
-    // Update stats
-    await updateStats();
-
-    // Re-enable button
-    btnAnalyze.disabled = false;
-    btnAnalyze.textContent = '📈 Save Stock News';
-
-  } catch (error) {
-    console.error('Error saving stock news:', error);
-    analysisText.textContent = `Error: ${error.message}`;
-    analysisText.style.color = '#f44336';
-    analysisText.style.display = 'inline';
-    btnAnalyze.disabled = false;
-    btnAnalyze.textContent = '📈 Save Stock News';
-  }
-}
-
-// Display similarity results in analysis bar
-function displaySimilarityResults(matches) {
-  if (!matches || matches.length === 0) {
-    analysisText.textContent = '✓ Analysis complete: No similar pages found (unique content)';
-    analysisText.style.color = '#4caf50'; // Green for unique
-    analysisText.style.display = 'inline';
-    return;
-  }
-
-  const topMatch = matches[0];
-  const similarityPercent = (topMatch.similarity * 100).toFixed(1);
-  const matchCategory = topMatch.category === 'good' ? 'Good' : 'Not Good';
-
-  let message = `✓ Analysis complete: ${similarityPercent}% similar to "${topMatch.title}" (${matchCategory})`;
-
-  // Show all top matches if there are multiple
-  if (matches.length > 1) {
-    const otherMatches = matches.slice(1, 3).map(m =>
-      `${(m.similarity * 100).toFixed(1)}% ${m.category === 'good' ? 'Good' : 'Not Good'}`
-    ).join(', ');
-    message += ` | Others: ${otherMatches}`;
-  }
-
-  analysisText.textContent = message;
-  analysisText.style.color = topMatch.similarity > 0.7 ? '#ff9800' : '#9c27b0'; // Orange for high similarity
-  analysisText.style.display = 'inline';
-}
-
 // Batch DOM updates using requestAnimationFrame for better performance
 function scheduleDOMUpdate(tabId, url, title) {
   pendingUpdates.set(tabId, { url, title });
@@ -493,7 +246,6 @@ function scheduleDOMUpdate(tabId, url, title) {
         // Update URL bar if this is the active tab
         if (tabId === currentTabId) {
           urlBar.value = url;
-          analysisText.style.display = 'none';
         }
       });
 
@@ -547,11 +299,6 @@ window.electronAPI.onUrlChanged(async (data) => {
 
   // Schedule batched DOM update for better performance
   scheduleDOMUpdate(tabId, url, title);
-
-  // Auto-analysis disabled - embedding model comparison not currently in use
-  // if (tabId === currentTabId && url.startsWith('http')) {
-  //   scheduleAutoAnalysis();
-  // }
 });
 
 // New tab button
@@ -559,94 +306,103 @@ btnNewTab.addEventListener('click', async () => {
   await createTab();
 });
 
-// Save article as "Not Good" (similarity already shown from auto-analysis)
-async function saveArticle(category) {
+// Forecast Event modal
+if (btnForecastEvent) {
+  btnForecastEvent.addEventListener('click', async () => {
+    await window.electronAPI.showModal();
+    forecastEventModal.style.display = 'flex';
+    forecastTickerInput.focus();
+  });
+} else {
+  console.error('[Forecast] button element #btn-forecast-event not found');
+}
+
+forecastRunBtn.addEventListener('click', async () => {
+  await forecastEventMagnitude();
+});
+
+forecastTickerInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') {
+    forecastEventMagnitude();
+  }
+});
+
+forecastEventClose.addEventListener('click', async () => {
+  forecastEventModal.style.display = 'none';
+  await window.electronAPI.hideModal();
+});
+
+forecastEventModal.addEventListener('click', async (e) => {
+  if (e.target === forecastEventModal) {
+    forecastEventModal.style.display = 'none';
+    await window.electronAPI.hideModal();
+  }
+});
+
+async function forecastEventMagnitude() {
+  const ticker = forecastTickerInput.value.trim().split(/[\s,]+/)[0]?.toUpperCase();
+  console.log('[Forecast] ticker input:', ticker);
+  if (!ticker) {
+    showToast('Forecast Error', 'Enter a ticker first', 'error');
+    return;
+  }
+
+  forecastRunBtn.disabled = true;
+  forecastRunBtn.classList.add('is-loading');
+  forecastRunBtn.textContent = '⏳ Running...';
+  showToast('Forecasting', `Running TTM-R3 for ${ticker}...`, 'info');
+
   try {
-    const result = await window.electronAPI.saveArticle(category);
+    console.log('[Forecast] calling IPC forecastEventMagnitude');
+    const result = await window.electronAPI.forecastEventMagnitude(ticker);
+    console.log('[Forecast] IPC result:', result);
 
     if (!result.success) {
-      showToast('Error', result.error, 'error');
+      showToast('Forecast Error', result.error || 'Unknown error', 'error');
+      forecastEventBody.innerHTML = `<p style="color: #ef5350;">Error: ${result.error}</p>`;
       return;
     }
 
-    const article = result.article;
-    console.log(`✓ Article saved (ID: ${article.id})`, article);
+    const prob = result.event_probability ?? 0;
+    const threshold = result.event_threshold ?? 1;
+    const predictedMag = result.predicted_event_magnitude ?? 0;
+    const probPercent = (prob * 100).toFixed(1);
+    const color = prob >= 0.5 ? '#ef5350' : (prob >= 0.25 ? '#ffca28' : '#66bb6a');
 
-    // Show toast notification
-    showToast('Marked as Not Good', `${article.title.substring(0, 50)}${article.title.length > 50 ? '...' : ''}`, 'info');
+    forecastEventBody.innerHTML = `
+      <div class="form-row">
+        <span style="color: #4db6ac; font-weight: 600; font-size: 1.1em;">${ticker} — ${result.forecast_date}</span>
+      </div>
+      <div class="form-row" style="display: flex; justify-content: space-between; gap: 12px;">
+        <div style="flex: 1; background: #1f2229; border-radius: 8px; padding: 12px; text-align: center;">
+          <div style="font-size: 0.75em; color: #a0aec0;">Event Probability</div>
+          <div style="font-size: 1.6em; font-weight: 700; color: ${color};">${probPercent}%</div>
+        </div>
+        <div style="flex: 1; background: #1f2229; border-radius: 8px; padding: 12px; text-align: center;">
+          <div style="font-size: 0.75em; color: #a0aec0;">Signal</div>
+          <div style="font-size: 1.2em; font-weight: 600; color: ${color};">${prob >= 0.5 ? 'High' : (prob >= 0.25 ? 'Elevated' : 'Low')}</div>
+        </div>
+      </div>
+      <div class="form-row">
+        <div style="background: #1f2229; border-radius: 8px; padding: 12px;">
+          <div style="font-size: 0.75em; color: #a0aec0;">Estimated Volume × |Return|</div>
+          <div style="font-size: 1.1em; color: #eaeaea;">${predictedMag.toLocaleString()} <span style="color: #888; font-size: 0.85em;">(threshold: ${threshold.toLocaleString()})</span></div>
+        </div>
+      </div>
+      <div class="form-row" style="font-size: 0.8em; color: #888;">
+        Context: ${result.context_days} days ending ${result.context_end}
+      </div>
+    `;
 
-    // Update stats
-    await updateStats();
-
+    showToast('Forecast Ready', `${ticker}: ${probPercent}% event probability`, 'success');
   } catch (error) {
-    console.error('Error saving article:', error);
-    showToast('Error', error.message, 'error');
-  }
-}
-
-btnNotGood.addEventListener('click', async () => {
-  await saveArticle('not_good');
-});
-
-// Save Stock News button - analyze similarity then save with tickers/dates
-btnAnalyze.addEventListener('click', async () => {
-  await saveStockNews();
-});
-
-// Count News button - record article count on current page
-btnCountNews.addEventListener('click', async () => {
-  await recordNewsCount();
-});
-
-// Record news count from current page
-async function recordNewsCount() {
-  try {
-    btnCountNews.disabled = true;
-    btnCountNews.textContent = '⏳ Counting...';
-    analysisText.textContent = 'Counting articles...';
-    analysisText.style.color = '#999999';
-    analysisText.style.display = 'inline';
-
-    const result = await window.electronAPI.recordNewsCount();
-
-    if (!result.success) {
-      analysisText.textContent = `Error: ${result.error}`;
-      analysisText.style.color = '#f44336';
-      analysisText.style.display = 'inline';
-      btnCountNews.disabled = false;
-      btnCountNews.textContent = '📊 Count News';
-      return;
-    }
-
-    // Display success with ticker and count
-    const date = new Date(result.recordedAt).toLocaleDateString();
-    analysisText.textContent = `✓ Recorded ${result.count} articles for ${result.ticker} (${date})`;
-    analysisText.style.color = '#5e35b1'; // Purple to match button
-    analysisText.style.display = 'inline';
-
-    console.log(`✓ News count saved: ${result.ticker} = ${result.count} articles`);
-
-    btnCountNews.disabled = false;
-    btnCountNews.textContent = '📊 Count News';
-  } catch (error) {
-    console.error('Error recording news count:', error);
-    analysisText.textContent = `Error: ${error.message}`;
-    analysisText.style.color = '#f44336';
-    analysisText.style.display = 'inline';
-    btnCountNews.disabled = false;
-    btnCountNews.textContent = '📊 Count News';
-  }
-}
-
-// Update statistics display
-async function updateStats() {
-  try {
-    const stats = await window.electronAPI.getStats();
-    if (!stats.error) {
-      statsText.textContent = `Not Good: ${stats.not_good}`;
-    }
-  } catch (error) {
-    console.error('Error updating stats:', error);
+    console.error('[Forecast] error:', error);
+    showToast('Forecast Error', error.message, 'error');
+    forecastEventBody.innerHTML = `<p style="color: #ef5350;">Error: ${error.message}</p>`;
+  } finally {
+    forecastRunBtn.disabled = false;
+    forecastRunBtn.classList.remove('is-loading');
+    forecastRunBtn.textContent = 'Run Forecast';
   }
 }
 
@@ -683,29 +439,175 @@ const screenPercentile = document.getElementById('screen-percentile');
 const screenCancel = document.getElementById('screen-cancel');
 const screenRun = document.getElementById('screen-run');
 
-async function refreshSuperFavoritesDisplay() {
+// Local editable copy of the super favorites list; synced via saveSuperFavorites.
+let superFavoritesState = [];
+
+function renderSuperFavoriteChips() {
   const wrap = document.getElementById('super-favorites-display');
   const chips = document.getElementById('super-favorites-chips');
   const countEl = document.getElementById('super-favorites-count');
   if (!wrap || !chips) return;
-  try {
-    const result = await window.electronAPI.getFavorites();
-    const supers = (result && result.superFavorites) || [];
-    if (supers.length === 0) {
-      wrap.style.display = 'none';
-      return;
-    }
-    wrap.style.display = 'block';
-    countEl.textContent = '(' + supers.length + ')';
-    chips.innerHTML = supers
-      .slice()
-      .sort()
-      .map(t => '<span style="padding: 2px 8px; background: #2f1518; color: #ef9a9a; border: 1px solid #5a2a2e; border-radius: 4px; font-size: 11px; font-weight: 500;">' + t + '</span>')
-      .join('');
-  } catch (_) {
-    wrap.style.display = 'none';
+
+  wrap.style.display = 'block';
+  countEl.textContent = superFavoritesState.length
+    ? `(${superFavoritesState.length})`
+    : '(empty — add tickers below)';
+  chips.innerHTML = '';
+
+  if (!superFavoritesState.length) {
+    chips.innerHTML = '<span style="color:#5a6577; font-size:12px; padding:4px 6px;">No super favorites — type a symbol below and press Enter or Add.</span>';
+    return;
+  }
+
+  for (const t of superFavoritesState.slice().sort()) {
+    const chip = document.createElement('span');
+    chip.style.cssText = 'display:inline-flex; align-items:center; gap:5px; padding:4px 6px 4px 10px; border-radius:6px; font-size:12px; font-weight:600; background:#3b1a1a; color:#ff8a80; border:1px solid #5c2020; cursor:default;';
+    chip.innerHTML = '★ ' + t + ' <span style="color:#ff6b6b; font-weight:bold; padding:0 3px; cursor:pointer;" title="Remove">×</span>';
+    chip.querySelector('span').addEventListener('click', () => {
+      superFavoritesState = superFavoritesState.filter(x => x !== t);
+      persistSuperFavorites();
+    });
+    chips.appendChild(chip);
   }
 }
+
+async function persistSuperFavorites() {
+  const result = await window.electronAPI.saveSuperFavorites(superFavoritesState);
+  if (result && result.success) {
+    superFavoritesState = result.superFavorites;
+  } else if (result && result.error) {
+    showToast('Error', result.error, 'error');
+  }
+  renderSuperFavoriteChips();
+}
+
+async function refreshSuperFavoritesDisplay() {
+  try {
+    const result = await window.electronAPI.getFavorites();
+    superFavoritesState = (result && result.superFavorites) || [];
+  } catch (_) {
+    superFavoritesState = [];
+  }
+  renderSuperFavoriteChips();
+}
+
+// Add super favorite input
+const superFavoriteAddInput = document.getElementById('super-favorite-add');
+const superFavoriteAddBtn = document.getElementById('super-favorite-add-btn');
+
+function addSuperFavorite() {
+  const t = (superFavoriteAddInput.value || '').trim().toUpperCase();
+  if (!t) return;
+  if (superFavoritesState.includes(t)) {
+    showToast('Already in list', t + ' is already a super favorite', 'info');
+    superFavoriteAddInput.value = '';
+    return;
+  }
+  superFavoritesState.push(t);
+  superFavoriteAddInput.value = '';
+  persistSuperFavorites();
+}
+
+if (superFavoriteAddBtn) superFavoriteAddBtn.addEventListener('click', addSuperFavorite);
+if (superFavoriteAddInput) superFavoriteAddInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') addSuperFavorite();
+});
+
+// Local editable copy of the screening list; kept in sync with config.json
+// via saveScreenList after every edit.
+let screenListState = { tickers: [], fixed: [] };
+
+async function persistScreenList() {
+  const result = await window.electronAPI.saveScreenList(screenListState.tickers, screenListState.fixed);
+  if (result && result.success) {
+    screenListState = { tickers: result.tickers, fixed: result.fixed };
+  } else if (result && result.error) {
+    showToast('Error', result.error, 'error');
+  }
+  renderScreenTickerChips();
+}
+
+function renderScreenTickerChips() {
+  const wrap = document.getElementById('screen-tickers-display');
+  const chips = document.getElementById('screen-tickers-chips');
+  const countEl = document.getElementById('screen-tickers-count');
+  if (!wrap || !chips) return;
+
+  const { tickers, fixed } = screenListState;
+  wrap.style.display = 'block';
+  const fixedCount = tickers.filter(t => fixed.includes(t)).length;
+  countEl.textContent = tickers.length
+    ? `(${tickers.length}: ${fixedCount} pinned, ${tickers.length - fixedCount} flex)`
+    : '(empty — add tickers below)';
+  chips.innerHTML = '';
+
+  if (!tickers.length) {
+    chips.innerHTML = '<span style="color:#5a6577; font-size:12px; padding:4px 6px;">No tickers — type a symbol below and press Enter or Add.</span>';
+    return;
+  }
+
+  for (const t of tickers.slice().sort()) {
+    const isFixed = fixed.includes(t);
+    const chip = document.createElement('span');
+    chip.title = isFixed ? 'Pinned — click to unpin' : 'Click to pin (survives rebuilds)';
+    chip.style.cssText = 'display:inline-flex; align-items:center; gap:5px; padding:4px 6px 4px 10px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; user-select:none; ' +
+      (isFixed
+        ? 'background:#3b2a14; color:#ffcc80; border:1px solid #5c4420;'
+        : 'background:#2a2520; color:#d4a76a; border:1px solid #3e3528;');
+    chip.innerHTML = (isFixed ? '📌 ' : '') + t + ' <span style="color:#ffb74d; font-weight:bold; padding:0 3px; cursor:pointer;" title="Remove">×</span>';
+    // Click on × removes; click elsewhere toggles pin
+    chip.querySelector('span').addEventListener('click', (e) => {
+      e.stopPropagation();
+      screenListState.tickers = screenListState.tickers.filter(x => x !== t);
+      screenListState.fixed = screenListState.fixed.filter(x => x !== t);
+      persistScreenList();
+    });
+    chip.addEventListener('click', () => {
+      if (screenListState.fixed.includes(t)) {
+        screenListState.fixed = screenListState.fixed.filter(x => x !== t);
+      } else {
+        screenListState.fixed.push(t);
+      }
+      persistScreenList();
+    });
+    chips.appendChild(chip);
+  }
+}
+
+async function refreshScreenTickersDisplay() {
+  try {
+    const result = await window.electronAPI.getScreenTickers();
+    screenListState = {
+      tickers: (result && result.tickers) || [],
+      fixed: (result && result.fixed) || [],
+    };
+  } catch (_) {
+    screenListState = { tickers: [], fixed: [] };
+  }
+  renderScreenTickerChips();
+}
+
+// Add-ticker input
+const screenTickerAddInput = document.getElementById('screen-ticker-add');
+const screenTickerAddBtn = document.getElementById('screen-ticker-add-btn');
+
+function addScreenTicker() {
+  const t = (screenTickerAddInput.value || '').trim().toUpperCase();
+  if (!t) return;
+  if (screenListState.tickers.includes(t)) {
+    showToast('Already in list', t + ' is already in the screening list', 'info');
+    screenTickerAddInput.value = '';
+    return;
+  }
+  screenListState.tickers.push(t);
+  screenTickerAddInput.value = '';
+  persistScreenList();
+}
+
+if (screenTickerAddBtn) screenTickerAddBtn.addEventListener('click', addScreenTicker);
+if (screenTickerAddInput) screenTickerAddInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') addScreenTicker();
+});
 
 let screeningActive = false;
 
@@ -729,6 +631,7 @@ btnScreen.addEventListener('click', async () => {
   screenPeriod.focus();
   populateScreeningRuns();
   refreshSuperFavoritesDisplay();
+  refreshScreenTickersDisplay();
 });
 
 screenCancel.addEventListener('click', async () => {
@@ -743,7 +646,7 @@ screenModal.addEventListener('click', async (e) => {
   }
 });
 
-// Revise the 100 button
+// Rebuild Ticker List button
 const screenRevise = document.getElementById('screen-revise');
 const screenViewLast = document.getElementById('screen-view-last');
 
@@ -787,8 +690,8 @@ screenRevise.addEventListener('click', async () => {
   toast.innerHTML = `
     <span class="toast-icon">ℹ</span>
     <div class="toast-content">
-      <div class="toast-title">Revising the 50</div>
-      <div class="toast-message">Analyzing ~200 tickers, ~3-4 minutes...</div>
+      <div class="toast-title">Rebuilding Ticker List</div>
+      <div class="toast-message">Ranking ~910 tickers, ~6-8 minutes...</div>
     </div>
   `;
   toastContainer.appendChild(toast);
@@ -809,7 +712,8 @@ screenRevise.addEventListener('click', async () => {
     const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
     await createTab(dataUrl);
 
-    showToast('Revision Complete', `Selected ${result.tickers.length} tickers from ${result.totalScored} scored`, 'success');
+    showToast('Rebuild Complete', `Selected ${result.tickers.length} tickers from ${result.totalScored} scored`, 'success');
+    refreshScreenTickersDisplay();
   } catch (error) {
     toast.remove();
     console.error('Revise error:', error);
@@ -872,14 +776,25 @@ function generateReviseHTML(result) {
     const rowStyle = isSelected ? '' : ' style="color:#999;"';
     const statusOrder = st.order;
 
+    // Which ranking(s) selected this ticker (old results files have no flags —
+    // treat all selected as growth-list members)
+    const inGrowth = d.inGrowth !== false;
+    const inEvent = d.inEvent === true;
+    const listBadge = isSelected
+      ? (inGrowth && inEvent ? 'G + EP' : inEvent ? 'EP' : 'G')
+      : '—';
+    const listOrder = isSelected ? (inGrowth && inEvent ? 2 : inEvent ? 1 : 0) : -1;
+
     return `<tr${rowStyle}>
       <td data-v="${d.ticker}" style="font-weight:bold;">${d.ticker}</td>
       <td data-v="${statusOrder}" style="color:${st.color}; font-weight:bold;">${st.label}</td>
+      <td data-v="${listOrder}">${listBadge}</td>
       <td data-v="${d.revenueGrowth || 0}">${d.revenueGrowth != null ? (d.revenueGrowth * 100).toFixed(1) + '%' : '—'}</td>
       <td data-v="${d.equityGrowth || 0}">${d.equityGrowth != null ? (d.equityGrowth * 100).toFixed(1) + '%' : '—'}</td>
       <td data-v="${d.debtToEquity || 0}">${d.debtToEquity != null ? d.debtToEquity.toFixed(0) : '—'}</td>
       <td data-v="${d.leverageFactor || 0}">${d.leverageFactor != null ? d.leverageFactor.toFixed(3) : '—'}</td>
       <td data-v="${d.score || 0}">${d.score != null && d.score >= 0 ? (d.score * 100).toFixed(2) : '—'}</td>
+      <td data-v="${d.eventProneness || 0}">${d.eventProneness != null && d.eventProneness > 0 ? d.eventProneness.toFixed(2) : '—'}</td>
       <td data-v="${d.avgVolume || 0}" style="text-align:right;">${d.avgVolume ? (d.avgVolume / 1e6).toFixed(1) + 'M' : '—'}</td>
       <td data-v="${d.marketCap || 0}" style="text-align:right;">${fmtCap(d.marketCap)}</td>
     </tr>`;
@@ -887,7 +802,7 @@ function generateReviseHTML(result) {
 
   return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
-<title>Revise the 100 — Results</title>
+<title>Rebuild Ticker List — Results</title>
 <style>
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 20px; background: #fafafa; color: #333; }
   h1 { font-size: 1.4em; margin-bottom: 4px; }
@@ -910,8 +825,8 @@ function generateReviseHTML(result) {
   td { padding: 8px 12px; border-top: 1px solid #eee; font-size: 0.95em; }
   tr:hover { background: #f9f9f9; }
 </style></head><body>
-<h1>Revise the 100 — All Tickers</h1>
-<p class="summary">${nTotal} tickers analyzed${timestamp ? ' on ' + timestamp : ''}. ${selectedSet.size} selected for screening.</p>
+<h1>Rebuild Ticker List — All Tickers</h1>
+<p class="summary">${nTotal} tickers analyzed${timestamp ? ' on ' + timestamp : ''}. ${selectedSet.size} selected for screening (top ${result.topN || 20} growth + top ${result.topN || 20} event-prone, union). List column: G = growth, EP = event-prone.</p>
 
 <div class="exclusion-summary">
   <div class="excl-card selected"><div class="count">${selectedSet.size}</div><div class="label">Selected</div></div>
@@ -925,11 +840,13 @@ function generateReviseHTML(result) {
 <thead><tr>
   <th>Ticker<span class="sort-arrow"></span></th>
   <th>Status<span class="sort-arrow"></span></th>
+  <th>Lists<span class="sort-arrow"></span></th>
   <th>Rev Growth<span class="sort-arrow"></span></th>
   <th>Eq Growth<span class="sort-arrow"></span></th>
   <th>D/E<span class="sort-arrow"></span></th>
   <th>Lev Factor<span class="sort-arrow"></span></th>
   <th>Score<span class="sort-arrow"></span></th>
+  <th title="Event-proneness: beta, or 52-week range as fallback">EP<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Avg Vol<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Mkt Cap<span class="sort-arrow"></span></th>
 </tr></thead>
@@ -1080,14 +997,6 @@ screenRun.addEventListener('click', async () => {
 // Initialize
 (async () => {
   // Tab creation doesn't require DB — start it immediately.
-  // Open simplywall.st first (active by default), then claude.ai and lichess.org,
-  // and switch back to simplywall.st so it remains the focused tab on startup.
-  const simplywallTabId = await createTab('https://simplywall.st/dashboard');
-  await createTab('https://claude.ai');
-  await createTab('https://lichess.org');
-  await switchTab(simplywallTabId);
-
-  // Stats require DB — wait for backend readiness
-  await window.electronAPI.waitBackendReady();
-  await updateStats();
+  // Open simplywall.st as the only startup tab.
+  await createTab('https://simplywall.st/dashboard');
 })();

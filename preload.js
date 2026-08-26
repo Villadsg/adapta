@@ -22,10 +22,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   waitBackendReady: () => ipcRenderer.invoke('wait-backend-ready'),
 
   // Database operations
-  analyzePage: () => ipcRenderer.invoke('analyze-page'),
-  saveArticle: (category, manualTickers) => ipcRenderer.invoke('save-article', category, manualTickers),
-  recordNewsCount: () => ipcRenderer.invoke('record-news-count'),
-  getStats: () => ipcRenderer.invoke('get-stats'),
   getStockStats: () => ipcRenderer.invoke('get-stock-stats'),
   getRecentNewsVolume: () => ipcRenderer.invoke('get-recent-news-volume'),
   getArticles: (categoryFilter) => ipcRenderer.invoke('get-articles', categoryFilter),
@@ -51,6 +47,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Stock event analysis
   analyzeStockEvents: (ticker, options) => ipcRenderer.invoke('analyze-stock-events', ticker, options),
   getAnalyzedTickers: () => ipcRenderer.invoke('get-analyzed-tickers'),
+  forecastEventMagnitude: (ticker, date) => ipcRenderer.invoke('forecast-event-magnitude', ticker, date),
 
   // Modal support (hide/show BrowserView)
   showModal: () => ipcRenderer.invoke('show-modal'),
@@ -61,10 +58,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   cancelScreening: () => ipcRenderer.invoke('cancel-screening'),
   reviseTickers: () => ipcRenderer.invoke('revise-tickers'),
   loadReviseResults: () => ipcRenderer.invoke('load-revise-results'),
+  getScreenTickers: () => ipcRenderer.invoke('get-screen-tickers'),
+  saveScreenList: (tickers, fixed) => ipcRenderer.invoke('save-screen-list', { tickers, fixed }),
   loadScreeningResults: (filePath) => ipcRenderer.invoke('load-screening-results', filePath),
   listScreeningRuns: () => ipcRenderer.invoke('list-screening-runs'),
   toggleFavorite: (ticker) => ipcRenderer.invoke('toggle-favorite', ticker),
   getFavorites: () => ipcRenderer.invoke('get-favorites'),
+  saveSuperFavorites: (tickers) => ipcRenderer.invoke('save-super-favorites', tickers),
   toggleDelete: (ticker) => ipcRenderer.invoke('toggle-delete', ticker),
   onReviseProgress: (callback) => ipcRenderer.on('revise-progress', (event, data) => callback(data)),
 
@@ -73,14 +73,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Listen for URL changes
   onUrlChanged: (callback) => ipcRenderer.on('url-changed', (event, data) => callback(data)),
-
-  // TTS: read Claude.ai responses aloud via OmniVoice
-  speakText: (text) => ipcRenderer.send('speak-text', text),
-  stopSpeaking: () => ipcRenderer.send('stop-speaking'),
-  toggleTts: (enabled) => ipcRenderer.invoke('toggle-tts', enabled),
-  onTtsStateChanged: (callback) => ipcRenderer.on('tts-state-changed', (event, data) => callback(data)),
-  listVoices: () => ipcRenderer.invoke('list-voices'),
-  saveTtsAudio: (text) => ipcRenderer.invoke('save-tts-audio', text),
 
   // Window controls
   windowMinimize: () => ipcRenderer.invoke('window-minimize'),

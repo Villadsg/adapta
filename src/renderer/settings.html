@@ -376,48 +376,7 @@
       </div>
     </div>
 
-    <!-- TTS Test -->
-    <div class="section">
-      <h2>TTS</h2>
-      <div class="form-group">
-        <label for="tts-voice-select">Voice:</label>
-        <select id="tts-voice-select" style="width: 100%; max-width: 400px; height: 40px;
-                background: #1e1e1e; border: 1px solid #404040; border-radius: 4px;
-                color: #ffffff; padding: 0 12px; font-size: 14px;">
-          <option value="">Loading voices...</option>
-        </select>
-        <small>Voice samples from ~/Documents/voices and the default voice_ref.wav. Each voice file needs a matching .txt transcript (e.g. gris.wav → gris.txt).</small>
-      </div>
-      <div class="form-group">
-        <label for="tts-speed">Speech speed:</label>
-        <input type="number" id="tts-speed" min="0.5" max="3.0" step="0.1" value="1.2"
-               style="width: 100px;" />
-        <small>1.0 = normal, 1.2 = 20% faster, 2.0 = double speed</small>
-      </div>
-      <div class="form-group">
-        <label for="tts-quality">Quality (diffusion steps):</label>
-        <input type="number" id="tts-quality" min="1" max="32" step="1" value="16"
-               style="width: 100px;" />
-        <small>1–32. Fewer steps = faster, lower quality. 16 = balanced, 32 = best.</small>
-      </div>
-      <div class="form-group">
-        <label for="tts-test-input">Test text:</label>
-        <textarea
-          id="tts-test-input"
-          placeholder="Type something to hear it read aloud..."
-          style="width: 100%; height: 80px; font-family: inherit; font-size: 14px;
-                 background: #1e1e1e; border: 1px solid #404040; border-radius: 4px;
-                 color: #ffffff; padding: 12px; resize: vertical;">Hello, this is a test of the text to speech system.</textarea>
-      </div>
-      <div class="button-group">
-        <button id="btn-tts-speak" class="btn-primary">▶ Speak</button>
-        <button id="btn-tts-stop" class="btn-secondary">⏹ Stop</button>
-        <button id="btn-tts-save-audio" class="btn-secondary">💾 Save as MP3</button>
-        <button id="btn-tts-save-voice" class="btn-primary">Save Settings</button>
-      </div>
-    </div>
 
-    <!-- SQL Query Interface -->
     <div class="section">
       <h2>SQL Query Interface</h2>
 
@@ -608,56 +567,6 @@
 
     // Load settings on page load
     loadWatchlistSettings();
-
-    // === TTS ===
-    const ttsTestInput = document.getElementById('tts-test-input');
-    const ttsVoiceSelect = document.getElementById('tts-voice-select');
-
-    const ttsSpeed = document.getElementById('tts-speed');
-    const ttsQuality = document.getElementById('tts-quality');
-
-    async function loadVoices() {
-      const [voices, saved, savedSpeed, savedQuality] = await Promise.all([
-        window.electronAPI.listVoices(),
-        window.electronAPI.getSetting('tts_voice', ''),
-        window.electronAPI.getSetting('tts_speed', '1.2'),
-        window.electronAPI.getSetting('tts_quality', '16'),
-      ]);
-      ttsVoiceSelect.innerHTML = voices.map(v =>
-        `<option value="${v.path}" ${v.path === saved ? 'selected' : ''}>${v.label}</option>`
-      ).join('');
-      ttsSpeed.value = savedSpeed;
-      ttsQuality.value = savedQuality;
-    }
-    loadVoices();
-
-    document.getElementById('btn-tts-speak').addEventListener('click', () => {
-      const text = ttsTestInput.value.trim();
-      if (text) window.electronAPI.speakText(text);
-    });
-    document.getElementById('btn-tts-stop').addEventListener('click', () => {
-      window.electronAPI.stopSpeaking();
-    });
-    document.getElementById('btn-tts-save-audio').addEventListener('click', async () => {
-      const text = ttsTestInput.value.trim();
-      if (!text) return;
-      const btn = document.getElementById('btn-tts-save-audio');
-      btn.disabled = true;
-      btn.textContent = 'Generating...';
-      const result = await window.electronAPI.saveTtsAudio(text);
-      btn.disabled = false;
-      btn.textContent = '💾 Save as MP3';
-      if (result && result.ok) showMessage('Audio file saved', 'success');
-      else if (result && result.error !== 'cancelled') showMessage('Error: ' + result.error, 'error');
-    });
-    document.getElementById('btn-tts-save-voice').addEventListener('click', async () => {
-      await Promise.all([
-        window.electronAPI.setSetting('tts_voice', ttsVoiceSelect.value),
-        window.electronAPI.setSetting('tts_speed', ttsSpeed.value),
-        window.electronAPI.setSetting('tts_quality', ttsQuality.value),
-      ]);
-      showMessage('TTS settings saved', 'success');
-    });
   </script>
 </body>
 </html>

@@ -1,7 +1,11 @@
-require('dotenv').config();
+const path = require('path');
+// .env.local first (real keys, gitignored), then .env as fallback.
+require('dotenv').config({ path: [path.join(__dirname, '.env.local'), path.join(__dirname, '.env')] });
 
 // Patch global fetch to use a real browser User-Agent for Yahoo Finance domains.
-// yahoo-finance2's getCrumb.js hardcodes a bot-like User-Agent that Yahoo blocks with 429.
+// Yahoo now only serves fundamentals (sector/industry/market cap/financials);
+// prices and options come from MarketData.app. yahoo-finance2's getCrumb.js
+// hardcodes a bot-like User-Agent that Yahoo blocks with 429.
 // See: https://github.com/gadicc/yahoo-finance2/issues/977
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 const _origFetch = global.fetch;
@@ -15,7 +19,6 @@ global.fetch = function(url, opts = {}) {
 };
 
 const { app, BrowserWindow, BrowserView, ipcMain, globalShortcut, Menu, dialog } = require('electron');
-const path = require('path');
 const { spawn } = require('child_process');
 const ArticleDatabase = require('./src/services/database');
 const PriceTrackingService = require('./src/services/priceTracking');
@@ -26,7 +29,8 @@ const IBOptionsProvider = require('./src/services/ibOptionsProvider');
 const articleExtractor = require('./src/services/articleExtractor');
 const newsScraper = require('./src/services/newsScraper');
 const ChronosHoldPeriodService = require('./src/services/chronosHoldPeriod');
-const { screenTickers, reviseTickers } = require('./ci/ticker-screen');
+const TTMEventAnalysisService = require('./src/services/ttmEventAnalysis');
+const { screenTickers, reviseTickers, formatAge } = require('./ci/ticker-screen');
 const { classifyTickerNews, tagTickerEvents } = require('./src/services/newsClassifier');
 const { TAG_LABELS: EVENT_TAG_LABELS } = require('./src/services/eventTags');
 const YahooFinance = require('yahoo-finance2').default;
@@ -40,13 +44,7 @@ let stockAnalyzer;
 let optionsAnalyzer;
 let chronosHoldService;
 let runArchiver;
-
-// TTS state
-let activeTtsProcess = null;
-let ttsEnabled = true;
-const ttsPythonScript = path.join(__dirname, 'python', 'tts_speak.py');
-const ttsVoiceRef = path.join(__dirname, 'python', 'voice_ref.wav');
-const ttsVoicesDir = path.join(require('os').homedir(), 'Documents', 'adapta', 'voices');
+let ttmEventService;
 
 // Tab management
 const tabs = new Map(); // tabId -> BrowserView
@@ -73,6 +71,14 @@ function getExtractionBrowserView() {
       }
     });
     console.log('Created hidden BrowserView for article extraction');
+
+    // Without a did-fail-load listener Electron prints "Failed to load URL ..."
+    // to stderr for every blocked ad/tracking iframe — silence those, keep real errors
+    extractionBrowserView.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      if (isMainFrame && errorCode !== -3) { // -3 is ERR_ABORTED (cancelled/superseded load)
+        console.log(`Article extraction navigation failed: ${validatedURL} - ${errorDescription}`);
+      }
+    });
   }
   return extractionBrowserView;
 }
@@ -262,190 +268,8 @@ function updateBrowserViewBounds(browserView) {
     x: 0,
     y: 96, // Space for tab bar (36px) + toolbar (60px)
     width: width,
-    height: height - 136 // 96 (top bars) + 28 (analysis bar at bottom)
+    height: height - 96 // Remaining space below top bars
   });
-}
-
-// TTS: inject MutationObserver into claude.ai tabs to detect finished responses
-function injectClaudeTTS(browserView) {
-  const url = browserView.webContents.getURL();
-  if (!url.includes('claude.ai')) return;
-
-  browserView.webContents.executeJavaScript(`
-    (function() {
-      const currentPath = location.pathname;
-      if (window.__claudeTTSPath === currentPath) return;
-      window.__claudeTTSPath = currentPath;
-
-      const seen = new WeakSet();
-      const seenTexts = new Set();
-      const injectedAt = Date.now();
-
-      function extractText(el) {
-        // Clone so we can remove citation/source elements before reading
-        const clone = el.cloneNode(true);
-        // Remove citation superscripts, footnotes, and source link sections
-        clone.querySelectorAll([
-          'sup',                          // superscript citation numbers
-          '[data-testid="citation"]',     // claude citation markers
-          '[data-testid="sources"]',      // sources section
-          '.citation',
-          'ol li a[href]',                // numbered source links
-        ].join(',')).forEach(n => n.remove());
-        return (clone.innerText || clone.textContent || '').trim();
-      }
-
-      function maybeSpeak(el) {
-        if (seen.has(el)) return;
-        seen.add(el);
-        if (Date.now() - injectedAt < 800) return;
-        const raw = extractText(el);
-        if (raw.length < 20) return;
-        // Dedup by first 80 chars to catch double-firing mutations
-        const key = raw.slice(0, 80);
-        if (seenTexts.has(key)) return;
-        seenTexts.add(key);
-        const capped = raw
-          .replace(/\`\`\`[\\s\\S]*?\`\`\`/g, ' [code block] ')
-          .replace(/[*_\`#>]/g, '')
-          .replace(/\\n{2,}/g, '. ')
-          .replace(/\\n/g, ' ')
-          .replace(/ {2,}/g, ' ')
-          .trim()
-          .slice(0, 3000);
-        window.electronAPI.speakText(capped);
-      }
-
-      const ASSISTANT_SEL = '[data-testid="assistant-message"][data-is-streaming="false"], [data-is-streaming="false"]:not([data-testid="human-turn"])';
-
-      function isAssistant(el) {
-        // Must have data-is-streaming="false" and not be a human turn
-        if (!el.matches) return false;
-        if (el.matches('[data-testid="human-turn"], [data-testid="human-message"]')) return false;
-        return el.matches('[data-is-streaming="false"]');
-      }
-
-      function checkEl(el) {
-        if (!el || el.nodeType !== 1) return;
-        if (isAssistant(el)) maybeSpeak(el);
-        const nodes = el.querySelectorAll ? el.querySelectorAll(ASSISTANT_SEL) : [];
-        for (const n of nodes) {
-          if (isAssistant(n)) maybeSpeak(n);
-        }
-      }
-
-      const observer = new MutationObserver((mutations) => {
-        for (const m of mutations) {
-          if (m.type === 'childList') {
-            for (const node of m.addedNodes) checkEl(node);
-          } else if (m.type === 'attributes' && m.attributeName === 'data-is-streaming') {
-            if (m.target.getAttribute('data-is-streaming') === 'false' && isAssistant(m.target)) maybeSpeak(m.target);
-          }
-        }
-      });
-
-      observer.observe(document.body, {
-        childList: true, subtree: true,
-        attributes: true, attributeFilter: ['data-is-streaming']
-      });
-    })()
-  `).catch(() => {});
-}
-
-// Kill TTS process group (Python + aplay child)
-function killTtsProcess() {
-  const proc = activeTtsProcess;
-  activeTtsProcess = null;
-  if (!proc) return;
-  try {
-    process.kill(-proc.pid, 'SIGKILL');
-  } catch (_) {
-    try { proc.kill('SIGKILL'); } catch (_2) {}
-  }
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('tts-state-changed', { speaking: false });
-  }
-}
-
-// Serializes TTS requests: if a spawn is in-flight (awaiting settings), queue
-// only the latest text so we never run two at once.
-let ttsSpawning = false;
-let ttsPending = null;
-
-// TTS: spawn OmniVoice Python subprocess to synthesize and play text
-async function spawnOmniVoiceTTS(text) {
-  if (!ttsEnabled || !text) return;
-
-  // If already spawning, just replace the pending text and return
-  if (ttsSpawning) {
-    ttsPending = text;
-    killTtsProcess();
-    return;
-  }
-
-  killTtsProcess();
-  ttsSpawning = true;
-
-  try {
-    const fs = require('fs');
-    const payload = { text };
-    const [savedVoice, savedSpeed, savedQuality] = await Promise.all([
-      database ? database.getSetting('tts_voice', null).catch(() => null) : null,
-      database ? database.getSetting('tts_speed', '1.2').catch(() => '1.2') : '1.2',
-      database ? database.getSetting('tts_quality', '16').catch(() => '16') : '16',
-    ]);
-    const voicePath = savedVoice || ttsVoiceRef;
-    if (fs.existsSync(voicePath)) payload.ref_audio = voicePath;
-    payload.speed = parseFloat(savedSpeed) || 1.2;
-    payload.num_step = parseInt(savedQuality) || 16;
-
-    // If stop was requested during the await, bail out
-    if (!ttsEnabled) { ttsSpawning = false; return; }
-
-    const child = spawn('python3', [ttsPythonScript], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      detached: true,  // own process group so we can kill the whole group
-    });
-
-    activeTtsProcess = child;
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('tts-state-changed', { speaking: true });
-    }
-
-    child.stdin.write(JSON.stringify(payload));
-    child.stdin.end();
-
-    child.on('close', () => {
-      if (activeTtsProcess === child) {
-        activeTtsProcess = null;
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('tts-state-changed', { speaking: false });
-        }
-      }
-      ttsSpawning = false;
-      // If a new text arrived while we were busy, speak it now
-      if (ttsPending) {
-        const next = ttsPending;
-        ttsPending = null;
-        spawnOmniVoiceTTS(next);
-      }
-    });
-
-    child.on('error', (err) => {
-      console.error('TTS subprocess error:', err.message);
-      if (activeTtsProcess === child) activeTtsProcess = null;
-      ttsSpawning = false;
-      if (ttsPending) {
-        const next = ttsPending;
-        ttsPending = null;
-        spawnOmniVoiceTTS(next);
-      }
-    });
-
-  } catch (err) {
-    console.error('TTS spawn error:', err.message);
-    ttsSpawning = false;
-  }
 }
 
 // Create a new tab
@@ -474,6 +298,16 @@ function createTab(url = 'https://simplywall.st/dashboard') {
   );
 
   session.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
+    // Never block requests to the site's own domain — the site's API may contain
+    // words like "analytics" in legitimate paths (e.g. api.simplywall.st).
+    try {
+      const urlHost = new URL(details.url).hostname;
+      const initHost = details.initiator ? new URL(details.initiator).hostname : '';
+      const rootDomain = (h) => h.split('.').slice(-2).join('.');
+      if (initHost && rootDomain(urlHost) === rootDomain(initHost)) {
+        return callback({});
+      }
+    } catch (_) {}
     // Single regex test is much faster than array iteration + toLowerCase + includes
     callback({ cancel: blockPattern.test(details.url) });
   });
@@ -537,7 +371,6 @@ function createTab(url = 'https://simplywall.st/dashboard') {
 
   browserView.webContents.on('did-navigate-in-page', (event, url) => {
     sendUrlUpdate(url, browserView.webContents.getTitle());
-    setTimeout(() => injectClaudeTTS(browserView), 400);
   });
 
   // Prevent OS dark mode from bleeding into websites
@@ -576,39 +409,22 @@ function createTab(url = 'https://simplywall.st/dashboard') {
     const currentUrl = browserView.webContents.getURL();
     if (currentUrl.includes('simplywall.st')) {
       browserView.webContents.insertCSS(`
-        /* Hide overlay/modal popups and their backdrops */
-        [class*="modal"], [class*="Modal"],
-        [class*="overlay"], [class*="Overlay"],
+        /* Hide paywall/signup walls and their backdrops.
+           Note: deliberately NOT hiding [class*="overlay"]/[role="dialog"] —
+           those also match the dashboard search dropdown and would break it. */
         [class*="paywall"], [class*="Paywall"],
         [class*="signup-wall"], [class*="SignupWall"],
-        [class*="gate"], [class*="Gate"],
-        [role="dialog"],
-        .ReactModal__Overlay,
-        .ReactModal__Content {
+        [class*="SignupGate"], [class*="signup-gate"],
+        [class*="PaywallGate"] {
           display: none !important;
         }
-        /* Restore scrolling if the modal locks the body */
+        /* Restore scrolling if a wall locks the body */
         body, html {
           overflow: auto !important;
           position: static !important;
         }
       `);
     }
-    injectClaudeTTS(browserView);
-  });
-
-  // Right-click context menu with TTS option for selected text
-  browserView.webContents.on('context-menu', (event, params) => {
-    const selectedText = params.selectionText.trim();
-    if (!selectedText) return;
-
-    const menu = Menu.buildFromTemplate([
-      {
-        label: '🔊 Play with TTS',
-        click: () => spawnOmniVoiceTTS(selectedText),
-      },
-    ]);
-    menu.popup({ window: mainWindow });
   });
 
   // Load URL if provided
@@ -765,389 +581,6 @@ ipcMain.handle('reload', async (event) => {
   }
 });
 
-// Analyze current page (extract text, generate embeddings, check similarity)
-// This runs automatically when user navigates to a new page
-ipcMain.handle('analyze-page', async (event) => {
-  try {
-    const browserView = getActiveBrowserView();
-    if (!browserView) return { success: false, error: 'No active tab', matches: [] };
-
-    const url = browserView.webContents.getURL();
-
-    // Skip analysis for internal pages and non-http(s) URLs
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      return { success: true, matches: [], skipped: true, reason: 'Internal page' };
-    }
-
-    // Extract clean article content using Readability.js
-    const articleData = await articleExtractor.extractFromWebContents(browserView.webContents);
-    const { title, text, publishedDate } = articleData;
-
-    // Skip analysis for non-article pages (search results, front pages, etc.)
-    // Use multiple signals to detect non-article pages:
-    const parsedUrl = new URL(url);
-    const isHomepage = parsedUrl.pathname === '/' || parsedUrl.pathname === '';
-    const isSearchPage = parsedUrl.search.includes('q=') ||
-                         parsedUrl.pathname.includes('/search') ||
-                         parsedUrl.hostname.includes('duckduckgo');
-    const hasPublishedDate = !!publishedDate;
-
-    // Skip if: (homepage OR search page) AND no published date
-    if ((isHomepage || isSearchPage) && !hasPublishedDate) {
-      return {
-        success: true,
-        matches: [],
-        skipped: true,
-        reason: 'Non-article page (homepage or search results)'
-      };
-    }
-
-    // Use full article text for most accurate similarity comparison
-    const queryText = `${title}. ${text}`;
-
-    console.log(`\n🔍 Analyzing page: ${title}`);
-    console.log(`   Extracted ${text.length} chars of clean article content`);
-    console.log(`   Comparing full article text for maximum accuracy`);
-
-    // Search for similar content in "not_good" articles only (always show top match)
-    const results = await database.searchBySimilarity(queryText, {
-      limit: 5,
-      minSimilarity: 0,
-      categoryFilter: 'not_good'
-    });
-
-    // Group results by article and get best match per article
-    const articleMatches = {};
-    for (const result of results) {
-      const articleId = result.article_id;
-      if (!articleMatches[articleId] || result.similarity > articleMatches[articleId].similarity) {
-        articleMatches[articleId] = {
-          articleId: result.article_id,
-          title: result.article_title,
-          category: result.category,
-          similarity: result.similarity,
-          url: result.article_url
-        };
-      }
-    }
-
-    // Convert to array and sort by similarity
-    const topMatches = Object.values(articleMatches)
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, 3); // Return top 3 articles
-
-    if (topMatches.length > 0) {
-      console.log(`   Found ${topMatches.length} similar articles`);
-      topMatches.forEach((match, i) => {
-        console.log(`   ${i + 1}. ${(match.similarity * 100).toFixed(1)}% - ${match.title} (${match.category})`);
-      });
-    } else {
-      console.log(`   No similar articles found (unique content)`);
-    }
-
-    return {
-      success: true,
-      matches: topMatches,
-      currentUrl: url,
-      currentTitle: title,
-      skipped: false
-    };
-  } catch (error) {
-    console.error('Error analyzing page:', error);
-    return {
-      success: false,
-      error: error.message,
-      matches: []
-    };
-  }
-});
-
-// Common boilerplate patterns to remove from articles (regex-based)
-const BOILERPLATE_PATTERNS = [
-  // Newsletter CTAs
-  /sign\s+up\s+(for|to)\s+(our|the|a)?\s*newsletter/gi,
-  /subscribe\s+(to|for)\s+(our|the|a)?\s*newsletter/gi,
-  /get\s+(the\s+)?latest\s+news\s+(in\s+your\s+inbox|delivered)/gi,
-  /join\s+our\s+mailing\s+list/gi,
-  /enter\s+your\s+email/gi,
-
-  // Cookie/Privacy notices
-  /we\s+use\s+cookies/gi,
-  /by\s+continuing\s+to\s+(use|browse)\s+(this\s+)?(site|website)/gi,
-  /privacy\s+policy\s+and\s+terms/gi,
-  /accept\s+(all\s+)?cookies/gi,
-  /cookie\s+(policy|settings|preferences)/gi,
-
-  // Social media CTAs
-  /follow\s+us\s+on\s+(twitter|x|facebook|linkedin|instagram)/gi,
-  /share\s+(this\s+)?(article|story|post)\s+on/gi,
-  /connect\s+with\s+us/gi,
-  /like\s+us\s+on\s+facebook/gi,
-
-  // Read more / Related content
-  /read\s+more\s*:/gi,
-  /related\s+(articles?|stories|content|posts?)\s*:/gi,
-  /you\s+(may|might)\s+also\s+like/gi,
-  /recommended\s+for\s+you/gi,
-  /more\s+from\s+this\s+(author|section)/gi,
-  /trending\s+(now|stories)/gi,
-
-  // Subscription prompts
-  /already\s+a\s+(member|subscriber)/gi,
-  /create\s+(a\s+)?free\s+account/gi,
-  /start\s+your\s+free\s+trial/gi,
-  /upgrade\s+to\s+premium/gi,
-  /become\s+a\s+(member|subscriber)/gi,
-  /unlimited\s+access/gi,
-
-  // Comments section noise
-  /leave\s+a\s+comment/gi,
-  /comments?\s+are\s+closed/gi,
-  /\d+\s+comments?(?:\s|$)/gi,
-  /post\s+a\s+comment/gi,
-
-  // Copyright notices
-  /copyright\s+\d{4}/gi,
-  /all\s+rights\s+reserved/gi,
-  /\u00a9\s*\d{4}/g,
-
-  // Ad-related
-  /advertisement/gi,
-  /sponsored\s+content/gi,
-  /partner\s+content/gi,
-];
-
-// Helper function to clean boilerplate from articles
-// Removes common patterns and sentences that appear in multiple articles
-async function cleanBoilerplateWithReclean(newText, category) {
-  console.log(`\n[Boilerplate Cleaner] Starting for category: ${category}`);
-  console.log(`[Boilerplate Cleaner] Original text length: ${newText.length} chars`);
-
-  const cleaningLog = {
-    originalLength: newText.length,
-    patternMatches: [],
-    sharedSentences: [],
-    existingArticlesRecleaned: [],
-    finalLength: 0
-  };
-
-  // Step 1: Remove common boilerplate patterns (regex-based)
-  let cleanedText = newText;
-  for (const pattern of BOILERPLATE_PATTERNS) {
-    const matches = cleanedText.match(pattern);
-    if (matches) {
-      cleaningLog.patternMatches.push({
-        pattern: pattern.toString().substring(0, 50),
-        count: matches.length,
-        samples: matches.slice(0, 2)
-      });
-      cleanedText = cleanedText.replace(pattern, ' ');
-    }
-  }
-
-  // Normalize whitespace after pattern removal
-  cleanedText = cleanedText.replace(/\s+/g, ' ').trim();
-
-  console.log(`[Boilerplate Cleaner] After pattern removal: ${cleanedText.length} chars (${cleaningLog.patternMatches.length} patterns matched)`);
-
-  // Step 2: Find cross-article shared sentences within same category
-  const existingArticles = await database.getArticlesByCategory(category);
-
-  const splitSentences = (text) => {
-    if (!text) return [];
-    return text
-      .split(/(?<=[.!?])\s+(?=[A-Z])/)
-      .map(s => s.trim())
-      .filter(s => s.length > 15);  // Increased threshold to reduce false positives
-  };
-
-  const newSentences = splitSentences(cleanedText);
-
-  // Build map: sentence (lowercase) -> list of article IDs containing it
-  const sentenceToArticles = new Map();
-  for (const article of existingArticles) {
-    const articleSentences = splitSentences(article.content);
-    for (const sentence of articleSentences) {
-      const key = sentence.toLowerCase().trim();
-      if (!sentenceToArticles.has(key)) {
-        sentenceToArticles.set(key, []);
-      }
-      sentenceToArticles.get(key).push(article.id);
-    }
-  }
-
-  // Find sentences in new article that match existing articles
-  const matchingSentences = new Set();
-  const articlesToReclean = new Set();
-
-  for (const sentence of newSentences) {
-    const key = sentence.toLowerCase().trim();
-    if (sentenceToArticles.has(key)) {
-      matchingSentences.add(key);
-      cleaningLog.sharedSentences.push(sentence.substring(0, 80) + (sentence.length > 80 ? '...' : ''));
-      sentenceToArticles.get(key).forEach(id => articlesToReclean.add(id));
-    }
-  }
-
-  console.log(`[Boilerplate Cleaner] Shared sentences found: ${matchingSentences.size}`);
-
-  // Clean new article: remove matching sentences
-  const cleanedNewSentences = newSentences.filter(s => !matchingSentences.has(s.toLowerCase().trim()));
-  const finalText = cleanedNewSentences.join(' ');
-
-  console.log(`[Boilerplate Cleaner] After shared sentence removal: ${finalText.length} chars`);
-
-  // Step 3: Re-clean existing articles that had matching sentences AND regenerate embeddings
-  const updatedArticleIds = [];
-  for (const articleId of articlesToReclean) {
-    const article = existingArticles.find(a => a.id === articleId);
-    if (!article) continue;
-
-    const articleSentences = splitSentences(article.content);
-    const cleanedArticleSentences = articleSentences.filter(s => !matchingSentences.has(s.toLowerCase().trim()));
-    const cleanedArticleText = cleanedArticleSentences.join(' ');
-
-    // Only update if content actually changed and has enough remaining content
-    if (cleanedArticleText !== article.content && cleanedArticleText.length > 50) {
-      await database.updateArticleContent(articleId, cleanedArticleText, article.title);
-      updatedArticleIds.push(articleId);
-      cleaningLog.existingArticlesRecleaned.push({
-        id: articleId,
-        oldLength: article.content.length,
-        newLength: cleanedArticleText.length
-      });
-      console.log(`[Boilerplate Cleaner] Re-cleaned article ID ${articleId}: ${article.content.length} -> ${cleanedArticleText.length} chars (embedding regenerated)`);
-    }
-  }
-
-  cleaningLog.finalLength = finalText.length > 50 ? finalText.length : newText.length;
-
-  // Summary log
-  console.log(`[Boilerplate Cleaner] === SUMMARY ===`);
-  console.log(`[Boilerplate Cleaner] Original: ${cleaningLog.originalLength} chars`);
-  console.log(`[Boilerplate Cleaner] Final: ${cleaningLog.finalLength} chars`);
-  console.log(`[Boilerplate Cleaner] Reduction: ${cleaningLog.originalLength - cleaningLog.finalLength} chars (${((cleaningLog.originalLength - cleaningLog.finalLength) / cleaningLog.originalLength * 100).toFixed(1)}%)`);
-  console.log(`[Boilerplate Cleaner] Pattern matches: ${cleaningLog.patternMatches.length}`);
-  console.log(`[Boilerplate Cleaner] Shared sentences removed: ${matchingSentences.size}`);
-  console.log(`[Boilerplate Cleaner] Existing articles re-cleaned: ${updatedArticleIds.length}`);
-  console.log(`[Boilerplate Cleaner] =================\n`);
-
-  return {
-    cleanedText: finalText.length > 50 ? finalText : newText,  // Fallback if too aggressive
-    matchingSentences: Array.from(matchingSentences),
-    updatedArticleIds,
-    cleaningLog
-  };
-}
-
-ipcMain.handle('save-article', async (event, category, manualTickers = []) => {
-  try {
-    const browserView = getActiveBrowserView();
-    if (!browserView) return { success: false, error: 'No active tab' };
-
-    // Extract clean article content using Readability.js
-    const articleData = await articleExtractor.extractFromWebContents(browserView.webContents);
-    let { url, title, text, publishedDate, tickers: autoTickers } = articleData;
-
-    // Only extract tickers and dates for 'stock_news' category
-    // For 'not_good' articles, skip ticker/date extraction
-    const shouldExtractStockData = (category === 'stock_news');
-
-    // Apply boilerplate cleaning for stock_news and not_good categories (NOT 'good')
-    const shouldCleanBoilerplate = ['stock_news', 'not_good'].includes(category);
-    let cleaningResult = null;
-
-    if (shouldCleanBoilerplate) {
-      cleaningResult = await cleanBoilerplateWithReclean(text, category);
-      text = cleaningResult.cleanedText;
-
-      // Detailed cleaning report
-      console.log(`\n===== Boilerplate Cleaning Report for "${category}" =====`);
-      console.log(`Article: "${title?.substring(0, 60)}${title?.length > 60 ? '...' : ''}"`);
-      console.log(`Original length: ${cleaningResult.cleaningLog.originalLength} chars`);
-      console.log(`Cleaned length: ${cleaningResult.cleaningLog.finalLength} chars`);
-
-      if (cleaningResult.cleaningLog.patternMatches.length > 0) {
-        console.log(`\nPatterns removed (${cleaningResult.cleaningLog.patternMatches.length}):`);
-        cleaningResult.cleaningLog.patternMatches.forEach(pm => {
-          console.log(`  - ${pm.pattern}: ${pm.count} match(es)`);
-        });
-      }
-
-      if (cleaningResult.matchingSentences.length > 0) {
-        console.log(`\nShared sentences removed: ${cleaningResult.matchingSentences.length}`);
-        cleaningResult.cleaningLog.sharedSentences.slice(0, 3).forEach(s => {
-          console.log(`  - "${s}"`);
-        });
-        if (cleaningResult.cleaningLog.sharedSentences.length > 3) {
-          console.log(`  ... and ${cleaningResult.cleaningLog.sharedSentences.length - 3} more`);
-        }
-      }
-
-      if (cleaningResult.updatedArticleIds.length > 0) {
-        console.log(`\nExisting articles re-cleaned (with embedding regeneration):`);
-        cleaningResult.cleaningLog.existingArticlesRecleaned.forEach(a => {
-          console.log(`  - ID ${a.id}: ${a.oldLength} -> ${a.newLength} chars`);
-        });
-      }
-      console.log(`================================================\n`);
-    }
-
-    // Merge auto-extracted tickers with manual tickers
-    let finalTickers = [];
-    if (shouldExtractStockData) {
-      // Combine auto and manual tickers, remove duplicates, sort
-      const tickerSet = new Set([...autoTickers, ...manualTickers]);
-      finalTickers = Array.from(tickerSet).sort();
-    }
-
-    // Save article to database with embedding for full article
-    const result = await database.saveArticle(url, title, text, category, {
-      publishedDate: shouldExtractStockData ? publishedDate : null,
-      tickers: finalTickers
-    });
-
-    console.log(`✓ Article saved with full-text embedding (ID: ${result.id}) - ${result.title}`);
-    console.log(`   Category: ${category}`);
-    console.log(`   Saved ${text.length} chars of clean article content`);
-
-    if (shouldExtractStockData) {
-      if (publishedDate) {
-        console.log(`   Published: ${new Date(publishedDate).toLocaleDateString()}`);
-      }
-      if (finalTickers.length > 0) {
-        console.log(`   Tickers: ${finalTickers.join(', ')}`);
-        if (manualTickers.length > 0) {
-          console.log(`   Manual tickers added: ${manualTickers.join(', ')}`);
-        }
-      }
-    }
-
-    return {
-      success: true,
-      article: result,
-      category: category
-    };
-  } catch (error) {
-    console.error('Error saving article:', error);
-    return {
-      success: false,
-      error: error.message
-    };
-  }
-});
-
-// Get database statistics
-ipcMain.handle('get-stats', async (event) => {
-  try {
-    const stats = await database.getStats();
-    return stats;
-  } catch (error) {
-    console.error('Error getting stats:', error);
-    return { error: error.message };
-  }
-});
-
 // Get all articles
 ipcMain.handle('get-articles', async (event, categoryFilter) => {
   try {
@@ -1258,42 +691,6 @@ ipcMain.handle('extract-article-via-browser', async (event, url, options = {}) =
     return { success: true, article };
   } catch (error) {
     console.error('Error extracting article via browser:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-// Record news count handler
-ipcMain.handle('record-news-count', async (event) => {
-  try {
-    const browserView = getActiveBrowserView();
-    if (!browserView) return { success: false, error: 'No active tab' };
-
-    // Use news scraper to count articles on current page
-    const result = await newsScraper.countArticles(browserView.webContents);
-
-    if (!result.success) {
-      return result; // Return error from scraper
-    }
-
-    // Save to database
-    const saved = await database.saveNewsCount(
-      result.ticker,
-      result.count,
-      result.source,
-      result.url
-    );
-
-    console.log(`✓ Recorded news count: ${saved.ticker} = ${saved.articleCount} articles (${saved.source})`);
-
-    return {
-      success: true,
-      ticker: saved.ticker,
-      count: saved.articleCount,
-      recordedAt: saved.recordedAt,
-      source: saved.source
-    };
-  } catch (error) {
-    console.error('Error recording news count:', error);
     return { success: false, error: error.message };
   }
 });
@@ -1644,6 +1041,20 @@ ipcMain.handle('get-analyzed-tickers', async () => {
   }
 });
 
+// Forecast next-day event magnitude using the fine-tuned TTM-R3 model.
+ipcMain.handle('forecast-event-magnitude', async (event, ticker, date = null) => {
+  try {
+    if (!ttmEventService) {
+      return { success: false, error: 'TTM event service not initialized' };
+    }
+    const result = await ttmEventService.forecast(ticker, date);
+    return { success: true, ...result };
+  } catch (error) {
+    console.error('Error forecasting event magnitude:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Combine IV from a saved history record (exp1/exp2/exp3 format) using the
 // single-pool scheme: each quantity is weighted across expirations by its own DV.
 //
@@ -1854,11 +1265,42 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       }
     }
 
+    // Auto-suggest: on saved-list runs, add 10 random tickers from the top 200
+    // of the latest rebuild's full ranking (shuffled, excluding current list).
+    // This lets fresh candidates rotate through screening without a full rebuild.
+    const isSavedListRun = !(options.overrideTickers && options.overrideTickers.length > 0)
+      && !options.superOnly && !options.favoritesOnly;
+    if (isSavedListRun) {
+      try {
+        const resultsPath = path.join(__dirname, 'ci', 'revise-results.json');
+        if (fs.existsSync(resultsPath)) {
+          const rev = JSON.parse(fs.readFileSync(resultsPath, 'utf-8'));
+          const top200 = (rev.fullRanking || rev.ranking || []).slice(0, 200);
+          const current = new Set(config.screenTickers || []);
+          const pool = top200.filter(t => !current.has(t));
+          // Fisher-Yates shuffle, take 10
+          for (let i = pool.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [pool[i], pool[j]] = [pool[j], pool[i]];
+          }
+          const suggested = pool.slice(0, 10);
+          if (suggested.length > 0) {
+            config.screenTickers = [...(config.screenTickers || []), ...suggested];
+            console.log(`[Screen] Added ${suggested.length} suggested tickers (rebuild top 200): ${suggested.join(', ')}`);
+          }
+        }
+      } catch (suggErr) {
+        console.error(`[Screen] Suggested-ticker sampling failed (non-fatal): ${suggErr.message}`);
+      }
+    }
+
     const tickers = config.screenTickers || [];
     console.log(`\nRunning ticker screening on ${tickers.length} tickers...`);
 
     config.isCancelled = () => screeningCancelRequested;
 
+    // Yahoo supplies fundamentals only (sector/industry/market cap/summary).
+    // Prices and options chains come from MarketData.app.
     const createYF = () => new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 
     // Collect entries to fetch news for; fetched in parallel after screening completes
@@ -1873,7 +1315,10 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       await Promise.all(newsFetchEntries.map(async (entry) => {
         try {
           entry.news = await fetchFinvizNews(entry.ticker);
-        } catch (_) { entry.news = []; }
+        } catch (err) {
+          console.warn(`[screen-tickers] news fetch failed for ${entry.ticker}:`, err.message || err);
+          entry.news = [];
+        }
       }));
     }
 
@@ -1921,16 +1366,51 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       }
     }
 
-    // Save weighted IV history
-    const ivHistoryPath = path.join(__dirname, 'ci', 'weighted-iv-history.json');
-    let ivHistory = {};
-    try { ivHistory = JSON.parse(fs.readFileSync(ivHistoryPath, 'utf-8')); } catch (_) {}
+    // Enrich every screened ticker with its next-day TTM event probability.
+    // All tickers go through ONE batched forward pass (GPU when available), so
+    // the model weights and Python startup are paid once for the whole run —
+    // this is what makes it affordable for favorites/super-favorites/full runs,
+    // not just a handful of custom tickers.
+    if (ttmEventService) {
+      const tickerMap = new Map();
+      for (const entry of result.allTickers) {
+        if (entry.ticker && !entry.skipped && !entry.error) {
+          tickerMap.set(entry.ticker, entry);
+        }
+      }
+      const toForecast = [...tickerMap.keys()];
+
+      if (toForecast.length > 0) {
+        console.log(`[Screen] Running batched TTM event forecast for ${toForecast.length} ticker(s)...`);
+        const t0 = Date.now();
+        try {
+          const probs = await ttmEventService.forecastProbabilities(toForecast);
+          for (const [ticker, prob] of probs) {
+            const entry = tickerMap.get(ticker);
+            if (entry) entry.eventProbability = prob;
+          }
+          console.log(`[Screen] TTM forecast: ${probs.size}/${toForecast.length} scored in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+        } catch (err) {
+          console.error(`[Screen] TTM batch forecast failed: ${err.message}`);
+        }
+      }
+    }
+
+    // Save weighted IV history. Records live in DuckDB (iv_history_records);
+    // only today's snapshot is written back, while `ivHistory` keeps the full
+    // series in memory for the stats/HTML consumers further down.
+    const ivHistory = await database.getIVHistoryRecords();
+    const todaysRecords = {};
     const today = new Date().toISOString().split('T')[0];
     for (const entry of result.allTickers) {
       const od = entry.chartData?.optionsStrikes;
       if (!od || od.length === 0) continue;
       if (!ivHistory[entry.ticker]) ivHistory[entry.ticker] = [];
-      const record = { date: today, sector: entry.sector || '' };
+      // Tag the provider so IV history stays self-describing: mixing
+      // broker-reported IV with BSM-derived IV corrupts IV ranks/spreads, so
+      // every record declares its source. Phase D rewrites all MarketData-
+      // covered tickers as 'derived-bsm'; live runs write 'marketdata-live'.
+      const record = { date: today, source: 'marketdata-live', sector: entry.sector || '' };
       if (Array.isArray(entry.eventTags) && entry.eventTags.length > 0) {
         record.eventTags = entry.eventTags.slice();
       }
@@ -1990,8 +1470,14 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       const existing = ivHistory[entry.ticker].findIndex(r => r.date === today);
       if (existing >= 0) ivHistory[entry.ticker][existing] = record;
       else ivHistory[entry.ticker].push(record);
+      todaysRecords[entry.ticker] = [record];
     }
-    fs.writeFileSync(ivHistoryPath, JSON.stringify(ivHistory, null, 2) + '\n', 'utf-8');
+    try {
+      const savedIV = await database.saveIVHistoryRecords(todaysRecords);
+      console.log(`[Screen] IV history: ${savedIV} record(s) saved to iv_history_records`);
+    } catch (err) {
+      console.error(`[Screen] Failed to save IV history: ${err.message}`);
+    }
 
     // Append classified events to the persistent event log for backtesting.
     // Each {ticker, eventDate} is unique — re-encountering the same event updates the
@@ -2381,7 +1867,7 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
     const currentSuperFavorites = loadSuperFavorites();
     const currentNotes = loadNotes();
     const currentToDelete = loadToDelete();
-    const html = generateScreeningHTML(result.allTickers, tickers.length, config, ivHistoryForHTML, currentFavorites, preEventStats, currentNotes, preEventByReturnBucket, currentSuperFavorites, preEventContrast, peLiveSlopeByTicker, currentToDelete);
+    const html = generateScreeningHTML(result.allTickers, tickers.length, config, ivHistoryForHTML, currentFavorites, preEventStats, currentNotes, preEventByReturnBucket, currentSuperFavorites, preEventContrast, peLiveSlopeByTicker, currentToDelete, result.freshness);
 
     // Save HTML for "Latest Run Results" (alias) and a timestamped snapshot in ci/screening-runs/
     const screenResultsPath = path.join(__dirname, 'ci', 'screening-results.html');
@@ -2389,8 +1875,8 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
 
     const runsDir = path.join(__dirname, 'ci', 'screening-runs');
     fs.mkdirSync(runsDir, { recursive: true });
-    // Use the archiver's runId so the HTML pairs with its parquet sidecars
-    // (run-<runId>.html / .run.json / .bars.parquet / .chains.parquet / .events.parquet).
+    // Use the archiver's runId so the HTML pairs with its run.json sidecar
+    // (run-<runId>.html / run-<runId>.run.json).
     const ts = result.runId || new Date().toISOString().replace(/[:.]/g, '-');
     const snapshotPath = path.join(runsDir, `run-${ts}.html`);
     fs.writeFileSync(snapshotPath, html, 'utf-8');
@@ -2423,7 +1909,7 @@ ipcMain.handle('revise-tickers', async (event) => {
     const fs = require('fs');
     const configPath = path.join(__dirname, 'ci', 'config.json');
 
-    console.log('\n[Revise] Starting ticker revision from ~200 universe...');
+    console.log('\n[Revise] Starting ticker revision (screener-expanded universe)...');
 
     const createYF = () => new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 
@@ -2433,17 +1919,29 @@ ipcMain.handle('revise-tickers', async (event) => {
 
     const result = await reviseTickers(createYF, onProgress);
 
-    // Update config.json with new tickers
+    // Update config.json with new tickers: pinned (fixed) tickers always stay;
+    // the rest of the list is filled up to the flex target with the best
+    // remaining candidates from the rebuild ranking (next in line).
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    config.screenTickers = result.tickers;
+    const fixed = (config.fixedTickers || []).map(t => String(t).toUpperCase());
+    const flexTarget = Number.isFinite(config.screenFlexTarget) ? config.screenFlexTarget : 10;
+    const flex = result.ranking.filter(t => !fixed.includes(t)).slice(0, flexTarget);
+    const finalList = [...fixed, ...flex];
+    config.screenTickers = finalList;
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
 
     // Save full results for later viewing
     const resultsPath = path.join(__dirname, 'ci', 'revise-results.json');
     const fullResults = {
       timestamp: new Date().toISOString(),
-      tickers: result.tickers,
+      tickers: finalList,
+      fixed,
+      flexTarget,
       details: result.details,
+      lists: result.lists,
+      ranking: result.ranking,
+      fullRanking: result.fullRanking,
+      topN: result.topN,
       excluded: result.excluded,
       errors: result.errors,
       totalScored: result.totalScored,
@@ -2460,13 +1958,41 @@ ipcMain.handle('revise-tickers', async (event) => {
   }
 });
 
-// Load last Revise the 50 results from disk
+// Get the saved screening ticker list (written by the last rebuild)
+ipcMain.handle('get-screen-tickers', async () => {
+  try {
+    const fs = require('fs');
+    const configPath = path.join(__dirname, 'ci', 'config.json');
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    return { success: true, tickers: config.screenTickers || [], fixed: config.fixedTickers || [] };
+  } catch (error) {
+    return { success: false, error: error.message, tickers: [], fixed: [] };
+  }
+});
+
+// Save an edited screening list (tickers + pinned/fixed set)
+ipcMain.handle('save-screen-list', async (event, { tickers, fixed } = {}) => {
+  try {
+    const fs = require('fs');
+    const configPath = path.join(__dirname, 'ci', 'config.json');
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    const norm = (arr) => [...new Set((arr || []).map(t => String(t).trim().toUpperCase()).filter(Boolean))];
+    config.screenTickers = norm(tickers);
+    config.fixedTickers = norm(fixed);
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+    return { success: true, tickers: config.screenTickers, fixed: config.fixedTickers };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Load last rebuild results from disk
 ipcMain.handle('load-revise-results', async () => {
   try {
     const fs = require('fs');
     const resultsPath = path.join(__dirname, 'ci', 'revise-results.json');
     if (!fs.existsSync(resultsPath)) {
-      return { success: false, error: 'No previous revision results found. Run "Revise the 100" first.' };
+      return { success: false, error: 'No previous results found. Run "Rebuild Ticker List" first.' };
     }
     const data = JSON.parse(fs.readFileSync(resultsPath, 'utf-8'));
     return { success: true, ...data };
@@ -2550,6 +2076,17 @@ function saveSuperFavorites(favs) {
   require('fs').writeFileSync(SUPER_FAVORITES_PATH, JSON.stringify(favs, null, 2) + '\n', 'utf-8');
 }
 
+// Replace the super favorites list (add/remove edits from the screening modal)
+ipcMain.handle('save-super-favorites', async (event, tickers) => {
+  try {
+    const norm = [...new Set((tickers || []).map(t => String(t).trim().toUpperCase()).filter(Boolean))];
+    saveSuperFavorites(norm);
+    return { success: true, superFavorites: norm };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 // Cycles ticker through 3 states: none -> favorite -> super -> none
 ipcMain.handle('toggle-favorite', async (event, ticker) => {
   const favs = loadFavorites();
@@ -2619,7 +2156,7 @@ ipcMain.handle('save-note', async (event, ticker, note) => {
   return { ok: true, notes };
 });
 
-function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData = {}, favorites = [], preEventStats = {}, notes = {}, preEventByReturnBucket = null, superFavorites = [], preEventContrast = null, peLiveSlopeByTicker = {}, toDelete = []) {
+function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData = {}, favorites = [], preEventStats = {}, notes = {}, preEventByReturnBucket = null, superFavorites = [], preEventContrast = null, peLiveSlopeByTicker = {}, toDelete = [], freshness = null) {
   const classColors = {
     surprising_positive: '#4caf50',
     positive_anticipated: '#8bc34a',
@@ -2713,7 +2250,7 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     if (h.news && h.news.length > 0) newsMap[h.ticker] = h.news;
   }
 
-  // Compute per-ticker IV history stats from weighted-iv-history.json.
+  // Compute per-ticker IV history stats from iv_history_records (DuckDB).
   // Uses exp1 (nearest expiration) to match what's displayed. Requires >=10 records
   // so percentile rank has meaningful resolution.
   const MIN_HIST_RECORDS = 10;
@@ -2986,14 +2523,40 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
       return `<span class="event-tag" data-tag="${id}" title="${tip}" style="display:inline-block; margin:1px 3px 1px 0; padding:1px 6px; background:#2c3a4a; color:#cdd5e0; border:1px solid #3d4f63; border-radius:8px; font-size:0.74em; cursor:pointer; white-space:nowrap;">${lbl}</span>`;
     }).join('');
     const tagsSortKey = evTags.length > 0 ? evTags[0] : 'zzz';
+    const eventProb = typeof h.eventProbability === 'number' ? h.eventProbability : null;
+    const eventProbStr = eventProb != null ? (eventProb * 100).toFixed(1) + '%' : '';
+    const eventProbColor = eventProb == null ? '#888' : eventProb >= 0.6 ? 'rgba(245,101,101,0.9)' : eventProb >= 0.4 ? '#d4a657' : 'rgba(72,187,120,0.9)';
+
+    // Last regular-session close vs the latest quote. Outside RTH the quote is the
+    // pre/post-market print, so the delta between them is the extended-hours move.
+    // Both are display-only: neither feeds the event/gap math.
+    const lastCloseNum = typeof h.lastClose === 'number' && h.lastClose > 0 ? h.lastClose : null;
+    const latestPriceNum = typeof h.latestPrice === 'number' && h.latestPrice > 0 ? h.latestPrice : null;
+    const lastCloseVal = lastCloseNum != null ? lastCloseNum : -1;
+    const latestPriceVal = latestPriceNum != null ? latestPriceNum : -1;
+    const lastCloseStr = lastCloseNum != null ? lastCloseNum.toFixed(2) : '';
+    const extMovePct = (lastCloseNum != null && latestPriceNum != null)
+      ? ((latestPriceNum - lastCloseNum) / lastCloseNum) * 100
+      : null;
+    // Only annotate a move once it is meaningful; sub-0.05% is quote noise.
+    const extMoveShown = extMovePct != null && Math.abs(extMovePct) >= 0.05;
+    const latestPriceStr = latestPriceNum != null
+      ? latestPriceNum.toFixed(2) + (extMoveShown ? ` <span style="font-size:0.82em;">(${extMovePct > 0 ? '+' : ''}${extMovePct.toFixed(2)}%)</span>` : '')
+      : '';
+    const extMoveColor = !extMoveShown ? '#bbb' : extMovePct > 0 ? 'rgba(72,187,120,0.9)' : 'rgba(245,101,101,0.9)';
+    const extTitle = (lastCloseNum != null && latestPriceNum != null)
+      ? `Close ${lastCloseNum.toFixed(2)} → last ${latestPriceNum.toFixed(2)}`
+      : 'Latest quoted price (includes extended hours)';
 
     return `<tr ${hasChart ? `class="data-row" data-ticker="${h.ticker}"` : ''} data-tags="${tagsAttr}" style="${inlineStyle}">
       <td style="text-align:center; width:44px; padding:4px; white-space:nowrap;" data-v="${favLevel}"><span class="fav-star" data-ticker="${h.ticker}" style="cursor:pointer; font-size:1.1em; color:${favColor};" title="${favTitle}">${favGlyph}</span><span class="del-mark" data-ticker="${h.ticker}" style="cursor:pointer; font-size:0.95em; margin-left:5px; color:${isDeleted ? '#e53935' : '#555'};" title="${isDeleted ? 'Marked to delete (click to unmark)' : 'Mark to delete'}">✕</span></td>
       <td data-v="${h.ticker}" style="font-weight:bold;">${h.ticker}${hasChart ? ' <span style="font-size:0.7em;color:#aaa;">▶</span>' : ''}${noteIndicator}</td>
       <td data-v="${sec || 'zzz'}" style="font-size:0.82em; color:#888;">${sec || ''}</td>
       <td data-v="${tagsSortKey}" style="font-size:0.82em; max-width:240px;">${tagsCell}</td>
-      <td data-v="${h.percentile || 0}">${h.percentile ? h.percentile.toFixed(1) + '%' : ''}</td>
       <td data-v="${h.classification || 'zzz'}" style="color:${color}; font-weight:bold;">${label}</td>
+      <td data-v="${eventProb != null ? eventProb : -1}" style="text-align:right; color:${eventProbColor}; font-weight:600;" title="TTM-R3 next-day event probability">${eventProbStr}</td>
+      <td data-v="${lastCloseVal}" style="text-align:right;">${lastCloseStr}</td>
+      <td data-v="${latestPriceVal}" style="text-align:right; color:${extMoveColor};" title="${extTitle}">${latestPriceStr}</td>
       <td data-v="${mcap}" style="text-align:right;">${mcapStr}</td>
       <td data-v="${optDV}" style="text-align:right;">${optDVStr}</td>
       <td data-v="${dvDeltaVal}" style="text-align:right; color:${slopeColor(dvDelta)}; font-size:0.88em;${leanBg('dv','Opt $Vol Δrank',dvDelta)}">${dvDeltaStr}</td>
@@ -3005,7 +2568,7 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
       <td data-v="${putSpreadVal}" style="text-align:right; color:rgba(245,101,101,0.7); font-size:0.88em;${leanBg('lvl','Put Spr',putSpreadRank)}">${putSpreadStr}</td>
     </tr>
     <tr class="chart-row" data-chart-for="${h.ticker}" style="display:none;">
-      <td colspan="15" style="padding:0; background:#1a1d23;">
+      <td colspan="17" style="padding:0; background:#1a1d23;">
         <div style="display:flex; gap:12px; align-items:stretch; margin:12px 20px 8px;">
           <div id="summary-${h.ticker}" style="flex:0 1 78ch; padding:14px 18px; background:#262a33; border-left:3px solid #4a5a8a; border-radius:6px; color:#cdd5e0; font-size:0.98em; line-height:1.65; max-height:200px; overflow-y:auto;"></div>
           <div style="flex:1 1 0; min-width:280px; height:200px; background:#262a33; border-radius:6px; padding:6px 10px;">
@@ -3089,6 +2652,37 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
 <div id="fav-toast"></div>
 <h1>Ticker Screening Results</h1>
 <p class="summary">${hitCount} hit${hitCount !== 1 ? 's' : ''} out of ${totalTickers} tickers screened &mdash; ${config.screenLookbackDays}d lookback, p${config.screenPercentileThreshold} threshold</p>
+${(() => {
+  if (!freshness) return '';
+  const tiers = {
+    realtime: ['#2e7d32', 'Real-time'],
+    delayed: ['#ef6c00', 'Delayed'],
+    stale: ['#d32f2f', 'Stale'],
+    'previous-session': ['#c62828', 'Previous session'],
+  };
+  const [color, label] = tiers[freshness.tier] || ['#666', freshness.tier];
+  const fmtLocal = (iso) => new Date(iso).toLocaleString('en-GB', {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+  const srcs = Object.entries(freshness.sources)
+    .map(([s, n]) => `${s} ${n}`)
+    .join(', ');
+  return `<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.95em;">
+  <span style="color:#666; font-weight:600;">Data freshness:</span>
+  <span style="color:${color}; font-weight:bold; margin-left:10px;">${label}</span>
+  <span style="color:#666; margin-left:10px;">median age</span>
+  <span style="color:${color}; font-weight:bold; margin-left:4px;">${formatAge(freshness.medianAgeMs)}</span>
+  <span style="color:#999; margin-left:6px;">(mean ${formatAge(freshness.meanAgeMs)})</span>
+  <span style="color:#999; margin-left:16px;">|</span>
+  <span style="color:#666; font-weight:600; margin-left:16px;">Avg quote time:</span>
+  <span style="color:#333; font-weight:bold; margin-left:6px;">${fmtLocal(freshness.meanQuoteTime)}</span>
+  <div style="color:#999; font-size:0.85em; margin-top:5px;">
+    Newest ${fmtLocal(freshness.newestQuoteTime)} (${freshness.newestTicker}) &middot;
+    oldest ${fmtLocal(freshness.oldestQuoteTime)} (${freshness.oldestTicker}) &middot;
+    ${freshness.sampleCount} tickers sampled &middot; ${srcs}
+  </div>
+</div>`;
+})()}
 ${ivTickers.length > 0 ? `<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.95em;">
   <span style="color:#666; font-weight:600;">Avg Weighted IV (${ivTickers.length} tickers):</span>
   <span style="color:rgba(72,187,120,0.9); font-weight:bold; margin-left:10px;">Call ${avgCallIV.toFixed(1)}%</span>
@@ -3341,8 +2935,10 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
   <th>Ticker<span class="sort-arrow"></span></th>
   <th>Sector<span class="sort-arrow"></span></th>
   <th>Tags<span class="sort-arrow"></span></th>
-  <th>Percentile<span class="sort-arrow"></span></th>
   <th>Classification<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="TTM-R3 next-day event probability">Event Prob<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Last regular-session close (16:00 ET)">Close<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Latest quoted price, including pre-market and after-hours when the regular session is closed. % is the move vs the last regular close.">Last (ext)<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Mkt Cap<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Opt $ Vol<span class="sort-arrow"></span></th>
   <th style="text-align:right;" title="Pre-event slope of total option dollar-volume percentile rank within the ticker's own history, across the same window as the IV Δ columns: rank(T-1) − rank(T-oldest), in rank points (-100..+100). >0 = flow building into the event.">$Vol Δrank<span class="sort-arrow"></span></th>
@@ -4286,84 +3882,6 @@ ipcMain.handle('get-embedding-stats', async (event) => {
   }
 });
 
-// TTS IPC handlers
-ipcMain.handle('list-voices', () => {
-  const fs = require('fs');
-  const hasTranscript = (p) => fs.existsSync(p.replace(/\.[^.]+$/, '.txt'));
-  const voices = [{
-    label: hasTranscript(ttsVoiceRef) ? 'Default (voice_ref.wav)' : 'Default (voice_ref.wav) ⚠ missing transcript',
-    path: ttsVoiceRef
-  }];
-  if (fs.existsSync(ttsVoicesDir)) {
-    const files = fs.readdirSync(ttsVoicesDir)
-      .filter(f => /\.(wav|opus|mp3|flac)$/i.test(f))
-      .map(f => {
-        const p = path.join(ttsVoicesDir, f);
-        return { label: hasTranscript(p) ? f : `${f} ⚠ missing transcript`, path: p };
-      });
-    voices.push(...files);
-  }
-  return voices;
-});
-
-ipcMain.handle('save-tts-audio', async (event, text) => {
-  if (!text || !text.trim()) return { ok: false, error: 'empty text' };
-
-  const { filePath } = await dialog.showSaveDialog(mainWindow, {
-    title: 'Save audio file',
-    defaultPath: 'output.mp3',
-    filters: [
-      { name: 'MP3 Audio', extensions: ['mp3'] },
-      { name: 'M4A Audio', extensions: ['m4a'] },
-    ],
-  });
-  if (!filePath) return { ok: false, error: 'cancelled' };
-
-  const fs = require('fs');
-  const [savedVoice, savedSpeed, savedQuality] = await Promise.all([
-    database ? database.getSetting('tts_voice', null).catch(() => null) : null,
-    database ? database.getSetting('tts_speed', '1.2').catch(() => '1.2') : '1.2',
-    database ? database.getSetting('tts_quality', '16').catch(() => '16') : '16',
-  ]);
-  const voicePath = savedVoice || ttsVoiceRef;
-  const payload = { text, output_file: filePath, speed: parseFloat(savedSpeed) || 1.2, num_step: parseInt(savedQuality) || 16 };
-  if (fs.existsSync(voicePath)) payload.ref_audio = voicePath;
-
-  return new Promise((resolve) => {
-    const child = spawn('python3', [ttsPythonScript], { stdio: ['pipe', 'pipe', 'pipe'], detached: true });
-    child.unref();
-    child.stdin.write(JSON.stringify(payload));
-    child.stdin.end();
-    let out = '';
-    child.stdout.on('data', d => { out += d; });
-    child.on('close', () => {
-      try { resolve(JSON.parse(out)); } catch { resolve({ ok: true }); }
-    });
-    child.on('error', (err) => resolve({ ok: false, error: err.message }));
-  });
-});
-
-ipcMain.on('speak-text', (event, text) => {
-  if (typeof text !== 'string' || !text.trim()) return;
-  spawnOmniVoiceTTS(text);
-});
-
-ipcMain.on('stop-speaking', () => {
-  ttsPending = null;
-  ttsSpawning = false;
-  killTtsProcess();
-});
-
-ipcMain.handle('toggle-tts', (event, enabled) => {
-  ttsEnabled = !!enabled;
-  if (!ttsEnabled) {
-    ttsPending = null;
-    ttsSpawning = false;
-    killTtsProcess();
-  }
-  return { ttsEnabled };
-});
-
 // App lifecycle
 let backendReadyResolve;
 const backendReadyPromise = new Promise((r) => { backendReadyResolve = r; });
@@ -4386,9 +3904,9 @@ async function initBackend() {
   optionsAnalyzer = new OptionsAnalysisService(database, ibProvider);
   chronosHoldService = new ChronosHoldPeriodService(database);
   runArchiver = new RunArchiver({
-    database,
     outputDir: path.join(__dirname, 'ci', 'screening-runs'),
   });
+  ttmEventService = new TTMEventAnalysisService();
 
   priceTracker.setOptionsAnalyzer(optionsAnalyzer);
 
@@ -4410,21 +3928,9 @@ async function initBackend() {
 app.whenReady().then(() => {
   createWindow();
   initBackend();
-
-  globalShortcut.register('Escape', () => {
-    if (activeTtsProcess) {
-      killTtsProcess();
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('tts-state-changed', { speaking: false });
-      }
-    }
-  });
 });
 
 app.on('window-all-closed', async () => {
-  // Kill any active TTS subprocess
-  killTtsProcess();
-
   // Stop price polling
   if (priceTracker) {
     priceTracker.stopPolling();

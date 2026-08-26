@@ -1,8 +1,14 @@
 /**
- * Ticker Screening via Yahoo Finance
+ * Ticker Screening
  *
- * Pre-screens a large list of tickers for significant price events
- * using free Yahoo Finance data (no API key needed).
+ * Pre-screens a large list of tickers for significant price events.
+ * Prices and options chains come from MarketData.app (MARKET_DATA_API_KEY).
+ *
+ * Fundamentals (sector, industry, market cap, business summary, and the
+ * revenue/equity/leverage inputs to reviseTickers) still come from Yahoo
+ * Finance via the injected `createYF` factory — MarketData serves market
+ * data only and has no fundamentals endpoints. Screening works without it;
+ * those fields are simply left blank.
  *
  * Algorithm: volume × |gap%| with 95th percentile threshold,
  * checked over the last 5 trading days.
@@ -28,6 +34,230 @@ function linReg(points) {
   const m = (n * sxy - sx * sy) / denom;
   const b = (sy - m * sx) / n;
   return { m, b };
+}
+
+/**
+ * Pure event detection over a bar series: residual returns vs benchmark,
+ * volume × |gap| products, percentile threshold, and classified events.
+ * Shared by screenTickers (live screening) and ci/backfill-marketdata.js.
+ *
+ * @param {Array} validBars - Bars with date/open/close/volume, oldest first
+ * @param {Map<string, number>|null} marketReturns - dateStr → benchmark daily return
+ * @param {number} percentileThreshold - e.g. 92
+ * @returns {{rSquared: number|null, products: Array, threshold: number,
+ *   chartDates: string[], chartCloses: number[], chartVolumes: number[],
+ *   chartEvents: Array, dbEvents: Array}}
+ *   products is empty when there is nothing usable (caller marks ticker skipped).
+ */
+function computeEventsFromBars(validBars, marketReturns, percentileThreshold) {
+  // Compute daily returns and align with market returns
+  const dailyData = [];
+  for (let j = 1; j < validBars.length; j++) {
+    const prevClose = validBars[j - 1].close;
+    const bar = validBars[j];
+    if (prevClose === 0) continue;
+
+    const dateStr = (bar.date instanceof Date
+      ? bar.date.toISOString() : new Date(bar.date).toISOString()
+    ).split('T')[0];
+    const stockReturn = (bar.close - prevClose) / prevClose;
+    const mktReturn = marketReturns ? marketReturns.get(dateStr) : undefined;
+
+    dailyData.push({
+      bar, prevClose, dateStr, stockReturn, mktReturn,
+    });
+  }
+
+  // Run per-ticker regression if we have market data
+  let slope = 0, intercept = 0, rSquared = null;
+  if (marketReturns) {
+    const pairs = dailyData
+      .filter(d => d.mktReturn !== undefined)
+      .map(d => [d.mktReturn, d.stockReturn]);
+    if (pairs.length > 20) {
+      const reg = linReg(pairs);
+      slope = reg.m;
+      intercept = reg.b;
+
+      // Compute R²
+      const yMean = pairs.reduce((s, p) => s + p[1], 0) / pairs.length;
+      const ssTotal = pairs.reduce((s, p) => s + (p[1] - yMean) ** 2, 0);
+      const ssResidual = pairs.reduce((s, p) => {
+        const predicted = slope * p[0] + intercept;
+        return s + (p[1] - predicted) ** 2;
+      }, 0);
+      rSquared = ssTotal > 0 ? 1 - ssResidual / ssTotal : 0;
+    }
+  }
+
+  // Compute volumeGapProduct using residual returns
+  const products = [];
+  for (const d of dailyData) {
+    let residualReturn;
+    if (marketReturns && d.mktReturn !== undefined) {
+      residualReturn = d.stockReturn - (slope * d.mktReturn + intercept);
+    } else {
+      // Fallback: raw open gap (signed)
+      residualReturn = (d.bar.open - d.prevClose) / d.prevClose;
+    }
+    const residualPct = Math.abs(residualReturn * 100);
+
+    products.push({
+      bar: d.bar,
+      prevClose: d.prevClose,
+      gapPct: residualPct,
+      residualReturn,
+      volumeGapProduct: d.bar.volume * residualPct,
+    });
+  }
+
+  const empty = { rSquared, products: [], threshold: 0, chartDates: [], chartCloses: [], chartVolumes: [], chartEvents: [], dbEvents: [] };
+  if (products.length === 0) return empty;
+
+  // Compute percentile threshold
+  const sorted = products
+    .map((p) => p.volumeGapProduct)
+    .filter((v) => !isNaN(v) && v > 0)
+    .sort((a, b) => a - b);
+
+  if (sorted.length === 0) return empty;
+
+  const thresholdIndex = Math.floor((percentileThreshold / 100) * sorted.length);
+  const threshold = sorted[Math.min(thresholdIndex, sorted.length - 1)];
+
+  // Build chart data: dates and closes for all bars
+  const chartDates = products.map(p => {
+    const d = p.bar.date;
+    return (d instanceof Date ? d.toISOString() : new Date(d).toISOString()).split('T')[0];
+  });
+  const chartCloses = products.map(p => p.bar.close);
+  const chartVolumes = products.map(p => p.bar.volume);
+
+  // Find ALL events above threshold (for chart dots) and build DB event records in parallel
+  const chartEvents = [];
+  const dbEvents = [];
+  for (let k = 0; k < products.length; k++) {
+    const entry = products[k];
+    if (entry.volumeGapProduct < threshold) continue;
+
+    const gapNeg = entry.bar.open < entry.prevClose;
+    const intradayPos = entry.bar.close > entry.bar.open;
+    const closedBelow = entry.bar.close < entry.prevClose;
+    const closedAbove = entry.bar.close > entry.prevClose;
+
+    let cls;
+    if (gapNeg) {
+      cls = closedAbove ? 'surprising_positive' : intradayPos ? 'negative_anticipated' : 'surprising_negative';
+    } else {
+      cls = closedBelow ? 'surprising_negative' : intradayPos ? 'surprising_positive' : 'positive_anticipated';
+    }
+
+    chartEvents.push({ idx: k, y: entry.bar.close, classification: cls });
+    dbEvents.push({
+      dateStr: chartDates[k],
+      classification: cls,
+      strength: entry.gapPct,
+      residualReturn: entry.residualReturn,
+      volumeGapProduct: entry.volumeGapProduct,
+      open: entry.bar.open,
+      high: entry.bar.high,
+      low: entry.bar.low,
+      close: entry.bar.close,
+      volume: entry.bar.volume,
+    });
+  }
+
+  return { rSquared, products, threshold, chartDates, chartCloses, chartVolumes, chartEvents, dbEvents };
+}
+
+/**
+ * Newest quote timestamp in an options chain, as ms since epoch.
+ *
+ * MarketData maps its per-snapshot `updated` field onto each contract's
+ * lastTradeDate (see marketDataClient.fetchCurrentChain), so the max across
+ * contracts is when the provider last refreshed the chain. Under the IB
+ * fallback lastTradeDate is a genuine per-contract trade time, so the max is
+ * the most recent trade — still the right "newest data" reading, though it can
+ * look stale for illiquid names that simply haven't traded.
+ *
+ * @param {Object} chain - yahoo-finance2 shaped chain
+ * @returns {number|null} ms epoch, or null when the chain carries no timestamps
+ */
+function latestQuoteTime(chain) {
+  const contracts = [
+    ...(chain?.options?.[0]?.calls || []),
+    ...(chain?.options?.[0]?.puts || []),
+  ];
+  let max = null;
+  for (const c of contracts) {
+    if (!c.lastTradeDate) continue;
+    const t = c.lastTradeDate instanceof Date
+      ? c.lastTradeDate.getTime()
+      : new Date(c.lastTradeDate).getTime();
+    if (!isNaN(t) && (max === null || t > max)) max = t;
+  }
+  return max;
+}
+
+/**
+ * Aggregate per-ticker freshness samples into a run-level summary.
+ *
+ * Reports both mean and median age: a handful of illiquid tickers can drag the
+ * mean out by hours, so the median is the honest "typical" reading, and the two
+ * diverging is itself the signal that some names are stale.
+ *
+ * @param {Array<{ticker: string, quoteTime: number, fetchedAt: number, ageMs: number, source: string}>} samples
+ * @returns {Object|null} null when nothing was sampled
+ */
+function summarizeFreshness(samples) {
+  if (!samples.length) return null;
+
+  const ages = samples.map(s => s.ageMs).sort((a, b) => a - b);
+  const mid = Math.floor(ages.length / 2);
+  const medianAgeMs = ages.length % 2 === 0 ? (ages[mid - 1] + ages[mid]) / 2 : ages[mid];
+  const meanAgeMs = ages.reduce((s, a) => s + a, 0) / ages.length;
+
+  const newest = samples.reduce((a, b) => (b.quoteTime > a.quoteTime ? b : a));
+  const oldest = samples.reduce((a, b) => (b.quoteTime < a.quoteTime ? b : a));
+
+  // Mean quote timestamp — "average date and time of the newest data loaded".
+  const meanQuoteTime = samples.reduce((s, x) => s + x.quoteTime, 0) / samples.length;
+
+  const sources = {};
+  for (const s of samples) sources[s.source] = (sources[s.source] || 0) + 1;
+
+  // Classify on the median so a few stale illiquid names don't mislabel the run.
+  const medianMin = medianAgeMs / 60000;
+  let tier;
+  if (medianMin < 2) tier = 'realtime';
+  else if (medianMin < 20) tier = 'delayed';       // the classic ~15-min feed
+  else if (medianMin < 12 * 60) tier = 'stale';
+  else tier = 'previous-session';
+
+  return {
+    tier,
+    sampleCount: samples.length,
+    meanAgeMs,
+    medianAgeMs,
+    meanQuoteTime: new Date(meanQuoteTime).toISOString(),
+    newestQuoteTime: new Date(newest.quoteTime).toISOString(),
+    oldestQuoteTime: new Date(oldest.quoteTime).toISOString(),
+    newestTicker: newest.ticker,
+    oldestTicker: oldest.ticker,
+    sources,
+  };
+}
+
+/** Human-readable age, e.g. "14m 22s". */
+function formatAge(ms) {
+  if (ms == null || isNaN(ms)) return 'n/a';
+  const neg = ms < 0;
+  const total = Math.round(Math.abs(ms) / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const parts = h > 0 ? [`${h}h`, `${m}m`] : m > 0 ? [`${m}m`, `${s}s`] : [`${s}s`];
+  return (neg ? '-' : '') + parts.join(' ');
 }
 
 async function screenTickers(priceTracker, config = {}, createYF = null, onTickerDone = null, database = null, archiver = null) {
@@ -82,6 +312,13 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
   const hits = [];
   const allTickers = []; // Every ticker with its best recent event (if any) + R²
 
+  // Data freshness: age of each ticker's options snapshot at the moment we
+  // fetched it (fetch time − provider `updated` stamp). MarketData stamps every
+  // contract in a chain with the same `updated` time, so one sample per ticker
+  // is enough. Tells us at a glance whether the run saw real-time or delayed
+  // quotes — a paper/free MarketData plan is 15+ min behind.
+  const freshnessSamples = [];
+
   let cancelled = false;
   for (let i = 0; i < list.length; i++) {
     if (isCancelled && isCancelled()) {
@@ -121,127 +358,18 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
 
       archiver?.recordBars(run, ticker, validBars);
 
-      // Compute daily returns and align with market returns
-      const dailyData = [];
-      for (let j = 1; j < validBars.length; j++) {
-        const prevClose = validBars[j - 1].close;
-        const bar = validBars[j];
-        if (prevClose === 0) continue;
-
-        const dateStr = (bar.date instanceof Date
-          ? bar.date.toISOString() : new Date(bar.date).toISOString()
-        ).split('T')[0];
-        const stockReturn = (bar.close - prevClose) / prevClose;
-        const mktReturn = marketReturns ? marketReturns.get(dateStr) : undefined;
-
-        dailyData.push({
-          bar, prevClose, dateStr, stockReturn, mktReturn,
-        });
-      }
-
-      // Run per-ticker regression if we have market data
-      let slope = 0, intercept = 0, rSquared = null;
-      if (marketReturns) {
-        const pairs = dailyData
-          .filter(d => d.mktReturn !== undefined)
-          .map(d => [d.mktReturn, d.stockReturn]);
-        if (pairs.length > 20) {
-          const reg = linReg(pairs);
-          slope = reg.m;
-          intercept = reg.b;
-
-          // Compute R²
-          const yMean = pairs.reduce((s, p) => s + p[1], 0) / pairs.length;
-          const ssTotal = pairs.reduce((s, p) => s + (p[1] - yMean) ** 2, 0);
-          const ssResidual = pairs.reduce((s, p) => {
-            const predicted = slope * p[0] + intercept;
-            return s + (p[1] - predicted) ** 2;
-          }, 0);
-          rSquared = ssTotal > 0 ? 1 - ssResidual / ssTotal : 0;
-        }
-      }
-
-      // Compute volumeGapProduct using residual returns
-      const products = [];
-      for (const d of dailyData) {
-        let residualReturn;
-        if (marketReturns && d.mktReturn !== undefined) {
-          residualReturn = d.stockReturn - (slope * d.mktReturn + intercept);
-        } else {
-          // Fallback: raw open gap (signed)
-          residualReturn = (d.bar.open - d.prevClose) / d.prevClose;
-        }
-        const residualPct = Math.abs(residualReturn * 100);
-
-        products.push({
-          bar: d.bar,
-          prevClose: d.prevClose,
-          gapPct: residualPct,
-          residualReturn,
-          volumeGapProduct: d.bar.volume * residualPct,
-        });
-      }
-
-      if (products.length === 0) {
+      // Event detection (shared with ci/backfill-marketdata.js)
+      const ev = computeEventsFromBars(validBars, marketReturns, screenPercentileThreshold);
+      const { rSquared, threshold, chartDates, chartCloses, chartVolumes, chartEvents, dbEvents } = ev;
+      if (ev.products.length === 0) {
         allTickers.push({ ticker, rSquared, skipped: true });
         continue;
       }
-
-      // Compute percentile threshold
+      const products = ev.products;
       const sorted = products
         .map((p) => p.volumeGapProduct)
         .filter((v) => !isNaN(v) && v > 0)
         .sort((a, b) => a - b);
-
-      if (sorted.length === 0) {
-        allTickers.push({ ticker, rSquared, skipped: true });
-        continue;
-      }
-
-      const thresholdIndex = Math.floor((screenPercentileThreshold / 100) * sorted.length);
-      const threshold = sorted[Math.min(thresholdIndex, sorted.length - 1)];
-
-      // Build chart data: dates and closes for all bars
-      const chartDates = products.map(p => {
-        const d = p.bar.date;
-        return (d instanceof Date ? d.toISOString() : new Date(d).toISOString()).split('T')[0];
-      });
-      const chartCloses = products.map(p => p.bar.close);
-      const chartVolumes = products.map(p => p.bar.volume);
-
-      // Find ALL events above threshold (for chart dots) and build DB event records in parallel
-      const chartEvents = [];
-      const dbEvents = [];
-      for (let k = 0; k < products.length; k++) {
-        const entry = products[k];
-        if (entry.volumeGapProduct < threshold) continue;
-
-        const gapNeg = entry.bar.open < entry.prevClose;
-        const intradayPos = entry.bar.close > entry.bar.open;
-        const closedBelow = entry.bar.close < entry.prevClose;
-        const closedAbove = entry.bar.close > entry.prevClose;
-
-        let cls;
-        if (gapNeg) {
-          cls = closedAbove ? 'surprising_positive' : intradayPos ? 'negative_anticipated' : 'surprising_negative';
-        } else {
-          cls = closedBelow ? 'surprising_negative' : intradayPos ? 'surprising_positive' : 'positive_anticipated';
-        }
-
-        chartEvents.push({ idx: k, y: entry.bar.close, classification: cls });
-        dbEvents.push({
-          dateStr: chartDates[k],
-          classification: cls,
-          strength: entry.gapPct,
-          residualReturn: entry.residualReturn,
-          volumeGapProduct: entry.volumeGapProduct,
-          open: entry.bar.open,
-          high: entry.bar.high,
-          low: entry.bar.low,
-          close: entry.bar.close,
-          volume: entry.bar.volume,
-        });
-      }
 
       archiver?.recordEvents(run, ticker, dbEvents, benchmark);
 
@@ -323,7 +451,8 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
         }
       }
 
-      // Fetch company summary + market cap + sector/industry if yahoo-finance available
+      // Company summary + market cap + sector/industry — Yahoo-only (MarketData
+      // has no fundamentals). Optional: left blank when createYF is not supplied.
       let summary = '';
       let marketCap = 0;
       let sector = '';
@@ -340,10 +469,14 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
       }
 
       // Fetch per-strike options data for disagreement chart (nearest 3 expirations)
-      // Uses OptionsAnalysisService.fetchOptionsChain which tries Yahoo first,
-      // then falls back to IB Gateway for international tickers.
+      // Uses OptionsAnalysisService.fetchOptionsChain, which is backed by
+      // MarketData (IB Gateway remains an opt-in fallback via USE_IB_OPTIONS=1).
       let optionsStrikes = null;
-      if (createYF) {
+      // Hoisted out of the options block so the screening row can show it even
+      // when the chain fetch below fails.
+      let currentPriceForEntry = null;
+      let liveQuoteForEntry = null;
+      {
         try {
           const ibProvider = new IBOptionsProvider({ port: 4001 });
           const optSvc = new OptionsAnalysisService(null, ibProvider);
@@ -351,10 +484,33 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
           const initialChain = initialFetch?.chain;
           const initialSource = initialFetch?.source;
           const currentPrice = initialChain?.quote?.regularMarketPrice;
+          if (typeof currentPrice === 'number' && currentPrice > 0) currentPriceForEntry = currentPrice;
+
+          // Live quote (includes extended hours — the chain's underlyingPrice is
+          // regular-session only). This is the same quote the provider already
+          // fetched for the strike band, so it is a cache hit, not an extra call.
+          // optSvc.marketData only exists if the MarketData path actually ran.
+          try {
+            const live = await optSvc.marketData?.getUnderlyingPrice(ticker);
+            if (typeof live === 'number' && live > 0) liveQuoteForEntry = live;
+          } catch (_) { /* fall back to the chain's underlyingPrice below */ }
           const expirationDates = initialChain?.expirationDates || [];
 
           // Single snapshot timestamp shared across all expirations for this ticker
-          const snapshotDate = new Date().toISOString();
+          const fetchedAt = Date.now();
+          const snapshotDate = new Date(fetchedAt).toISOString();
+
+          // Sample how stale the provider's data was when it reached us.
+          const quoteTime = latestQuoteTime(initialChain);
+          if (quoteTime) {
+            freshnessSamples.push({
+              ticker,
+              quoteTime,                          // provider `updated` (ms epoch)
+              fetchedAt,
+              ageMs: fetchedAt - quoteTime,
+              source: initialSource || 'unknown',
+            });
+          }
 
           if (currentPrice && expirationDates.length > 0) {
             const maxExp = Math.min(3, expirationDates.length);
@@ -471,11 +627,19 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
 
       // Add to allTickers — with best hit data if any, otherwise just the ticker + R²
       const chartData = { dates: chartDates, closes: chartCloses, volumes: chartVolumes, events: chartEvents, optionsStrikes };
+      // Last regular-session close (from the daily bars) alongside the live quote.
+      // Prefer the stock quote (reflects pre/post-market); the chain's
+      // underlyingPrice is the regular-session fallback. The extended value
+      // never reaches the event/gap math, which is defined on RTH bars only.
+      const lastClose = chartCloses.length > 0 ? chartCloses[chartCloses.length - 1] : null;
+      const latestPrice = typeof liveQuoteForEntry === 'number'
+        ? liveQuoteForEntry
+        : (typeof currentPriceForEntry === 'number' ? currentPriceForEntry : null);
       let entry;
       if (bestHit) {
-        entry = { ...bestHit, chartData, summary, marketCap, sector, industry };
+        entry = { ...bestHit, chartData, summary, marketCap, sector, industry, lastClose, latestPrice };
       } else {
-        entry = { ticker, rSquared, date: null, gap: 0, percentile: 0, classification: '', volume: 0, chartData, summary, marketCap, sector, industry };
+        entry = { ticker, rSquared, date: null, gap: 0, percentile: 0, classification: '', volume: 0, chartData, summary, marketCap, sector, industry, lastClose, latestPrice };
       }
       allTickers.push(entry);
       archiver?.recordTicker(run, ticker, {
@@ -495,17 +659,32 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
     }
   }
 
+  const freshness = summarizeFreshness(freshnessSamples);
+  if (freshness) {
+    console.log(
+      `[Screen] Data freshness: ${freshness.tier} — median age ${formatAge(freshness.medianAgeMs)}, ` +
+      `mean ${formatAge(freshness.meanAgeMs)} across ${freshness.sampleCount} tickers`
+    );
+    console.log(
+      `[Screen]   avg quote time ${freshness.meanQuoteTime}; ` +
+      `newest ${freshness.newestQuoteTime} (${freshness.newestTicker}), ` +
+      `oldest ${freshness.oldestQuoteTime} (${freshness.oldestTicker})`
+    );
+  } else {
+    console.log('[Screen] Data freshness: no option snapshots carried timestamps');
+  }
+
   let archiveResult = null;
   if (archiver && run) {
     try {
-      archiveResult = await archiver.finishRun(run, { status: cancelled ? 'cancelled' : 'completed' });
+      archiveResult = await archiver.finishRun(run, { status: cancelled ? 'cancelled' : 'completed', freshness });
       console.log(`[Screen] Archive written: ${archiveResult.runId} (bars=${archiveResult.counts.bars}, chains=${archiveResult.counts.chains}, events=${archiveResult.counts.events})`);
     } catch (archiveErr) {
       console.error(`[Screen] Archive write failed: ${archiveErr.message}`);
     }
   }
 
-  return { hits, allTickers, runId: archiveResult?.runId || run?.runId || null, cancelled };
+  return { hits, allTickers, freshness, runId: archiveResult?.runId || run?.runId || null, cancelled };
 }
 
 // ~400 liquid US tickers spanning defense, biotech, clean energy,
@@ -517,9 +696,9 @@ const UNIVERSE = [
   'KTOS','MRCY','RKLB','BWXT','AVAV','AXON','HEI','ATI',
   'CACI','JOBY','OSK','WWD',
   // Biotech / Pharma
-  'TWST','CYTK','ARWR','EXAS','HALO','NBIX','KRYS',
+  'TWST','CYTK','ARWR','HALO','NBIX','KRYS',
   'ALNY','BMRN','INCY','ARGX','EXEL','CPRX','UTHR','RARE',
-  'RXRX','NUVB','BPMC','CRSP','MRUS','RNA','ALKS',
+  'RXRX','NUVB','CRSP','RNA','ALKS',
   // Clean Energy
   'SEDG','BE','FSLR','RUN','SHLS',
   // SaaS / Cloud / Software
@@ -605,7 +784,9 @@ const UNIVERSE = [
 ];
 
 /**
- * Revise the screening ticker list by ranking the UNIVERSE by fundamentals.
+ * Revise the screening ticker list by ranking the universe by fundamentals.
+ * The universe is the hand-picked UNIVERSE list, optionally expanded via
+ * Yahoo predefined screeners (see fetchReviseUniverse).
  *
  * Scoring:
  *   1. Liquidity gate: skip if averageVolume < 200K
@@ -614,32 +795,213 @@ const UNIVERSE = [
  *   4. Effective growth: max(revenueGrowth, EQUITY_DISCOUNT * equityGrowth)
  *   5. Leverage factor: 1 / (1 + debtToEquity/200)
  *   6. Final score: effectiveGrowth * leverageFactor
- *   Top 100 by score descending.
+ *
+ * Two independent top-N rankings (default N=20) are produced:
+ *   - growth: top N by the score above
+ *   - eventProne: top N by event-proneness (beta, or 52-week range as fallback)
+ * The screening list written to config.json is the union of both.
  *
  * @param {Function} createYF - Factory that returns a fresh yahoo-finance2 instance
  * @param {Function} [onProgress] - Optional callback(current, total, ticker)
+ * @param {Object} [options] - { useScreener = true, topN = 100 }
  * @returns {Promise<{tickers: string[], details: Array}>}
  */
 const EQUITY_DISCOUNT = 0.4;
 
-async function reviseTickers(createYF, onProgress) {
+// Custom Yahoo screener (POST /v1/finance/screener) used to build the revise
+// universe. Unlike yahoo-finance2's predefined screens (which only take a
+// count), this endpoint accepts arbitrary filter criteria. Not exposed by
+// yahoo-finance2 v3, so we call it directly with a manual cookie+crumb.
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+const CUSTOM_SCREEN_PAGE_SIZE = 250; // max the endpoint returns per call
+const CUSTOM_SCREEN_MAX_TICKERS = 2000; // safety cap on pagination
+// Universe thresholds — applied BOTH to the screener query and (via a batch
+// quote check) to the curated UNIVERSE list, so no ticker below the floor
+// survives into the revise loop regardless of source.
+const UNIVERSE_MIN_CAP = 2e9;
+const UNIVERSE_MIN_AVG_VOLUME = 2e6;
+// Universe criteria: US-listed equities, cap > $2B, avg 3-month volume > 2M.
+// The volume floor does most of the work — illiquid names make poor screening
+// candidates for either ranking (weak options chains, unreliable event math).
+// Growth is deliberately NOT filtered here — the revise scoring ranks on it.
+// To exclude whole sectors add e.g.:
+//   { operator: 'ne', operands: ['sector', 'Financial Services'] }
+const CUSTOM_SCREEN_QUERY = {
+  operator: 'and',
+  operands: [
+    { operator: 'eq', operands: ['region', 'us'] },
+    { operator: 'gt', operands: ['intradaymarketcap', UNIVERSE_MIN_CAP] },
+    { operator: 'gt', operands: ['avgdailyvol3m', UNIVERSE_MIN_AVG_VOLUME] },
+  ],
+};
+
+/**
+ * Yahoo cookie + crumb, the same dance yahoo-finance2 does internally.
+ * @returns {Promise<{cookie: string, crumb: string}>}
+ */
+async function fetchYahooAuth() {
+  let cookie = '';
+  try {
+    const r1 = await fetch('https://fc.yahoo.com', { headers: { 'User-Agent': BROWSER_UA } });
+    cookie = (r1.headers.get('set-cookie') || '').split(';')[0];
+  } catch (_) { /* fc.yahoo.com 404s after setting the cookie — expected */ }
+  const r2 = await fetch('https://query2.finance.yahoo.com/v1/test/getcrumb', {
+    headers: { 'User-Agent': BROWSER_UA, 'Cookie': cookie },
+  });
+  if (!r2.ok) throw new Error(`crumb fetch failed: ${r2.status}`);
+  return { cookie, crumb: await r2.text() };
+}
+
+/**
+ * Fetch US equity tickers matching CUSTOM_SCREEN_QUERY from Yahoo's custom
+ * screener endpoint, paginated. Returns symbols only.
+ * @returns {Promise<string[]>}
+ */
+async function fetchCustomScreenerTickers(auth) {
+  const { cookie, crumb } = auth;
+
+  const tickers = [];
+  let offset = 0;
+  while (tickers.length < CUSTOM_SCREEN_MAX_TICKERS) {
+    const body = {
+      size: CUSTOM_SCREEN_PAGE_SIZE,
+      offset,
+      sortField: 'intradaymarketcap',
+      sortType: 'DESC',
+      quoteType: 'EQUITY',
+      query: CUSTOM_SCREEN_QUERY,
+      userId: '',
+      userIdType: 'guid',
+    };
+    const res = await fetch(
+      `https://query2.finance.yahoo.com/v1/finance/screener?crumb=${encodeURIComponent(crumb)}`,
+      {
+        method: 'POST',
+        headers: { 'User-Agent': BROWSER_UA, 'Cookie': cookie, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }
+    );
+    if (!res.ok) throw new Error(`screener fetch failed: ${res.status}`);
+    const json = await res.json();
+    const result = json.finance?.result?.[0];
+    const quotes = result?.quotes || [];
+    for (const q of quotes) {
+      if (q.symbol && (!q.quoteType || q.quoteType === 'EQUITY')) tickers.push(q.symbol);
+    }
+    if (quotes.length < CUSTOM_SCREEN_PAGE_SIZE || offset + quotes.length >= (result?.total ?? 0)) break;
+    offset += CUSTOM_SCREEN_PAGE_SIZE;
+    await sleep(500); // be polite between pages
+  }
+  console.log(`[Revise] Custom screener: ${tickers.length} US equities matched the criteria`);
+  return tickers;
+}
+
+/**
+ * Filter curated UNIVERSE tickers through the same cap/volume thresholds using
+ * one batch quote call per chunk — curated names below the floor (or delisted)
+ * are dropped instead of sneaking past the screener.
+ * @param {string[]} candidates - Curated tickers NOT already in the screener result
+ * @param {{cookie: string, crumb: string}} auth
+ * @returns {Promise<string[]>} The subset passing the thresholds
+ */
+async function filterCuratedByThresholds(candidates, auth) {
+  if (candidates.length === 0) return [];
+  const { cookie, crumb } = auth;
+  const keep = [];
+  const CHUNK = 100;
+  for (let i = 0; i < candidates.length; i += CHUNK) {
+    const symbols = candidates.slice(i, i + CHUNK).join(',');
+    const res = await fetch(
+      `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols)}&crumb=${encodeURIComponent(crumb)}`,
+      { headers: { 'User-Agent': BROWSER_UA, 'Cookie': cookie } }
+    );
+    if (!res.ok) throw new Error(`batch quote fetch failed: ${res.status}`);
+    const json = await res.json();
+    for (const q of json.quoteResponse?.result || []) {
+      const vol = q.averageDailyVolume3Month ?? q.regularMarketVolume ?? 0;
+      if ((q.marketCap ?? 0) > UNIVERSE_MIN_CAP && vol > UNIVERSE_MIN_AVG_VOLUME) {
+        keep.push(q.symbol);
+      }
+    }
+  }
+  console.log(`[Revise] Curated list: kept ${keep.length}/${candidates.length} below-screener tickers above the thresholds`);
+  return keep;
+}
+
+/**
+ * Build the revise universe: everything matching CUSTOM_SCREEN_QUERY, plus the
+ * curated UNIVERSE names that also pass the same thresholds, deduped.
+ * @returns {Promise<string[]>}
+ */
+async function fetchReviseUniverse() {
+  let auth = null;
+  let screenerTickers = null;
+  try {
+    auth = await fetchYahooAuth();
+    screenerTickers = await fetchCustomScreenerTickers(auth);
+  } catch (err) {
+    console.error(`[Revise] Custom screener failed (non-fatal), using UNIVERSE only: ${err.message}`);
+    return [...UNIVERSE];
+  }
+
+  const tickers = new Set(screenerTickers);
+  const curatedOnly = UNIVERSE.filter(t => !tickers.has(t));
+  try {
+    for (const t of await filterCuratedByThresholds(curatedOnly, auth)) tickers.add(t);
+  } catch (err) {
+    // Batch quote failed — keep the full curated list rather than lose it
+    console.error(`[Revise] Curated threshold check failed (non-fatal), keeping all curated: ${err.message}`);
+    for (const t of curatedOnly) tickers.add(t);
+  }
+  return [...tickers];
+}
+
+async function reviseTickers(createYF, onProgress, options = {}) {
+  const { useScreener = true, topN = 20 } = options;
+
+  const universe = useScreener
+    ? await fetchReviseUniverse()
+    : [...UNIVERSE];
+  console.log(`[Revise] Universe size: ${universe.length} tickers${useScreener ? ' (screener-expanded)' : ''}`);
+
+  // Retry Yahoo calls on 429 with backoff — the revise loop runs at 400ms/ticker,
+  // so an occasional throttle is expected; retry instead of losing the ticker.
+  async function withRateLimitRetry(fn) {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        return await fn();
+      } catch (err) {
+        const is429 = /429|Too Many Requests/i.test(err?.message || '');
+        if (!is429 || attempt === 3) throw err;
+        await sleep(2000 * attempt);
+      }
+    }
+  }
+
   const scored = [];
   const errors = [];
   const excluded = { illiquid: [], noGrowth: [], highLeverage: [] };
-  const total = UNIVERSE.length;
+  const total = universe.length;
 
   for (let i = 0; i < total; i++) {
-    const ticker = UNIVERSE[i];
+    const ticker = universe[i];
 
-    if (i > 0) await sleep(1000);
+    if (i > 0) await sleep(400);
 
     if (onProgress) onProgress(i + 1, total, ticker);
 
     try {
       const yf = createYF();
-      const result = await yf.quoteSummary(ticker, {
-        modules: ['financialData', 'summaryDetail', 'balanceSheetHistory'],
-      });
+      // Note: quoteSummary's balanceSheetHistory submodule has been empty since
+      // Nov 2024 (Yahoo deprecation) — equity growth comes from
+      // fundamentalsTimeSeries instead.
+      // validateResult: false — Yahoo occasionally ships junk fields (e.g. the
+      // string "NaN" for trailingAnnualDividendYield) that fail the library's
+      // strict schema and would otherwise drop the ticker entirely. Every field
+      // we read is guarded with fallbacks below.
+      const result = await withRateLimitRetry(() => yf.quoteSummary(ticker, {
+        modules: ['financialData', 'summaryDetail'],
+      }, { validateResult: false }));
 
       const fin = result.financialData || {};
       const summary = result.summaryDetail || {};
@@ -647,15 +1009,22 @@ async function reviseTickers(createYF, onProgress) {
       const avgVolume = summary.averageVolume ?? 0;
       const marketCap = summary.marketCap ?? 0;
 
-      const sheets = (result.balanceSheetHistory?.balanceSheetStatements) ?? [];
       let equityGrowth = 0;
-      if (sheets.length >= 2) {
-        const recent = sheets[0].totalStockholderEquity;
-        const prior  = sheets[1].totalStockholderEquity;
-        if (recent != null && prior != null && prior !== 0) {
-          equityGrowth = Math.max(0, (recent - prior) / Math.abs(prior));
+      try {
+        const ts = await withRateLimitRetry(() => yf.fundamentalsTimeSeries(ticker, {
+          period1: new Date(Date.now() - 3 * 365 * 24 * 60 * 60 * 1000),
+          type: 'annual',
+          module: 'balance-sheet',
+        }, { validateResult: false }));
+        const eqs = (Array.isArray(ts) ? ts : [])
+          .filter(e => typeof e.stockholdersEquity === 'number')
+          .sort((a, b) => new Date(a.date) - new Date(b.date));
+        if (eqs.length >= 2) {
+          const prior = eqs[eqs.length - 2].stockholdersEquity;
+          const recent = eqs[eqs.length - 1].stockholdersEquity;
+          if (prior !== 0) equityGrowth = Math.max(0, (recent - prior) / Math.abs(prior));
         }
-      }
+      } catch (_) { /* equity floor is optional — revenue growth still applies */ }
 
       const revenueGrowth = (fin.revenueGrowth != null && fin.revenueGrowth > 0)
         ? fin.revenueGrowth
@@ -663,10 +1032,19 @@ async function reviseTickers(createYF, onProgress) {
 
       const effectiveGrowth = Math.max(revenueGrowth, EQUITY_DISCOUNT * equityGrowth);
 
-      const debtToEquity = fin.debtToEquity ?? 0;
+      const debtToEquity = Number.isFinite(fin.debtToEquity) ? fin.debtToEquity : 0;
       const leverageFactor = 1 / (1 + Math.max(0, debtToEquity) / 200);
 
       const score = effectiveGrowth * leverageFactor;
+
+      // Event-proneness: how event-rich this ticker is likely to be for the
+      // volume×gap screening. Primary signal is beta; fall back to the 52-week
+      // high/low range as a volatility proxy when beta is missing.
+      const beta = summary.beta ?? null;
+      const wkHigh = summary.fiftyTwoWeekHigh;
+      const wkLow = summary.fiftyTwoWeekLow;
+      const rangeProxy = (wkHigh > 0 && wkLow > 0) ? (wkHigh - wkLow) / wkLow : 0;
+      const eventProneness = (beta != null && beta > 0) ? beta : rangeProxy;
 
       const entry = {
         ticker,
@@ -678,6 +1056,8 @@ async function reviseTickers(createYF, onProgress) {
         leverageFactor,
         avgVolume,
         marketCap,
+        beta,
+        eventProneness,
       };
 
       if (avgVolume < 200000) {
@@ -696,14 +1076,19 @@ async function reviseTickers(createYF, onProgress) {
     }
   }
 
-  // Sort by score descending, take top 100
+  // Two independent top-N rankings; the screening list is their union.
   scored.sort((a, b) => b.score - a.score);
-  const top100 = scored.slice(0, 100);
-  const top100Set = new Set(top100.map(s => s.ticker));
+  const growthTop = scored.slice(0, topN);
+  const eventTop = [...scored]
+    .sort((a, b) => b.eventProneness - a.eventProneness)
+    .slice(0, topN);
+  const growthSet = new Set(growthTop.map(s => s.ticker));
+  const eventSet = new Set(eventTop.map(s => s.ticker));
+  const selectedSet = new Set([...growthSet, ...eventSet]);
 
-  // Classify tickers that scored but didn't make the top 100 by primary weakness
+  // Classify tickers that scored but made neither top-N list by primary weakness
   for (const s of scored) {
-    if (top100Set.has(s.ticker)) continue;
+    if (selectedSet.has(s.ticker)) continue;
     // Primary reason: no/negative revenue growth vs high leverage
     if (s.effectiveGrowth === 0) {
       excluded.noGrowth.push(s);
@@ -716,12 +1101,38 @@ async function reviseTickers(createYF, onProgress) {
     }
   }
 
-  console.log(`[Revise] Done. ${scored.length} scored, ${errors.length} errors, top 100 selected.`);
+  console.log(`[Revise] Done. ${scored.length} scored, ${errors.length} errors, ${selectedSet.size} selected (top ${topN} growth + top ${topN} event-prone).`);
   console.log(`[Revise] Excluded: ${excluded.illiquid.length} illiquid, ${excluded.noGrowth.length} low/no growth, ${excluded.highLeverage.length} high leverage`);
 
+  // details = full metric rows for every selected ticker (union of both
+  // rankings), flagged with which list(s) they came from.
+  const unionDetails = new Map();
+  for (const s of growthTop) unionDetails.set(s.ticker, { ...s, inGrowth: true, inEvent: false });
+  for (const s of eventTop) {
+    if (unionDetails.has(s.ticker)) unionDetails.get(s.ticker).inEvent = true;
+    else unionDetails.set(s.ticker, { ...s, inGrowth: false, inEvent: true });
+  }
+
+  // Ordered candidate ranking for flex-slot filling: interleave both lists by
+  // rank so "next in line" always means best remaining in either criterion.
+  const ranking = [];
+  for (let i = 0; i < topN; i++) {
+    if (growthTop[i] && !ranking.includes(growthTop[i].ticker)) ranking.push(growthTop[i].ticker);
+    if (eventTop[i] && !ranking.includes(eventTop[i].ticker)) ranking.push(eventTop[i].ticker);
+  }
+
   return {
-    tickers: top100.map(s => s.ticker),
-    details: top100,
+    tickers: [...selectedSet],
+    ranking,
+    // Full scored universe, best first — the sampling pool for screening's
+    // auto-suggested tickers (random 10 from top 200).
+    fullRanking: scored.map(s => s.ticker),
+    details: [...unionDetails.values()],
+    lists: {
+      growth: growthTop.map(s => s.ticker),
+      eventProne: eventTop.map(s => s.ticker),
+    },
+    topN,
     excluded,
     errors,
     totalScored: scored.length,
@@ -732,4 +1143,4 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-module.exports = { screenTickers, reviseTickers };
+module.exports = { screenTickers, reviseTickers, fetchReviseUniverse, computeEventsFromBars, summarizeFreshness, formatAge };

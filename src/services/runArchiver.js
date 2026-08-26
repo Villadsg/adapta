@@ -3,24 +3,20 @@ const path = require('path');
 const os = require('os');
 
 /**
- * RunArchiver — writes raw screening-run data to per-run parquet sidecars.
+ * RunArchiver — writes screening-run metadata to a per-run JSON sidecar.
  *
- * Each run produces files in `outputDir`:
- *   run-<runId>.run.json       metadata + per-ticker statuses
- *   run-<runId>.bars.parquet   one row per (ticker, trading day)
- *   run-<runId>.chains.parquet one row per options contract observed
- *   run-<runId>.events.parquet one row per detected event
+ * Each run produces one file in `outputDir`:
+ *   run-<runId>.run.json   metadata + per-ticker statuses
  *
  * runId is the run-start ISO timestamp with `:` and `.` replaced by `-` so it's
  * filesystem-safe and matches the existing HTML naming convention.
  *
- * Parquet conversion uses the existing DuckDB connection: rows are serialized as
- * newline-delimited JSON to a temp file, then COPY'd into a parquet via
- * `read_json_auto`. The temp JSONL is removed after the COPY succeeds.
+ * Raw bars/chains/events are only buffered in memory for the run.json counts;
+ * the historical parquet sidecars were removed — that data lives in the
+ * DuckDB tables (options_chain_history, options_daily_iv, iv_history_records).
  */
 class RunArchiver {
-  constructor({ database, outputDir }) {
-    this.database = database;
+  constructor({ outputDir }) {
     this.outputDir = outputDir;
     this.hostId = os.hostname();
   }
@@ -124,7 +120,7 @@ class RunArchiver {
     });
   }
 
-  async finishRun(run, { status = 'completed', error = null } = {}) {
+  async finishRun(run, { status = 'completed', error = null, freshness = null } = {}) {
     if (!run) return null;
     const finishedAt = new Date().toISOString();
     const baseName = `run-${run.runId}`;
@@ -136,6 +132,10 @@ class RunArchiver {
       finishedAt,
       status,
       error: error ? (error.message || String(error)) : null,
+      // How stale the provider's quotes were during this run (null when no
+      // option snapshot carried a timestamp). Persisted so past runs can be
+      // judged on whether they saw real-time or delayed data.
+      freshness,
       config: this._sanitizeConfig(run.config),
       counts: {
         bars: run.buffers.bars.length,
@@ -152,38 +152,7 @@ class RunArchiver {
       'utf-8'
     );
 
-    // Sequential to avoid contention on the shared DuckDB connection.
-    await this._writeParquet(run.runDir, baseName, 'bars', run.buffers.bars);
-    await this._writeParquet(run.runDir, baseName, 'chains', run.buffers.chains);
-    await this._writeParquet(run.runDir, baseName, 'events', run.buffers.events);
-
     return { runId: run.runId, runDir: run.runDir, counts: meta.counts };
-  }
-
-  async _writeParquet(dir, baseName, kind, rows) {
-    if (!rows.length) return;
-    const jsonlPath = path.join(dir, `${baseName}.${kind}.jsonl`);
-    const parquetPath = path.join(dir, `${baseName}.${kind}.parquet`);
-    fs.writeFileSync(jsonlPath, rows.map((r) => JSON.stringify(r)).join('\n'), 'utf-8');
-    try {
-      await this._copyJsonlToParquet(jsonlPath, parquetPath);
-    } finally {
-      try { fs.unlinkSync(jsonlPath); } catch (_) { /* ignore */ }
-    }
-  }
-
-  _copyJsonlToParquet(jsonlPath, parquetPath) {
-    return new Promise((resolve, reject) => {
-      const escapedJsonl = jsonlPath.replace(/'/g, "''");
-      const escapedParquet = parquetPath.replace(/'/g, "''");
-      const sql =
-        `COPY (SELECT * FROM read_json_auto('${escapedJsonl}', format='newline_delimited')) ` +
-        `TO '${escapedParquet}' (FORMAT PARQUET, COMPRESSION ZSTD)`;
-      this.database.connection.run(sql, (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
   }
 
   _toDateStr(d) {
