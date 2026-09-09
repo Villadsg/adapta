@@ -126,9 +126,9 @@ function formatPct(n, digits = 1) {
   return `${(n * 100).toFixed(digits)}%`;
 }
 
-function formatSuperFavoriteMessage(ticker, events, optionsData) {
+function formatTickerMessage(ticker, events, optionsData) {
   const lines = [];
-  lines.push(`<b>⭐ ${ticker}</b>`);
+  lines.push(`<b>${ticker}</b>`);
   lines.push('');
 
   const recent = (events || []).slice(0, 3);
@@ -187,5 +187,5 @@ module.exports = {
   sendMessage,
   formatEventMessage,
   formatScreeningMessage,
-  formatSuperFavoriteMessage,
+  formatTickerMessage,
 };

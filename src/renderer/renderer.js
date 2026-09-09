@@ -439,88 +439,14 @@ const screenPercentile = document.getElementById('screen-percentile');
 const screenCancel = document.getElementById('screen-cancel');
 const screenRun = document.getElementById('screen-run');
 
-// Local editable copy of the super favorites list; synced via saveSuperFavorites.
-let superFavoritesState = [];
-
-function renderSuperFavoriteChips() {
-  const wrap = document.getElementById('super-favorites-display');
-  const chips = document.getElementById('super-favorites-chips');
-  const countEl = document.getElementById('super-favorites-count');
-  if (!wrap || !chips) return;
-
-  wrap.style.display = 'block';
-  countEl.textContent = superFavoritesState.length
-    ? `(${superFavoritesState.length})`
-    : '(empty — add tickers below)';
-  chips.innerHTML = '';
-
-  if (!superFavoritesState.length) {
-    chips.innerHTML = '<span style="color:#5a6577; font-size:12px; padding:4px 6px;">No super favorites — type a symbol below and press Enter or Add.</span>';
-    return;
-  }
-
-  for (const t of superFavoritesState.slice().sort()) {
-    const chip = document.createElement('span');
-    chip.style.cssText = 'display:inline-flex; align-items:center; gap:5px; padding:4px 6px 4px 10px; border-radius:6px; font-size:12px; font-weight:600; background:#3b1a1a; color:#ff8a80; border:1px solid #5c2020; cursor:default;';
-    chip.innerHTML = '★ ' + t + ' <span style="color:#ff6b6b; font-weight:bold; padding:0 3px; cursor:pointer;" title="Remove">×</span>';
-    chip.querySelector('span').addEventListener('click', () => {
-      superFavoritesState = superFavoritesState.filter(x => x !== t);
-      persistSuperFavorites();
-    });
-    chips.appendChild(chip);
-  }
-}
-
-async function persistSuperFavorites() {
-  const result = await window.electronAPI.saveSuperFavorites(superFavoritesState);
-  if (result && result.success) {
-    superFavoritesState = result.superFavorites;
-  } else if (result && result.error) {
-    showToast('Error', result.error, 'error');
-  }
-  renderSuperFavoriteChips();
-}
-
-async function refreshSuperFavoritesDisplay() {
-  try {
-    const result = await window.electronAPI.getFavorites();
-    superFavoritesState = (result && result.superFavorites) || [];
-  } catch (_) {
-    superFavoritesState = [];
-  }
-  renderSuperFavoriteChips();
-}
-
-// Add super favorite input
-const superFavoriteAddInput = document.getElementById('super-favorite-add');
-const superFavoriteAddBtn = document.getElementById('super-favorite-add-btn');
-
-function addSuperFavorite() {
-  const t = (superFavoriteAddInput.value || '').trim().toUpperCase();
-  if (!t) return;
-  if (superFavoritesState.includes(t)) {
-    showToast('Already in list', t + ' is already a super favorite', 'info');
-    superFavoriteAddInput.value = '';
-    return;
-  }
-  superFavoritesState.push(t);
-  superFavoriteAddInput.value = '';
-  persistSuperFavorites();
-}
-
-if (superFavoriteAddBtn) superFavoriteAddBtn.addEventListener('click', addSuperFavorite);
-if (superFavoriteAddInput) superFavoriteAddInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') addSuperFavorite();
-});
-
 // Local editable copy of the screening list; kept in sync with config.json
 // via saveScreenList after every edit.
-let screenListState = { tickers: [], fixed: [] };
+let screenListState = { tickers: [] };
 
 async function persistScreenList() {
-  const result = await window.electronAPI.saveScreenList(screenListState.tickers, screenListState.fixed);
+  const result = await window.electronAPI.saveScreenList(screenListState.tickers);
   if (result && result.success) {
-    screenListState = { tickers: result.tickers, fixed: result.fixed };
+    screenListState = { tickers: result.tickers };
   } else if (result && result.error) {
     showToast('Error', result.error, 'error');
   }
@@ -533,11 +459,10 @@ function renderScreenTickerChips() {
   const countEl = document.getElementById('screen-tickers-count');
   if (!wrap || !chips) return;
 
-  const { tickers, fixed } = screenListState;
+  const { tickers } = screenListState;
   wrap.style.display = 'block';
-  const fixedCount = tickers.filter(t => fixed.includes(t)).length;
   countEl.textContent = tickers.length
-    ? `(${tickers.length}: ${fixedCount} pinned, ${tickers.length - fixedCount} flex)`
+    ? `(${tickers.length})`
     : '(empty — add tickers below)';
   chips.innerHTML = '';
 
@@ -547,27 +472,14 @@ function renderScreenTickerChips() {
   }
 
   for (const t of tickers.slice().sort()) {
-    const isFixed = fixed.includes(t);
     const chip = document.createElement('span');
-    chip.title = isFixed ? 'Pinned — click to unpin' : 'Click to pin (survives rebuilds)';
-    chip.style.cssText = 'display:inline-flex; align-items:center; gap:5px; padding:4px 6px 4px 10px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; user-select:none; ' +
-      (isFixed
-        ? 'background:#3b2a14; color:#ffcc80; border:1px solid #5c4420;'
-        : 'background:#2a2520; color:#d4a76a; border:1px solid #3e3528;');
-    chip.innerHTML = (isFixed ? '📌 ' : '') + t + ' <span style="color:#ffb74d; font-weight:bold; padding:0 3px; cursor:pointer;" title="Remove">×</span>';
-    // Click on × removes; click elsewhere toggles pin
+    chip.title = 'In screening list';
+    chip.style.cssText = 'display:flex; align-items:center; justify-content:space-between; padding:5px 8px; border-radius:6px; font-size:13px; font-weight:600; user-select:none; width:100%;' +
+      'background:#2a2520; color:#d4a76a; border:1px solid #3e3528;';
+    chip.innerHTML = t + ' <span style="color:#ffb74d; font-weight:bold; padding:0 3px; cursor:pointer;" title="Remove">×</span>';
     chip.querySelector('span').addEventListener('click', (e) => {
       e.stopPropagation();
       screenListState.tickers = screenListState.tickers.filter(x => x !== t);
-      screenListState.fixed = screenListState.fixed.filter(x => x !== t);
-      persistScreenList();
-    });
-    chip.addEventListener('click', () => {
-      if (screenListState.fixed.includes(t)) {
-        screenListState.fixed = screenListState.fixed.filter(x => x !== t);
-      } else {
-        screenListState.fixed.push(t);
-      }
       persistScreenList();
     });
     chips.appendChild(chip);
@@ -577,12 +489,9 @@ function renderScreenTickerChips() {
 async function refreshScreenTickersDisplay() {
   try {
     const result = await window.electronAPI.getScreenTickers();
-    screenListState = {
-      tickers: (result && result.tickers) || [],
-      fixed: (result && result.fixed) || [],
-    };
+    screenListState = { tickers: (result && result.tickers) || [] };
   } catch (_) {
-    screenListState = { tickers: [], fixed: [] };
+    screenListState = { tickers: [] };
   }
   renderScreenTickerChips();
 }
@@ -630,7 +539,6 @@ btnScreen.addEventListener('click', async () => {
   screenPercentile.value = '92';
   screenPeriod.focus();
   populateScreeningRuns();
-  refreshSuperFavoritesDisplay();
   refreshScreenTickersDisplay();
 });
 
@@ -690,7 +598,7 @@ screenRevise.addEventListener('click', async () => {
   toast.innerHTML = `
     <span class="toast-icon">ℹ</span>
     <div class="toast-content">
-      <div class="toast-title">Rebuilding Ticker List</div>
+      <div class="toast-title">Rebuilding Ranking</div>
       <div class="toast-message">Ranking ~910 tickers, ~6-8 minutes...</div>
     </div>
   `;
@@ -712,8 +620,7 @@ screenRevise.addEventListener('click', async () => {
     const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
     await createTab(dataUrl);
 
-    showToast('Rebuild Complete', `Selected ${result.tickers.length} tickers from ${result.totalScored} scored`, 'success');
-    refreshScreenTickersDisplay();
+    showToast('Rebuild Complete', `Ranking updated from ${result.totalScored} scored — screening runs draw 5 random tickers from the top 100`, 'success');
   } catch (error) {
     toast.remove();
     console.error('Revise error:', error);
@@ -826,7 +733,7 @@ function generateReviseHTML(result) {
   tr:hover { background: #f9f9f9; }
 </style></head><body>
 <h1>Rebuild Ticker List — All Tickers</h1>
-<p class="summary">${nTotal} tickers analyzed${timestamp ? ' on ' + timestamp : ''}. ${selectedSet.size} selected for screening (top ${result.topN || 20} growth + top ${result.topN || 20} event-prone, union). List column: G = growth, EP = event-prone.</p>
+<p class="summary">${nTotal} tickers analyzed${timestamp ? ' on ' + timestamp : ''}. The rebuild only refreshes the ranking — screening runs draw 5 random tickers from the top 100 (excluding your list and the previous draw). List column: G = growth, EP = event-prone.</p>
 
 <div class="exclusion-summary">
   <div class="excl-card selected"><div class="count">${selectedSet.size}</div><div class="label">Selected</div></div>
@@ -955,13 +862,11 @@ screenRun.addEventListener('click', async () => {
     ? overrideRaw.split(/[,\s]+/).map(t => t.trim().toUpperCase()).filter(Boolean)
     : null;
   const fetchNews = document.getElementById('screen-fetch-news').checked;
-  const favoritesOnly = document.getElementById('screen-favorites-only').checked;
-  const superOnly = document.getElementById('screen-super-only').checked;
 
   screenModal.style.display = 'none';
   await window.electronAPI.hideModal();
 
-  const tickerCount = overrideTickers ? overrideTickers.length : (superOnly ? 'super favorites' : (favoritesOnly ? 'favorites' : 'all'));
+  const tickerCount = overrideTickers ? overrideTickers.length : 'all';
   const screenBtn = document.getElementById('btn-screen');
   const screenBtnOriginal = screenBtn.textContent;
   screenBtn.classList.add('is-loading');
@@ -969,7 +874,7 @@ screenRun.addEventListener('click', async () => {
   screeningActive = true;
 
   try {
-    const result = await window.electronAPI.screenTickers({ period, lookbackDays, percentileThreshold, overrideTickers, fetchNews, favoritesOnly, superOnly });
+    const result = await window.electronAPI.screenTickers({ period, lookbackDays, percentileThreshold, overrideTickers, fetchNews });
 
     if (!result.success) {
       const isCancel = result.cancelled || /cancel/i.test(result.error || '');

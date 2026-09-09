@@ -424,7 +424,7 @@ class ArticleDatabase {
    * Run database migrations to handle schema changes
    */
   async runMigrations() {
-    const CURRENT_SCHEMA_VERSION = 14;
+    const CURRENT_SCHEMA_VERSION = 15;
     try {
       const storedVersion = parseInt(await this.getSetting('schema_version', '0'), 10) || 0;
       if (storedVersion >= CURRENT_SCHEMA_VERSION) {
@@ -610,6 +610,13 @@ class ArticleDatabase {
             exp2_atm_put_iv DECIMAL(10,4),
             exp2_call_dv DECIMAL(18,2),
             exp2_put_dv DECIMAL(18,2),
+            exp3_label TEXT,
+            exp3_call_iv DECIMAL(10,4),
+            exp3_put_iv DECIMAL(10,4),
+            exp3_atm_call_iv DECIMAL(10,4),
+            exp3_atm_put_iv DECIMAL(10,4),
+            exp3_call_dv DECIMAL(18,2),
+            exp3_put_dv DECIMAL(18,2),
             source TEXT,
             fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(ticker, date)
@@ -627,8 +634,8 @@ class ArticleDatabase {
       });
 
       // Migration 14: full IV-history records, replacing ci/weighted-iv-history.json.
-      // options_daily_iv holds only pooled exp1/exp2 aggregates, but the screening UI
-      // also needs exp3, per-strike calls/puts, atmBand*/deepOTM* metrics and the
+      // options_daily_iv holds only pooled exp1/exp2/exp3 aggregates; the screening UI
+      // also needs per-strike calls/puts, atmBand*/deepOTM* metrics and the
       // screening metadata (sector, eventTags, dailyReturn). Rather than spread those
       // across a dozen typed columns, the record is stored as JSON in its existing
       // shape -- the format every consumer already parses -- keyed by (ticker, date).
@@ -657,6 +664,16 @@ class ArticleDatabase {
           (err) => { if (err) reject(err); else resolve(); }
         );
       });
+
+      // Migration 15: third-expiration aggregates on options_daily_iv. The exp3_*
+      // columns are derived from the raw chains by ci/backfill-marketdata.js phase D.
+      await this.addColumnIfNotExists('options_daily_iv', 'exp3_label', 'TEXT');
+      await this.addColumnIfNotExists('options_daily_iv', 'exp3_call_iv', 'DECIMAL(10,4)');
+      await this.addColumnIfNotExists('options_daily_iv', 'exp3_put_iv', 'DECIMAL(10,4)');
+      await this.addColumnIfNotExists('options_daily_iv', 'exp3_atm_call_iv', 'DECIMAL(10,4)');
+      await this.addColumnIfNotExists('options_daily_iv', 'exp3_atm_put_iv', 'DECIMAL(10,4)');
+      await this.addColumnIfNotExists('options_daily_iv', 'exp3_call_dv', 'DECIMAL(18,2)');
+      await this.addColumnIfNotExists('options_daily_iv', 'exp3_put_dv', 'DECIMAL(18,2)');
 
       await this.setSetting('schema_version', String(CURRENT_SCHEMA_VERSION));
 
@@ -2110,7 +2127,7 @@ class ArticleDatabase {
   async saveDailyIVRows(rows) {
     if (!rows || rows.length === 0) return 0;
 
-    const COLS = 17;
+    const COLS = 24;
     const BATCH = 500;
     let processed = 0;
 
@@ -2128,6 +2145,8 @@ class ArticleDatabase {
           r.exp1_call_dv, r.exp1_put_dv,
           r.exp2_label, r.exp2_call_iv, r.exp2_put_iv, r.exp2_atm_call_iv, r.exp2_atm_put_iv,
           r.exp2_call_dv, r.exp2_put_dv,
+          r.exp3_label, r.exp3_call_iv, r.exp3_put_iv, r.exp3_atm_call_iv, r.exp3_atm_put_iv,
+          r.exp3_call_dv, r.exp3_put_dv,
           r.source || 'derived'
         );
       });
@@ -2139,6 +2158,8 @@ class ArticleDatabase {
           exp1_call_dv, exp1_put_dv,
           exp2_label, exp2_call_iv, exp2_put_iv, exp2_atm_call_iv, exp2_atm_put_iv,
           exp2_call_dv, exp2_put_dv,
+          exp3_label, exp3_call_iv, exp3_put_iv, exp3_atm_call_iv, exp3_atm_put_iv,
+          exp3_call_dv, exp3_put_dv,
           source
         ) VALUES ${values.join(',')}
         ON CONFLICT (ticker, date) DO UPDATE SET
@@ -2150,6 +2171,10 @@ class ArticleDatabase {
           exp2_put_iv = EXCLUDED.exp2_put_iv, exp2_atm_call_iv = EXCLUDED.exp2_atm_call_iv,
           exp2_atm_put_iv = EXCLUDED.exp2_atm_put_iv,
           exp2_call_dv = EXCLUDED.exp2_call_dv, exp2_put_dv = EXCLUDED.exp2_put_dv,
+          exp3_label = EXCLUDED.exp3_label, exp3_call_iv = EXCLUDED.exp3_call_iv,
+          exp3_put_iv = EXCLUDED.exp3_put_iv, exp3_atm_call_iv = EXCLUDED.exp3_atm_call_iv,
+          exp3_atm_put_iv = EXCLUDED.exp3_atm_put_iv,
+          exp3_call_dv = EXCLUDED.exp3_call_dv, exp3_put_dv = EXCLUDED.exp3_put_dv,
           source = EXCLUDED.source, fetched_at = now()
       `;
 

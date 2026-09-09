@@ -285,7 +285,7 @@ function impliedVol(side, price, S, K, T, r) {
 /**
  * Derive per-day IV data from the raw chain rows.
  * Returns { dbRows, history }:
- *   dbRows  — one options_daily_iv row per (ticker, date), exp1/exp2 aggregates
+ *   dbRows  — one options_daily_iv row per (ticker, date), exp1..exp3 aggregates
  *   history — {ticker: [records]} in the canonical IV-history record format
  *             (exp1..exp3, per-strike calls/puts, atmBand + deepOTM metrics),
  *             so derived records can fully replace live snapshots.
@@ -384,13 +384,15 @@ async function deriveDailyIVRows(database) {
 
       const exps = [...byExp.values()].sort((a, b) => (a.exp < b.exp ? -1 : 1));
 
-      // DB row (exp1/exp2 aggregates only)
+      // DB row (exp1..exp3 aggregates)
       const row = {
         ticker, date, source: 'derived-bsm',
         exp1_label: null, exp1_call_iv: null, exp1_put_iv: null,
         exp1_atm_call_iv: null, exp1_atm_put_iv: null, exp1_call_dv: null, exp1_put_dv: null,
         exp2_label: null, exp2_call_iv: null, exp2_put_iv: null,
         exp2_atm_call_iv: null, exp2_atm_put_iv: null, exp2_call_dv: null, exp2_put_dv: null,
+        exp3_label: null, exp3_call_iv: null, exp3_put_iv: null,
+        exp3_atm_call_iv: null, exp3_atm_put_iv: null, exp3_call_dv: null, exp3_put_dv: null,
       };
       const fill = (e, p) => {
         row[`${p}_label`] = e.exp;
@@ -403,6 +405,7 @@ async function deriveDailyIVRows(database) {
       };
       if (exps[0]) fill(exps[0], 'exp1');
       if (exps[1]) fill(exps[1], 'exp2');
+      if (exps[2]) fill(exps[2], 'exp3');
       dbRows.push(row);
 
       // JSON record (full live format, exp1..exp3)

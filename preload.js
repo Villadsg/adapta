@@ -59,12 +59,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   reviseTickers: () => ipcRenderer.invoke('revise-tickers'),
   loadReviseResults: () => ipcRenderer.invoke('load-revise-results'),
   getScreenTickers: () => ipcRenderer.invoke('get-screen-tickers'),
-  saveScreenList: (tickers, fixed) => ipcRenderer.invoke('save-screen-list', { tickers, fixed }),
+  saveScreenList: (tickers) => ipcRenderer.invoke('save-screen-list', { tickers }),
+  addScreenTicker: (ticker) => ipcRenderer.invoke('add-screen-ticker', ticker),
   loadScreeningResults: (filePath) => ipcRenderer.invoke('load-screening-results', filePath),
   listScreeningRuns: () => ipcRenderer.invoke('list-screening-runs'),
-  toggleFavorite: (ticker) => ipcRenderer.invoke('toggle-favorite', ticker),
-  getFavorites: () => ipcRenderer.invoke('get-favorites'),
-  saveSuperFavorites: (tickers) => ipcRenderer.invoke('save-super-favorites', tickers),
+
   toggleDelete: (ticker) => ipcRenderer.invoke('toggle-delete', ticker),
   onReviseProgress: (callback) => ipcRenderer.on('revise-progress', (event, data) => callback(data)),
 

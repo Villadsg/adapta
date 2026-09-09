@@ -45,76 +45,61 @@
 
   <!-- Screening Modal -->
   <div id="screening-modal" class="modal" style="display: none;">
-    <div class="modal-content" style="max-width: 560px;">
+    <div class="modal-content modal-content-wide">
       <h3>Ticker Screening</h3>
       <p>Screen tickers for significant recent price events.</p>
-      <div class="modal-form">
-        <div class="form-row-inline">
-          <div class="form-field">
-            <label for="screen-period">Period (trading days)</label>
-            <input type="number" id="screen-period" value="100" min="30" max="1000" />
+      <div class="modal-side-by-side">
+        <!-- Left column: all form content -->
+        <div style="flex: 1; min-width: 0;">
+          <div class="modal-form">
+            <div class="form-row-inline">
+              <div class="form-field">
+                <label for="screen-period">Period (trading days)</label>
+                <input type="number" id="screen-period" value="100" min="30" max="1000" />
+              </div>
+              <div class="form-field">
+                <label for="screen-lookback-days">Lookback Days</label>
+                <input type="number" id="screen-lookback-days" value="5" min="1" max="30" />
+              </div>
+              <div class="form-field">
+                <label for="screen-percentile">Percentile Threshold</label>
+                <input type="number" id="screen-percentile" value="92" min="50" max="99" />
+              </div>
+            </div>
+            <div style="margin-top: 10px;">
+              <label for="screen-override-tickers" style="font-size: 0.85em;">Override tickers <span style="color: #999;">(optional — comma-separated, bypasses saved list)</span></label>
+              <input type="text" id="screen-override-tickers" placeholder="e.g. AAPL, TSLA, NVDA" style="width: 100%; margin-top: 4px;" />
+            </div>
+            <div style="margin-top: 8px;">
+              <label class="toggle-pill" title="Slower — scrapes Finviz per ticker">
+                <input type="checkbox" id="screen-fetch-news" />
+                <span>Fetch news</span>
+              </label>
+            </div>
           </div>
-          <div class="form-field">
-            <label for="screen-lookback-days">Lookback Days</label>
-            <input type="number" id="screen-lookback-days" value="5" min="1" max="30" />
+          <div class="modal-buttons">
+            <button id="screen-cancel" class="btn-modal btn-cancel">Cancel</button>
+            <select id="screen-view-screening" class="btn-modal btn-cancel" style="flex: 0 0 auto;">
+              <option value="" disabled selected>Latest Run Results ▾</option>
+            </select>
+            <button id="screen-run" class="btn-modal btn-primary">Run Screening</button>
           </div>
-          <div class="form-field">
-            <label for="screen-percentile">Percentile Threshold</label>
-            <input type="number" id="screen-percentile" value="92" min="50" max="99" />
+          <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; display: flex; gap: 8px;">
+            <button id="screen-revise" class="btn-modal btn-primary" style="flex: 1; background: #ff9800;">Rebuild Ranking</button>
+            <button id="screen-view-last" class="btn-modal btn-cancel" style="flex: 0 0 auto;">View Last</button>
           </div>
+          <div style="font-size: 0.8em; color: #888; margin-top: 4px;">Re-ranks the screening universe (~910 US equities &gt; $2B cap, &gt; 2M avg volume, via Yahoo screener + curated list held to the same thresholds) on two independent criteria — growth (revenue/equity growth × leverage) and event-proneness (beta / 52-week range). Does not change your screening list — each saved-list run additionally draws 5 random tickers from the ranking's top 100 (marked "shuffle" in the results, with an Add button to keep them).</div>
         </div>
-        <div style="margin-top: 10px;">
-          <label for="screen-override-tickers" style="font-size: 0.85em;">Override tickers <span style="color: #999;">(optional — comma-separated, bypasses saved list)</span></label>
-          <input type="text" id="screen-override-tickers" placeholder="e.g. AAPL, TSLA, NVDA" style="width: 100%; margin-top: 4px;" />
-        </div>
-        <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
-          <label class="toggle-pill" title="Slower — scrapes Finviz per ticker">
-            <input type="checkbox" id="screen-fetch-news" />
-            <span>Fetch news</span>
-          </label>
-          <label class="toggle-pill" title="Run only favorited tickers (includes super favorites)">
-            <input type="checkbox" id="screen-favorites-only" />
-            <span>Favorites only</span>
-          </label>
-          <label class="toggle-pill toggle-super" title="Run only super favorites">
-            <input type="checkbox" id="screen-super-only" />
-            <span>★ Super favorites only</span>
-          </label>
-        </div>
-      </div>
-      <div class="modal-buttons">
-        <button id="screen-cancel" class="btn-modal btn-cancel">Cancel</button>
-        <select id="screen-view-screening" class="btn-modal btn-cancel" style="flex: 0 0 auto;">
-          <option value="" disabled selected>Latest Run Results ▾</option>
-        </select>
-        <button id="screen-run" class="btn-modal btn-primary">Run Screening</button>
-      </div>
-      <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; display: flex; gap: 8px;">
-        <button id="screen-revise" class="btn-modal btn-primary" style="flex: 1; background: #ff9800;">Rebuild Ticker List</button>
-        <button id="screen-view-last" class="btn-modal btn-cancel" style="flex: 0 0 auto;">View Last</button>
-      </div>
-      <div style="font-size: 0.8em; color: #888; margin-top: 4px;">Re-ranks the screening universe (~910 US equities &gt; $2B cap, &gt; 2M avg volume, via Yahoo screener + curated list held to the same thresholds) on two independent criteria — growth (revenue/equity growth × leverage) and event-proneness (beta / 52-week range). Pinned tickers always stay; the list is then topped up to 10 flex slots with the best remaining candidates from the top-20 rankings of each criterion.</div>
-      <div style="display: flex; gap: 12px; margin-top: 10px; align-items: stretch;">
-        <div id="screen-tickers-display" style="flex: 1; min-width: 0; display: none;">
-          <div style="font-size: 0.8em; color: #9aa5b4; margin-bottom: 6px;">
+        <!-- Right column: ticker list -->
+        <div id="screen-tickers-display" style="flex: 0 0 200px; min-width: 200px; display: none; border-left: 1px solid #2e333d; padding-left: 16px; display: flex; flex-direction: column;">
+          <div style="font-size: 0.8em; color: #9aa5b4; margin-bottom: 6px; flex-shrink: 0;">
             Current screening list <span id="screen-tickers-count" style="color: #6b7a8d;"></span>
-            <span style="color: #4e5a68;"> — click to 📌 pin (survives rebuilds), × removes</span>
-          </div>
-          <div id="screen-tickers-chips" style="display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px; background: #12141a; border: 1px solid #1e2330; border-radius: 8px; max-height: 120px; overflow-y: auto;"></div>
-          <div style="display: flex; gap: 6px; margin-top: 8px;">
-            <input type="text" id="screen-ticker-add" placeholder="Add ticker (e.g. AAPL)" style="flex: 1; padding: 6px 10px; font-size: 13px; background: #1a1d25; color: #d4dae3; border: 1px solid #2a3040; border-radius: 6px; text-transform: uppercase;" />
-            <button id="screen-ticker-add-btn" class="btn-modal btn-cancel" style="flex: 0 0 auto; padding: 6px 14px;">Add</button>
-          </div>
-        </div>
-        <div id="super-favorites-display" style="flex: 1; min-width: 0; display: none;">
-          <div style="font-size: 0.8em; color: #9aa5b4; margin-bottom: 6px;">
-            <span style="color: #ff5252;">★</span> Super favorites <span id="super-favorites-count" style="color: #6b7a8d;"></span>
             <span style="color: #4e5a68;"> — × removes</span>
           </div>
-          <div id="super-favorites-chips" style="display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px; background: #12141a; border: 1px solid #1e2330; border-radius: 8px; max-height: 120px; overflow-y: auto;"></div>
-          <div style="display: flex; gap: 6px; margin-top: 8px;">
-            <input type="text" id="super-favorite-add" placeholder="Add super favorite" style="flex: 1; padding: 6px 10px; font-size: 13px; background: #1a1d25; color: #d4dae3; border: 1px solid #2a3040; border-radius: 6px; text-transform: uppercase;" />
-            <button id="super-favorite-add-btn" class="btn-modal btn-cancel" style="flex: 0 0 auto; padding: 6px 14px;">Add</button>
+          <div id="screen-tickers-chips" style="display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; background: #12141a; border: 1px solid #1e2330; border-radius: 8px; flex: 1; overflow-y: auto;"></div>
+          <div style="display: flex; gap: 6px; margin-top: 8px; flex-shrink: 0;">
+            <input type="text" id="screen-ticker-add" placeholder="Add ticker (e.g. AAPL)" style="flex: 1; padding: 6px 10px; font-size: 13px; background: #1a1d25; color: #d4dae3; border: 1px solid #2a3040; border-radius: 6px; text-transform: uppercase;" />
+            <button id="screen-ticker-add-btn" class="btn-modal btn-cancel" style="flex: 0 0 auto; padding: 6px 14px;">Add</button>
           </div>
         </div>
       </div>

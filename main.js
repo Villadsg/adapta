@@ -1249,44 +1249,40 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       config.screenTickers = options.overrideTickers;
     }
 
-    // Filter to super favorites only if requested (takes priority over favoritesOnly)
-    if (options.superOnly) {
-      const supers = loadSuperFavorites();
-      if (supers.length > 0) {
-        config.screenTickers = supers;
-      }
-    } else if (options.favoritesOnly) {
-      // Include both regular and super favorites, even if not in the 100 list
-      const favs = loadFavorites();
-      const supers = loadSuperFavorites();
-      const combined = Array.from(new Set([...favs, ...supers]));
-      if (combined.length > 0) {
-        config.screenTickers = combined;
-      }
-    }
-
-    // Auto-suggest: on saved-list runs, add 10 random tickers from the top 200
-    // of the latest rebuild's full ranking (shuffled, excluding current list).
-    // This lets fresh candidates rotate through screening without a full rebuild.
-    const isSavedListRun = !(options.overrideTickers && options.overrideTickers.length > 0)
-      && !options.superOnly && !options.favoritesOnly;
+    // Shuffle draw: on saved-list runs, add 5 random tickers from the top 100
+    // of the latest rebuild's full ranking (shuffled, excluding the current list
+    // and the previous run's draw so draws rotate). The draw is persisted to
+    // config.lastShuffleDraw so the next run can exclude it.
+    // The tickers are only suggested for this run — they are NOT saved into
+    // screenTickers; the results page offers an "Add" button per suggestion.
+    let suggestedTickers = [];
+    const isSavedListRun = !options.overrideTickers || options.overrideTickers.length === 0;
     if (isSavedListRun) {
       try {
         const resultsPath = path.join(__dirname, 'ci', 'revise-results.json');
         if (fs.existsSync(resultsPath)) {
           const rev = JSON.parse(fs.readFileSync(resultsPath, 'utf-8'));
-          const top200 = (rev.fullRanking || rev.ranking || []).slice(0, 200);
+          const top100 = (rev.fullRanking || rev.ranking || []).slice(0, 100);
           const current = new Set(config.screenTickers || []);
-          const pool = top200.filter(t => !current.has(t));
-          // Fisher-Yates shuffle, take 10
+          const lastDraw = new Set(config.lastShuffleDraw || []);
+          const pool = top100.filter(t => !current.has(t) && !lastDraw.has(t));
+          // Fisher-Yates shuffle, take 5
           for (let i = pool.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [pool[i], pool[j]] = [pool[j], pool[i]];
           }
-          const suggested = pool.slice(0, 10);
-          if (suggested.length > 0) {
-            config.screenTickers = [...(config.screenTickers || []), ...suggested];
-            console.log(`[Screen] Added ${suggested.length} suggested tickers (rebuild top 200): ${suggested.join(', ')}`);
+          suggestedTickers = pool.slice(0, 5);
+          if (suggestedTickers.length > 0) {
+            // Persist only the draw (so the next run excludes it) — the drawn
+            // tickers join this run in-memory but stay out of screenTickers
+            // unless the user clicks "Add" on the results page. Re-read the
+            // file so per-run option merges above (screenDays etc.) and any
+            // concurrent "Add" writes are not persisted/lost here.
+            const diskConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+            diskConfig.lastShuffleDraw = suggestedTickers;
+            fs.writeFileSync(configPath, JSON.stringify(diskConfig, null, 2) + '\n', 'utf-8');
+            config.screenTickers = [...(config.screenTickers || []), ...suggestedTickers];
+            console.log(`[Screen] Drew ${suggestedTickers.length} shuffle tickers (rebuild top 100): ${suggestedTickers.join(', ')}`);
           }
         }
       } catch (suggErr) {
@@ -1322,8 +1318,14 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       }));
     }
 
-    // Sort allTickers: hits first (by percentile desc), then non-hits alphabetically
+    // Sort allTickers: fixed (saved-list) and chosen (override) tickers first,
+    // shuffle-drawn suggestions last. Within each group: hits first (by
+    // percentile desc), then non-hits alphabetically.
+    const suggestedSet = new Set(suggestedTickers);
     result.allTickers.sort((a, b) => {
+      const aSug = suggestedSet.has(a.ticker) ? 1 : 0;
+      const bSug = suggestedSet.has(b.ticker) ? 1 : 0;
+      if (aSug !== bSug) return aSug - bSug;
       const aHit = a.classification ? 1 : 0;
       const bHit = b.classification ? 1 : 0;
       if (aHit !== bHit) return bHit - aHit;
@@ -1369,7 +1371,7 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
     // Enrich every screened ticker with its next-day TTM event probability.
     // All tickers go through ONE batched forward pass (GPU when available), so
     // the model weights and Python startup are paid once for the whole run —
-    // this is what makes it affordable for favorites/super-favorites/full runs,
+    // this is what makes it affordable for full runs,
     // not just a handful of custom tickers.
     if (ttmEventService) {
       const tickerMap = new Map();
@@ -1863,11 +1865,9 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
     }
 
     // Generate HTML results page
-    const currentFavorites = loadFavorites();
-    const currentSuperFavorites = loadSuperFavorites();
     const currentNotes = loadNotes();
     const currentToDelete = loadToDelete();
-    const html = generateScreeningHTML(result.allTickers, tickers.length, config, ivHistoryForHTML, currentFavorites, preEventStats, currentNotes, preEventByReturnBucket, currentSuperFavorites, preEventContrast, peLiveSlopeByTicker, currentToDelete, result.freshness);
+    const html = generateScreeningHTML(result.allTickers, tickers.length, config, ivHistoryForHTML, preEventStats, currentNotes, preEventByReturnBucket, preEventContrast, peLiveSlopeByTicker, currentToDelete, result.freshness, suggestedTickers);
 
     // Save HTML for "Latest Run Results" (alias) and a timestamped snapshot in ci/screening-runs/
     const screenResultsPath = path.join(__dirname, 'ci', 'screening-results.html');
@@ -1907,7 +1907,6 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
 ipcMain.handle('revise-tickers', async (event) => {
   try {
     const fs = require('fs');
-    const configPath = path.join(__dirname, 'ci', 'config.json');
 
     console.log('\n[Revise] Starting ticker revision (screener-expanded universe)...');
 
@@ -1919,24 +1918,14 @@ ipcMain.handle('revise-tickers', async (event) => {
 
     const result = await reviseTickers(createYF, onProgress);
 
-    // Update config.json with new tickers: pinned (fixed) tickers always stay;
-    // the rest of the list is filled up to the flex target with the best
-    // remaining candidates from the rebuild ranking (next in line).
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    const fixed = (config.fixedTickers || []).map(t => String(t).toUpperCase());
-    const flexTarget = Number.isFinite(config.screenFlexTarget) ? config.screenFlexTarget : 10;
-    const flex = result.ranking.filter(t => !fixed.includes(t)).slice(0, flexTarget);
-    const finalList = [...fixed, ...flex];
-    config.screenTickers = finalList;
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
-
-    // Save full results for later viewing
+    // The rebuild only refreshes the ranking (ci/revise-results.json), which
+    // serves as the pool for the per-run shuffle draw. It does NOT touch
+    // config.json — the screening list is managed by the user (plus explicit
+    // "Add" clicks from shuffled-in suggestions).
     const resultsPath = path.join(__dirname, 'ci', 'revise-results.json');
     const fullResults = {
       timestamp: new Date().toISOString(),
-      tickers: finalList,
-      fixed,
-      flexTarget,
+      tickers: result.tickers,
       details: result.details,
       lists: result.lists,
       ranking: result.ranking,
@@ -1948,8 +1937,7 @@ ipcMain.handle('revise-tickers', async (event) => {
     };
     fs.writeFileSync(resultsPath, JSON.stringify(fullResults, null, 2) + '\n', 'utf-8');
 
-    console.log(`[Revise] Saved ${result.tickers.length} tickers to config.json`);
-    console.log(`[Revise] Full results saved to ci/revise-results.json`);
+    console.log(`[Revise] Full results saved to ci/revise-results.json (${result.totalScored} tickers scored)`);
 
     return { success: true, ...fullResults };
   } catch (error) {
@@ -1958,29 +1946,50 @@ ipcMain.handle('revise-tickers', async (event) => {
   }
 });
 
-// Get the saved screening ticker list (written by the last rebuild)
+// Get the saved screening ticker list
 ipcMain.handle('get-screen-tickers', async () => {
   try {
     const fs = require('fs');
     const configPath = path.join(__dirname, 'ci', 'config.json');
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    return { success: true, tickers: config.screenTickers || [], fixed: config.fixedTickers || [] };
+    return { success: true, tickers: config.screenTickers || [] };
   } catch (error) {
-    return { success: false, error: error.message, tickers: [], fixed: [] };
+    return { success: false, error: error.message, tickers: [] };
   }
 });
 
-// Save an edited screening list (tickers + pinned/fixed set)
-ipcMain.handle('save-screen-list', async (event, { tickers, fixed } = {}) => {
+// Save an edited screening list
+ipcMain.handle('save-screen-list', async (event, { tickers } = {}) => {
   try {
     const fs = require('fs');
     const configPath = path.join(__dirname, 'ci', 'config.json');
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     const norm = (arr) => [...new Set((arr || []).map(t => String(t).trim().toUpperCase()).filter(Boolean))];
     config.screenTickers = norm(tickers);
-    config.fixedTickers = norm(fixed);
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
-    return { success: true, tickers: config.screenTickers, fixed: config.fixedTickers };
+    return { success: true, tickers: config.screenTickers };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Permanently add a single ticker to the screening list (used by the "Add"
+// button next to shuffled-in suggestions on the results page).
+ipcMain.handle('add-screen-ticker', async (event, ticker) => {
+  try {
+    const fs = require('fs');
+    const configPath = path.join(__dirname, 'ci', 'config.json');
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    const t = String(ticker || '').trim().toUpperCase();
+    if (!t) return { success: false, error: 'Empty ticker', tickers: config.screenTickers || [] };
+    const list = config.screenTickers || [];
+    const alreadyPresent = list.includes(t);
+    if (!alreadyPresent) {
+      list.push(t);
+      config.screenTickers = list;
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+    }
+    return { success: true, tickers: list, alreadyPresent };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -2057,59 +2066,6 @@ ipcMain.handle('list-screening-runs', async () => {
   }
 });
 
-const FAVORITES_PATH = path.join(__dirname, 'ci', 'screening-favorites.json');
-const SUPER_FAVORITES_PATH = path.join(__dirname, 'ci', 'screening-super-favorites.json');
-
-function loadFavorites() {
-  try { return JSON.parse(require('fs').readFileSync(FAVORITES_PATH, 'utf-8')); } catch (_) { return []; }
-}
-
-function saveFavorites(favs) {
-  require('fs').writeFileSync(FAVORITES_PATH, JSON.stringify(favs, null, 2) + '\n', 'utf-8');
-}
-
-function loadSuperFavorites() {
-  try { return JSON.parse(require('fs').readFileSync(SUPER_FAVORITES_PATH, 'utf-8')); } catch (_) { return []; }
-}
-
-function saveSuperFavorites(favs) {
-  require('fs').writeFileSync(SUPER_FAVORITES_PATH, JSON.stringify(favs, null, 2) + '\n', 'utf-8');
-}
-
-// Replace the super favorites list (add/remove edits from the screening modal)
-ipcMain.handle('save-super-favorites', async (event, tickers) => {
-  try {
-    const norm = [...new Set((tickers || []).map(t => String(t).trim().toUpperCase()).filter(Boolean))];
-    saveSuperFavorites(norm);
-    return { success: true, superFavorites: norm };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-// Cycles ticker through 3 states: none -> favorite -> super -> none
-ipcMain.handle('toggle-favorite', async (event, ticker) => {
-  const favs = loadFavorites();
-  const supers = loadSuperFavorites();
-  const inFav = favs.indexOf(ticker);
-  const inSuper = supers.indexOf(ticker);
-  if (inSuper >= 0) {
-    supers.splice(inSuper, 1);
-  } else if (inFav >= 0) {
-    favs.splice(inFav, 1);
-    supers.push(ticker);
-  } else {
-    favs.push(ticker);
-  }
-  saveFavorites(favs);
-  saveSuperFavorites(supers);
-  return { favorites: favs, superFavorites: supers };
-});
-
-ipcMain.handle('get-favorites', async () => {
-  return { favorites: loadFavorites(), superFavorites: loadSuperFavorites() };
-});
-
 const TO_DELETE_PATH = path.join(__dirname, 'ci', 'screening-to-delete.json');
 
 function loadToDelete() {
@@ -2156,7 +2112,8 @@ ipcMain.handle('save-note', async (event, ticker, note) => {
   return { ok: true, notes };
 });
 
-function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData = {}, favorites = [], preEventStats = {}, notes = {}, preEventByReturnBucket = null, superFavorites = [], preEventContrast = null, peLiveSlopeByTicker = {}, toDelete = [], freshness = null) {
+function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData = {}, preEventStats = {}, notes = {}, preEventByReturnBucket = null, preEventContrast = null, peLiveSlopeByTicker = {}, toDelete = [], freshness = null, suggestedTickers = []) {
+  const suggestedSet = new Set(suggestedTickers);
   const classColors = {
     surprising_positive: '#4caf50',
     positive_anticipated: '#8bc34a',
@@ -2172,8 +2129,6 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
   };
 
   const hitCount = allTickers.filter(h => h.classification).length;
-  const favSet = new Set(favorites);
-  const superFavSet = new Set(superFavorites);
   const deleteSet = new Set(toDelete);
 
   // Combine IV from up to 3 expirations, weighted by dollar volume per expiration.
@@ -2503,12 +2458,7 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     const dvDeltaStr = dvDelta == null ? '' : (dvDelta > 0 ? '↑ +' : dvDelta < 0 ? '↓ ' : '') + dvDelta.toFixed(0);
     const dvDeltaVal = dvDelta != null ? dvDelta : -1e9;
 
-    const isSuper = superFavSet.has(h.ticker);
-    const isFav = !isSuper && favSet.has(h.ticker);
-    const favLevel = isSuper ? 2 : (isFav ? 1 : 0);
-    const favColor = isSuper ? '#e53935' : (isFav ? '#f5c518' : '#ccc');
-    const favGlyph = favLevel > 0 ? '★' : '☆';
-    const favTitle = isSuper ? 'Super favorite (click to clear)' : (isFav ? 'Favorite (click to make super)' : 'Click to favorite');
+
     const noteText = (notes && notes[h.ticker]) ? notes[h.ticker] : '';
     const hasNote = !!noteText;
     const noteIndicator = hasNote ? ' <span title="Has note" style="font-size:0.75em;">📝</span>' : '';
@@ -2549,8 +2499,8 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
       : 'Latest quoted price (includes extended hours)';
 
     return `<tr ${hasChart ? `class="data-row" data-ticker="${h.ticker}"` : ''} data-tags="${tagsAttr}" style="${inlineStyle}">
-      <td style="text-align:center; width:44px; padding:4px; white-space:nowrap;" data-v="${favLevel}"><span class="fav-star" data-ticker="${h.ticker}" style="cursor:pointer; font-size:1.1em; color:${favColor};" title="${favTitle}">${favGlyph}</span><span class="del-mark" data-ticker="${h.ticker}" style="cursor:pointer; font-size:0.95em; margin-left:5px; color:${isDeleted ? '#e53935' : '#555'};" title="${isDeleted ? 'Marked to delete (click to unmark)' : 'Mark to delete'}">✕</span></td>
-      <td data-v="${h.ticker}" style="font-weight:bold;">${h.ticker}${hasChart ? ' <span style="font-size:0.7em;color:#aaa;">▶</span>' : ''}${noteIndicator}</td>
+      <td style="text-align:center; width:44px; padding:4px; white-space:nowrap;"><span class="del-mark" data-ticker="${h.ticker}" style="cursor:pointer; font-size:0.95em; color:${isDeleted ? '#e53935' : '#555'};" title="${isDeleted ? 'Marked to delete (click to unmark)' : 'Mark to delete'}">✕</span></td>
+      <td data-v="${h.ticker}" style="font-weight:bold;">${h.ticker}${hasChart ? ' <span style="font-size:0.7em;color:#aaa;">▶</span>' : ''}${noteIndicator}${suggestedSet.has(h.ticker) ? ` <span style="font-size:0.68em; font-weight:600; color:#b48cff; border:1px solid #4a3a6a; background:#241f33; border-radius:4px; padding:1px 5px; vertical-align:middle;" title="Randomly drawn from the rebuild top 100 for this run">shuffle</span> <button class="add-screen-btn" data-ticker="${h.ticker}" style="font-size:0.72em; margin-left:4px; padding:1px 7px; border-radius:4px; border:1px solid #3a5a3a; background:#1e2b1e; color:#8fce8f; cursor:pointer; vertical-align:middle;" title="Permanently add ${h.ticker} to the screening list">＋ Add</button>` : ''}</td>
       <td data-v="${sec || 'zzz'}" style="font-size:0.82em; color:#888;">${sec || ''}</td>
       <td data-v="${tagsSortKey}" style="font-size:0.82em; max-width:240px;">${tagsCell}</td>
       <td data-v="${h.classification || 'zzz'}" style="color:${color}; font-weight:bold;">${label}</td>
@@ -3106,33 +3056,6 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
     applyTagFilter();
   });
 
-  document.querySelectorAll('.fav-star').forEach(star => {
-    star.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const ticker = star.getAttribute('data-ticker');
-      if (!ticker || !window.electronAPI || !window.electronAPI.toggleFavorite) return;
-      if (star.dataset.busy) return;
-      star.dataset.busy = '1';
-      try {
-        const result = await window.electronAPI.toggleFavorite(ticker);
-        const supers = result.superFavorites || [];
-        const favs = result.favorites || [];
-        const isSuper = supers.includes(ticker);
-        const isFav = !isSuper && favs.includes(ticker);
-        const level = isSuper ? 2 : (isFav ? 1 : 0);
-        star.textContent = level > 0 ? '\\u2605' : '\\u2606';
-        star.style.color = isSuper ? '#e53935' : (isFav ? '#f5c518' : '#ccc');
-        star.title = isSuper ? 'Super favorite (click to clear)' : (isFav ? 'Favorite (click to make super)' : 'Click to favorite');
-        star.closest('td').setAttribute('data-v', String(level));
-        const msg = isSuper ? ticker + ' is now a super favorite \\u2B50' : (isFav ? ticker + ' added to favorites' : ticker + ' removed from favorites');
-        showFavToast(msg, true);
-      } catch (err) {
-        showFavToast('Failed to update ' + ticker, false);
-      }
-      delete star.dataset.busy;
-    });
-  });
-
   document.querySelectorAll('.del-mark').forEach(mark => {
     mark.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -3155,6 +3078,81 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
         showFavToast('Failed to update ' + ticker, false);
       }
       delete mark.dataset.busy;
+    });
+  });
+
+  document.querySelectorAll('.add-screen-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const ticker = btn.getAttribute('data-ticker');
+      if (!ticker || !window.electronAPI || !window.electronAPI.addScreenTicker) return;
+      if (btn.dataset.busy) return;
+      btn.dataset.busy = '1';
+      try {
+        const result = await window.electronAPI.addScreenTicker(ticker);
+        if (result && result.success) {
+          btn.disabled = true;
+          btn.textContent = 'Added ✓';
+          btn.style.cursor = 'default';
+          btn.style.opacity = '0.7';
+          showFavToast(result.alreadyPresent ? ticker + ' already in screening list' : ticker + ' added to screening list', true);
+        } else {
+          showFavToast('Failed to add ' + ticker + (result && result.error ? ': ' + result.error : ''), false);
+        }
+      } catch (err) {
+        showFavToast('Failed to add ' + ticker, false);
+      }
+      delete btn.dataset.busy;
+    });
+  });
+
+  document.querySelectorAll('.add-screen-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const ticker = btn.getAttribute('data-ticker');
+      if (!ticker || !window.electronAPI || !window.electronAPI.addScreenTicker) return;
+      if (btn.dataset.busy) return;
+      btn.dataset.busy = '1';
+      try {
+        const result = await window.electronAPI.addScreenTicker(ticker);
+        if (result && result.success) {
+          btn.disabled = true;
+          btn.textContent = 'Added ✓';
+          btn.style.cursor = 'default';
+          btn.style.opacity = '0.7';
+          showFavToast(result.alreadyPresent ? ticker + ' already in screening list' : ticker + ' added to screening list', true);
+        } else {
+          showFavToast('Failed to add ' + ticker + (result && result.error ? ': ' + result.error : ''), false);
+        }
+      } catch (err) {
+        showFavToast('Failed to add ' + ticker, false);
+      }
+      delete btn.dataset.busy;
+    });
+  });
+
+  document.querySelectorAll('.add-screen-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const ticker = btn.getAttribute('data-ticker');
+      if (!ticker || !window.electronAPI || !window.electronAPI.addScreenTicker) return;
+      if (btn.dataset.busy) return;
+      btn.dataset.busy = '1';
+      try {
+        const result = await window.electronAPI.addScreenTicker(ticker);
+        if (result && result.success) {
+          btn.disabled = true;
+          btn.textContent = 'Added ✓';
+          btn.style.cursor = 'default';
+          btn.style.opacity = '0.7';
+          showFavToast(result.alreadyPresent ? ticker + ' already in screening list' : ticker + ' added to screening list', true);
+        } else {
+          showFavToast('Failed to add ' + ticker + (result && result.error ? ': ' + result.error : ''), false);
+        }
+      } catch (err) {
+        showFavToast('Failed to add ' + ticker, false);
+      }
+      delete btn.dataset.busy;
     });
   });
 

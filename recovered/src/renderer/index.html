@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Adapta Browser</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <!-- Tab Bar with Window Controls -->
+  <div id="tab-bar">
+    <div class="drag-region"></div>
+    <div id="tabs-container"></div>
+    <button id="btn-new-tab" class="new-tab-btn" title="New Tab">+</button>
+    <div class="window-controls">
+      <button id="btn-minimize" class="window-btn" title="Minimize">−</button>
+      <button id="btn-maximize" class="window-btn" title="Maximize">□</button>
+      <button id="btn-close" class="window-btn close-btn" title="Close">×</button>
+    </div>
+  </div>
+
+  <div id="toolbar">
+    <!-- Navigation controls -->
+    <div class="nav-controls">
+      <button id="btn-back" class="nav-btn" title="Back">←</button>
+      <button id="btn-forward" class="nav-btn" title="Forward">→</button>
+      <button id="btn-reload" class="nav-btn" title="Reload">⟳</button>
+    </div>
+
+    <!-- URL bar -->
+    <div class="url-container">
+      <input type="text" id="url-bar" placeholder="Enter URL..." />
+    </div>
+
+    <!-- Action buttons -->
+    <div class="action-controls">
+      <button id="btn-screen" class="action-btn btn-analyze-events">🔍 Screen</button>
+      <button id="btn-forecast-event" class="action-btn btn-forecast-event" title="TTM-R3 next-day event probability" style="position: relative; z-index: 10;">🔮 Forecast Event</button>
+      <button id="btn-settings" class="action-btn btn-settings">⚙️ Settings</button>
+    </div>
+  </div>
+
+  <!-- The browser view will be positioned here by Electron -->
+
+  <!-- Screening Modal -->
+  <div id="screening-modal" class="modal" style="display: none;">
+    <div class="modal-content modal-content-wide">
+      <h3>Ticker Screening</h3>
+      <p>Screen tickers for significant recent price events.</p>
+      <div class="modal-side-by-side">
+        <!-- Left column: all form content -->
+        <div style="flex: 1; min-width: 0;">
+          <div class="modal-form">
+            <div class="form-row-inline">
+              <div class="form-field">
+                <label for="screen-period">Period (trading days)</label>
+                <input type="number" id="screen-period" value="100" min="30" max="1000" />
+              </div>
+              <div class="form-field">
+                <label for="screen-lookback-days">Lookback Days</label>
+                <input type="number" id="screen-lookback-days" value="5" min="1" max="30" />
+              </div>
+              <div class="form-field">
+                <label for="screen-percentile">Percentile Threshold</label>
+                <input type="number" id="screen-percentile" value="92" min="50" max="99" />
+              </div>
+            </div>
+            <div style="margin-top: 10px;">
+              <label for="screen-override-tickers" style="font-size: 0.85em;">Override tickers <span style="color: #999;">(optional — comma-separated, bypasses saved list)</span></label>
+              <input type="text" id="screen-override-tickers" placeholder="e.g. AAPL, TSLA, NVDA" style="width: 100%; margin-top: 4px;" />
+            </div>
+            <div style="margin-top: 8px;">
+              <label class="toggle-pill" title="Slower — scrapes Finviz per ticker">
+                <input type="checkbox" id="screen-fetch-news" />
+                <span>Fetch news</span>
+              </label>
+            </div>
+          </div>
+          <div class="modal-buttons">
+            <button id="screen-cancel" class="btn-modal btn-cancel">Cancel</button>
+            <select id="screen-view-screening" class="btn-modal btn-cancel" style="flex: 0 0 auto;">
+              <option value="" disabled selected>Latest Run Results ▾</option>
+            </select>
+            <button id="screen-run" class="btn-modal btn-primary">Run Screening</button>
+          </div>
+          <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; display: flex; gap: 8px;">
+            <button id="screen-revise" class="btn-modal btn-primary" style="flex: 1; background: #ff9800;">Rebuild Ticker List</button>
+            <button id="screen-view-last" class="btn-modal btn-cancel" style="flex: 0 0 auto;">View Last</button>
+          </div>
+          <div style="font-size: 0.8em; color: #888; margin-top: 4px;">Re-ranks the screening universe (~910 US equities &gt; $2B cap, &gt; 2M avg volume, via Yahoo screener + curated list held to the same thresholds) on two independent criteria — growth (revenue/equity growth × leverage) and event-proneness (beta / 52-week range). Pinned tickers always stay; the list is then topped up to 10 flex slots with the best remaining candidates from the top-20 rankings of each criterion.</div>
+        </div>
+        <!-- Right column: ticker list -->
+        <div id="screen-tickers-display" style="flex: 0 0 200px; min-width: 200px; display: none; border-left: 1px solid #2e333d; padding-left: 16px; display: flex; flex-direction: column;">
+          <div style="font-size: 0.8em; color: #9aa5b4; margin-bottom: 6px; flex-shrink: 0;">
+            Current screening list <span id="screen-tickers-count" style="color: #6b7a8d;"></span>
+            <span style="color: #4e5a68;"> — click to 📌 pin (survives rebuilds), × removes</span>
+          </div>
+          <div id="screen-tickers-chips" style="display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; background: #12141a; border: 1px solid #1e2330; border-radius: 8px; flex: 1; overflow-y: auto;"></div>
+          <div style="display: flex; gap: 6px; margin-top: 8px; flex-shrink: 0;">
+            <input type="text" id="screen-ticker-add" placeholder="Add ticker (e.g. AAPL)" style="flex: 1; padding: 6px 10px; font-size: 13px; background: #1a1d25; color: #d4dae3; border: 1px solid #2a3040; border-radius: 6px; text-transform: uppercase;" />
+            <button id="screen-ticker-add-btn" class="btn-modal btn-cancel" style="flex: 0 0 auto; padding: 6px 14px;">Add</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TTM Event Forecast modal -->
+  <div id="forecast-event-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <h3>🔮 TTM-R3 Event Forecast</h3>
+      <div class="modal-form">
+        <div class="form-row-inline">
+          <input type="text" id="forecast-ticker-input" placeholder="Ticker (e.g. AAPL)" title="Ticker to forecast" style="flex: 1;" />
+          <button id="forecast-run-btn" class="btn-modal btn-primary">Run Forecast</button>
+        </div>
+        <div id="forecast-event-body">
+          <p>Enter a ticker and click Run Forecast.</p>
+        </div>
+      </div>
+      <div class="modal-buttons">
+        <button id="forecast-event-close" class="btn-modal btn-cancel">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast notification -->
+  <div id="toast-container"></div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

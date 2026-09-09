@@ -1,0 +1,3223 @@
+const duckdb = require('duckdb');
+const path = require('path');
+
+class ArticleDatabase {
+  constructor(dbPath = 'articles.db') {
+    this.dbPath = dbPath;
+    this.db = null;
+    this.connection = null;
+  }
+
+  /**
+   * Initialize database connection and create tables
+   */
+  async initialize() {
+    return new Promise((resolve, reject) => {
+      // Create database instance
+      this.db = new duckdb.Database(this.dbPath, {
+        access_mode: 'READ_WRITE'
+      }, (err) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+
+        // Create connection - store reference to prevent garbage collection
+        this.connection = this.db.connect();
+
+        // Keep connection alive by storing it
+        if (!this.connection) {
+          reject(new Error('Failed to create database connection'));
+          return;
+        }
+
+        // Prevent garbage collection of connection and database
+        // This is critical for DuckDB to maintain the connection
+        global.__duckdb_instance = this.db;
+        global.__duckdb_connection = this.connection;
+
+        console.log('✓ Database connection established');
+
+        // Create tables
+        this.createTables()
+          .then(() => {
+            console.log('Database initialized successfully');
+            resolve();
+          })
+          .catch(reject);
+      });
+    });
+  }
+
+  /**
+   * Create database tables if they don't exist
+   */
+  async createTables() {
+    const createArticlesSequence = `
+      CREATE SEQUENCE IF NOT EXISTS articles_id_seq START 1
+    `;
+
+    const createArticlesTable = `
+      CREATE TABLE IF NOT EXISTS articles (
+        id INTEGER PRIMARY KEY DEFAULT nextval('articles_id_seq'),
+        url TEXT NOT NULL,
+        title TEXT,
+        content TEXT,
+        category TEXT,
+        domain TEXT,
+        saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        word_count INTEGER,
+        embedding FLOAT[],
+        published_date TIMESTAMP,
+        tickers TEXT[]
+      )
+    `;
+
+    const createChunksSequence = `
+      CREATE SEQUENCE IF NOT EXISTS chunks_id_seq START 1
+    `;
+
+    const createChunksTable = `
+      CREATE TABLE IF NOT EXISTS article_chunks (
+        chunk_id INTEGER PRIMARY KEY DEFAULT nextval('chunks_id_seq'),
+        article_id INTEGER NOT NULL,
+        chunk_text TEXT NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        embedding FLOAT[],
+        category TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (article_id) REFERENCES articles(id)
+      )
+    `;
+
+    const createSettingsTable = `
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )
+    `;
+
+    const createNewsVolumeSequence = `
+      CREATE SEQUENCE IF NOT EXISTS news_volume_id_seq START 1
+    `;
+
+    const createNewsVolumeTable = `
+      CREATE TABLE IF NOT EXISTS news_volume (
+        id INTEGER PRIMARY KEY DEFAULT nextval('news_volume_id_seq'),
+        ticker TEXT NOT NULL,
+        recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        article_count INTEGER NOT NULL,
+        source TEXT,
+        page_url TEXT
+      )
+    `;
+
+    const createStockPricesSequence = `
+      CREATE SEQUENCE IF NOT EXISTS stock_prices_id_seq START 1
+    `;
+
+    const createStockPricesTable = `
+      CREATE TABLE IF NOT EXISTS stock_prices (
+        id INTEGER PRIMARY KEY DEFAULT nextval('stock_prices_id_seq'),
+        ticker TEXT NOT NULL,
+        date DATE NOT NULL,
+        open DECIMAL(10,2),
+        high DECIMAL(10,2),
+        low DECIMAL(10,2),
+        close DECIMAL(10,2),
+        volume BIGINT,
+        source TEXT,
+        fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(ticker, date, source)
+      )
+    `;
+
+    const createWatchedTickersSequence = `
+      CREATE SEQUENCE IF NOT EXISTS watched_tickers_id_seq START 1
+    `;
+
+    const createWatchedTickersTable = `
+      CREATE TABLE IF NOT EXISTS watched_tickers (
+        id INTEGER PRIMARY KEY DEFAULT nextval('watched_tickers_id_seq'),
+        ticker TEXT NOT NULL UNIQUE,
+        added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        auto_update BOOLEAN DEFAULT true
+      )
+    `;
+
+    const createPortfolioHoldingsSequence = `
+      CREATE SEQUENCE IF NOT EXISTS portfolio_holdings_id_seq START 1
+    `;
+
+    const createPortfolioHoldingsTable = `
+      CREATE TABLE IF NOT EXISTS portfolio_holdings (
+        id INTEGER PRIMARY KEY DEFAULT nextval('portfolio_holdings_id_seq'),
+        ticker TEXT NOT NULL UNIQUE,
+        shares DECIMAL(12,4) NOT NULL,
+        added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+
+    const createStockEventsSequence = `
+      CREATE SEQUENCE IF NOT EXISTS stock_events_id_seq START 1
+    `;
+
+    const createStockEventsTable = `
+      CREATE TABLE IF NOT EXISTS stock_events (
+        id INTEGER PRIMARY KEY DEFAULT nextval('stock_events_id_seq'),
+        ticker TEXT NOT NULL,
+        event_date DATE NOT NULL,
+        classification TEXT,
+        strength DECIMAL(8,4),
+        residual_return DECIMAL(8,4),
+        volume_gap_product DECIMAL(18,4),
+        open DECIMAL(10,2),
+        close DECIMAL(10,2),
+        high DECIMAL(10,2),
+        low DECIMAL(10,2),
+        volume BIGINT,
+        benchmark TEXT,
+        analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(ticker, event_date)
+      )
+    `;
+
+    const createEventOptionsFeaturesTable = `
+      CREATE TABLE IF NOT EXISTS event_options_features (
+        event_id INTEGER UNIQUE,
+        snapshot_date TIMESTAMP,
+        snapshot_lag_days INTEGER,
+        feature_vector FLOAT[25],
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+
+    const createOptionsSnapshotsSequence = `
+      CREATE SEQUENCE IF NOT EXISTS options_snapshots_id_seq START 1
+    `;
+
+    const createOptionsSnapshotsTable = `
+      CREATE TABLE IF NOT EXISTS options_snapshots (
+        id INTEGER PRIMARY KEY DEFAULT nextval('options_snapshots_id_seq'),
+        ticker TEXT NOT NULL,
+        snapshot_date TIMESTAMP NOT NULL,
+        expiration_date DATE NOT NULL,
+        current_price DECIMAL(10,2),
+        total_call_volume BIGINT,
+        total_put_volume BIGINT,
+        put_call_ratio DECIMAL(6,3),
+        total_call_oi BIGINT,
+        total_put_oi BIGINT,
+        put_call_oi_ratio DECIMAL(6,3),
+        atm_call_iv DECIMAL(6,4),
+        atm_put_iv DECIMAL(6,4),
+        avg_call_iv DECIMAL(6,4),
+        avg_put_iv DECIMAL(6,4),
+        max_call_volume_strike DECIMAL(10,2),
+        max_put_volume_strike DECIMAL(10,2),
+        max_call_oi_strike DECIMAL(10,2),
+        max_put_oi_strike DECIMAL(10,2),
+        unusual_volume_count INTEGER,
+        UNIQUE(ticker, snapshot_date, expiration_date)
+      )
+    `;
+
+    return new Promise((resolve, reject) => {
+      // Create articles sequence
+      this.connection.run(createArticlesSequence, (err) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+
+        // Create articles table
+        this.connection.run(createArticlesTable, (err) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+
+          // Create chunks sequence
+          this.connection.run(createChunksSequence, (err) => {
+            if (err) {
+              reject(err);
+              return;
+            }
+
+            // Create chunks table
+            this.connection.run(createChunksTable, (err) => {
+              if (err) {
+                reject(err);
+                return;
+              }
+
+              // Create settings table
+              this.connection.run(createSettingsTable, (err) => {
+                if (err) {
+                  reject(err);
+                  return;
+                }
+
+                // Create news_volume sequence
+                this.connection.run(createNewsVolumeSequence, (err) => {
+                  if (err) {
+                    reject(err);
+                    return;
+                  }
+
+                  // Create news_volume table
+                  this.connection.run(createNewsVolumeTable, (err) => {
+                    if (err) {
+                      reject(err);
+                      return;
+                    }
+
+                    // Create stock_prices sequence
+                    this.connection.run(createStockPricesSequence, (err) => {
+                      if (err) {
+                        reject(err);
+                        return;
+                      }
+
+                      // Create stock_prices table
+                      this.connection.run(createStockPricesTable, (err) => {
+                        if (err) {
+                          reject(err);
+                          return;
+                        }
+
+                        // Create watched_tickers sequence
+                        this.connection.run(createWatchedTickersSequence, (err) => {
+                          if (err) {
+                            reject(err);
+                            return;
+                          }
+
+                          // Create watched_tickers table
+                          this.connection.run(createWatchedTickersTable, (err) => {
+                            if (err) {
+                              reject(err);
+                              return;
+                            }
+
+                            // Create options_snapshots sequence
+                            this.connection.run(createOptionsSnapshotsSequence, (err) => {
+                              if (err) {
+                                reject(err);
+                                return;
+                              }
+
+                              // Create options_snapshots table
+                              this.connection.run(createOptionsSnapshotsTable, (err) => {
+                                if (err) {
+                                  reject(err);
+                                  return;
+                                }
+
+                                // Create portfolio_holdings sequence
+                                this.connection.run(createPortfolioHoldingsSequence, (err) => {
+                                  if (err) {
+                                    reject(err);
+                                    return;
+                                  }
+
+                                  // Create portfolio_holdings table
+                                  this.connection.run(createPortfolioHoldingsTable, (err) => {
+                                    if (err) {
+                                      reject(err);
+                                      return;
+                                    }
+
+                                    // Create stock_events sequence
+                                    this.connection.run(createStockEventsSequence, (err) => {
+                                      if (err) {
+                                        reject(err);
+                                        return;
+                                      }
+
+                                      // Create stock_events table
+                                      this.connection.run(createStockEventsTable, (err) => {
+                                        if (err) {
+                                          reject(err);
+                                          return;
+                                        }
+
+                                        // Create event_options_features table
+                                        this.connection.run(createEventOptionsFeaturesTable, (err) => {
+                                          if (err) {
+                                            reject(err);
+                                            return;
+                                          }
+
+                            // Initialize default settings
+                            this.initializeSettings()
+                              .then(() => {
+                                // Run migrations
+                                this.runMigrations()
+                                  .then(() => {
+                                    // Create indexes
+                                    this.createIndexes()
+                                      .then(resolve)
+                                      .catch(reject);
+                                  })
+                                  .catch(reject);
+                              })
+                              .catch(reject);
+                                        });
+                                      });
+                                    });
+                                  });
+                                });
+                              });
+                            });
+                          });
+                        });
+                      });
+                    });
+                  });
+                });
+              });
+            });
+          });
+        });
+      });
+    });
+  }
+
+  /**
+   * Create indexes for better query performance
+   */
+  async createIndexes() {
+    const indexes = [
+      'CREATE INDEX IF NOT EXISTS idx_category ON articles(category)',
+      'CREATE INDEX IF NOT EXISTS idx_domain ON articles(domain)',
+      'CREATE INDEX IF NOT EXISTS idx_saved_at ON articles(saved_at)',
+      'CREATE INDEX IF NOT EXISTS idx_published_date ON articles(published_date)',
+      'CREATE INDEX IF NOT EXISTS idx_chunks_article_id ON article_chunks(article_id)',
+      'CREATE INDEX IF NOT EXISTS idx_chunks_category ON article_chunks(category)',
+      'CREATE INDEX IF NOT EXISTS idx_news_volume_ticker ON news_volume(ticker)',
+      'CREATE INDEX IF NOT EXISTS idx_news_volume_recorded_at ON news_volume(recorded_at)',
+      'CREATE INDEX IF NOT EXISTS idx_stock_prices_ticker ON stock_prices(ticker)',
+      'CREATE INDEX IF NOT EXISTS idx_stock_prices_date ON stock_prices(date)',
+      'CREATE INDEX IF NOT EXISTS idx_stock_prices_ticker_date ON stock_prices(ticker, date)',
+      'CREATE INDEX IF NOT EXISTS idx_watched_tickers_ticker ON watched_tickers(ticker)',
+      'CREATE INDEX IF NOT EXISTS idx_options_snapshots_ticker ON options_snapshots(ticker)',
+      'CREATE INDEX IF NOT EXISTS idx_options_snapshots_date ON options_snapshots(snapshot_date)',
+      'CREATE INDEX IF NOT EXISTS idx_options_snapshots_ticker_date ON options_snapshots(ticker, snapshot_date)',
+      'CREATE INDEX IF NOT EXISTS idx_stock_events_ticker ON stock_events(ticker)',
+      'CREATE INDEX IF NOT EXISTS idx_stock_events_date ON stock_events(event_date)',
+      'CREATE INDEX IF NOT EXISTS idx_stock_events_classification ON stock_events(classification)',
+      'CREATE INDEX IF NOT EXISTS idx_event_options_features_event_id ON event_options_features(event_id)'
+    ];
+
+    for (const indexSQL of indexes) {
+      await new Promise((resolve, reject) => {
+        this.connection.run(indexSQL, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+    }
+  }
+
+  /**
+   * Run database migrations to handle schema changes
+   */
+  async runMigrations() {
+    const CURRENT_SCHEMA_VERSION = 15;
+    try {
+      const storedVersion = parseInt(await this.getSetting('schema_version', '0'), 10) || 0;
+      if (storedVersion >= CURRENT_SCHEMA_VERSION) {
+        return;
+      }
+
+      // Migration 1: Add embedding column to articles table if it doesn't exist
+      await this.addColumnIfNotExists('articles', 'embedding', 'FLOAT[]');
+
+      // Migration 2: Add published_date column for article publication dates
+      await this.addColumnIfNotExists('articles', 'published_date', 'TIMESTAMP');
+
+      // Migration 3: Add tickers column for stock ticker associations
+      await this.addColumnIfNotExists('articles', 'tickers', 'TEXT[]');
+
+      // Migration 4: Add dollar conviction + fresh positioning columns to options_snapshots
+      await this.addColumnIfNotExists('options_snapshots', 'call_voi', 'DECIMAL(8,4)');
+      await this.addColumnIfNotExists('options_snapshots', 'put_voi', 'DECIMAL(8,4)');
+      await this.addColumnIfNotExists('options_snapshots', 'total_call_dollar_volume', 'DECIMAL(18,2)');
+      await this.addColumnIfNotExists('options_snapshots', 'total_put_dollar_volume', 'DECIMAL(18,2)');
+      await this.addColumnIfNotExists('options_snapshots', 'conviction_ratio', 'DECIMAL(8,4)');
+
+      // Migration 5: Add ITM+OTM dollar volume columns to options_snapshots
+      await this.addColumnIfNotExists('options_snapshots', 'total_call_dollar_volume_all', 'DECIMAL(18,2)');
+      await this.addColumnIfNotExists('options_snapshots', 'total_put_dollar_volume_all', 'DECIMAL(18,2)');
+      await this.addColumnIfNotExists('options_snapshots', 'conviction_ratio_all', 'DECIMAL(8,4)');
+
+      // Migration 6: Add ITM+OTM average IV columns to options_snapshots
+      await this.addColumnIfNotExists('options_snapshots', 'avg_call_iv_all', 'DECIMAL(6,4)');
+      await this.addColumnIfNotExists('options_snapshots', 'avg_put_iv_all', 'DECIMAL(6,4)');
+
+      // Migration 7: Recreate portfolio_holdings with correct schema if shares column missing
+      await this.recreatePortfolioHoldingsIfNeeded();
+
+      // Migration 8: Create stock_events table if not exists (idempotent)
+      await new Promise((resolve, reject) => {
+        this.connection.run(`
+          CREATE SEQUENCE IF NOT EXISTS stock_events_id_seq START 1
+        `, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      await new Promise((resolve, reject) => {
+        this.connection.run(`
+          CREATE TABLE IF NOT EXISTS stock_events (
+            id INTEGER PRIMARY KEY DEFAULT nextval('stock_events_id_seq'),
+            ticker TEXT NOT NULL,
+            event_date DATE NOT NULL,
+            classification TEXT,
+            strength DECIMAL(8,4),
+            residual_return DECIMAL(8,4),
+            volume_gap_product DECIMAL(18,4),
+            open DECIMAL(10,2),
+            close DECIMAL(10,2),
+            high DECIMAL(10,2),
+            low DECIMAL(10,2),
+            volume BIGINT,
+            benchmark TEXT,
+            analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(ticker, event_date)
+          )
+        `, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+
+      // Migration 9: Create event_options_features table if not exists
+      await new Promise((resolve, reject) => {
+        this.connection.run(`
+          CREATE TABLE IF NOT EXISTS event_options_features (
+            event_id INTEGER UNIQUE,
+            snapshot_date TIMESTAMP,
+            snapshot_lag_days INTEGER,
+            feature_vector FLOAT[25],
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )
+        `, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+
+      // Migration 10: Clear stale 23-element cached vectors and fix column type
+      await new Promise((resolve, reject) => {
+        this.connection.run(`DELETE FROM event_options_features`, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      await new Promise((resolve, reject) => {
+        this.connection.run(`ALTER TABLE event_options_features ALTER COLUMN feature_vector TYPE FLOAT[25]`, (err) => {
+          // Ignore error if column already correct type
+          resolve();
+        });
+      });
+
+      // Migration 11: Create snapshot_options_features cache table
+      await new Promise((resolve, reject) => {
+        this.connection.run(`
+          CREATE TABLE IF NOT EXISTS snapshot_options_features (
+            ticker TEXT NOT NULL,
+            snapshot_date TIMESTAMP NOT NULL,
+            feature_vector FLOAT[25],
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(ticker, snapshot_date)
+          )
+        `, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+
+      // Migration 12: Clear stale 19-element cached vectors (now 25-element with dollar volumes)
+      await new Promise((resolve, reject) => {
+        this.connection.run(`DELETE FROM event_options_features`, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      await new Promise((resolve, reject) => {
+        this.connection.run(`DELETE FROM snapshot_options_features`, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      await new Promise((resolve, reject) => {
+        this.connection.run(`ALTER TABLE event_options_features ALTER COLUMN feature_vector TYPE FLOAT[25]`, (err) => {
+          resolve(); // Ignore error if already correct type
+        });
+      });
+
+      // Migration 13: Raw historical options chains (one row per contract per day) +
+      // derived per-day IV aggregates. Raw rows are the source of truth;
+      // options_daily_iv is recomputed from them by deriveDailyIV().
+      await new Promise((resolve, reject) => {
+        this.connection.run(`
+          CREATE TABLE IF NOT EXISTS options_chain_history (
+            ticker TEXT NOT NULL,
+            date DATE NOT NULL,
+            option_symbol TEXT NOT NULL,
+            expiration_date DATE NOT NULL,
+            side TEXT NOT NULL,
+            strike DECIMAL(12,4),
+            bid DECIMAL(12,4),
+            ask DECIMAL(12,4),
+            mid DECIMAL(12,4),
+            last_price DECIMAL(12,4),
+            volume BIGINT,
+            open_interest BIGINT,
+            iv DECIMAL(10,4),
+            delta DECIMAL(10,6),
+            gamma DECIMAL(10,6),
+            theta DECIMAL(10,6),
+            vega DECIMAL(10,6),
+            underlying_price DECIMAL(12,4),
+            source TEXT,
+            fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(ticker, date, option_symbol)
+          )
+        `, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      await new Promise((resolve, reject) => {
+        this.connection.run(`
+          CREATE TABLE IF NOT EXISTS options_daily_iv (
+            ticker TEXT NOT NULL,
+            date DATE NOT NULL,
+            exp1_label TEXT,
+            exp1_call_iv DECIMAL(10,4),
+            exp1_put_iv DECIMAL(10,4),
+            exp1_atm_call_iv DECIMAL(10,4),
+            exp1_atm_put_iv DECIMAL(10,4),
+            exp1_call_dv DECIMAL(18,2),
+            exp1_put_dv DECIMAL(18,2),
+            exp2_label TEXT,
+            exp2_call_iv DECIMAL(10,4),
+            exp2_put_iv DECIMAL(10,4),
+            exp2_atm_call_iv DECIMAL(10,4),
+            exp2_atm_put_iv DECIMAL(10,4),
+            exp2_call_dv DECIMAL(18,2),
+            exp2_put_dv DECIMAL(18,2),
+            exp3_label TEXT,
+            exp3_call_iv DECIMAL(10,4),
+            exp3_put_iv DECIMAL(10,4),
+            exp3_atm_call_iv DECIMAL(10,4),
+            exp3_atm_put_iv DECIMAL(10,4),
+            exp3_call_dv DECIMAL(18,2),
+            exp3_put_dv DECIMAL(18,2),
+            source TEXT,
+            fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(ticker, date)
+          )
+        `, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      await new Promise((resolve, reject) => {
+        this.connection.run(
+          'CREATE INDEX IF NOT EXISTS idx_options_chain_history_ticker_date ON options_chain_history(ticker, date)',
+          (err) => { if (err) reject(err); else resolve(); }
+        );
+      });
+
+      // Migration 14: full IV-history records, replacing ci/weighted-iv-history.json.
+      // options_daily_iv holds only pooled exp1/exp2/exp3 aggregates; the screening UI
+      // also needs per-strike calls/puts, atmBand*/deepOTM* metrics and the
+      // screening metadata (sector, eventTags, dailyReturn). Rather than spread those
+      // across a dozen typed columns, the record is stored as JSON in its existing
+      // shape -- the format every consumer already parses -- keyed by (ticker, date).
+      // Scalars that are queried/sorted stay as real columns.
+      await new Promise((resolve, reject) => {
+        this.connection.run(`
+          CREATE TABLE IF NOT EXISTS iv_history_records (
+            ticker TEXT NOT NULL,
+            date DATE NOT NULL,
+            sector TEXT,
+            daily_return DOUBLE,
+            event_tags TEXT,
+            record JSON NOT NULL,
+            source TEXT,
+            fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(ticker, date)
+          )
+        `, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      await new Promise((resolve, reject) => {
+        this.connection.run(
+          'CREATE INDEX IF NOT EXISTS idx_iv_history_records_ticker_date ON iv_history_records(ticker, date)',
+          (err) => { if (err) reject(err); else resolve(); }
+        );
+      });
+
+      // Migration 15: third-expiration aggregates on options_daily_iv. The exp3_*
+      // columns are derived from the raw chains by ci/backfill-marketdata.js phase D.
+      await this.addColumnIfNotExists('options_daily_iv', 'exp3_label', 'TEXT');
+      await this.addColumnIfNotExists('options_daily_iv', 'exp3_call_iv', 'DECIMAL(10,4)');
+      await this.addColumnIfNotExists('options_daily_iv', 'exp3_put_iv', 'DECIMAL(10,4)');
+      await this.addColumnIfNotExists('options_daily_iv', 'exp3_atm_call_iv', 'DECIMAL(10,4)');
+      await this.addColumnIfNotExists('options_daily_iv', 'exp3_atm_put_iv', 'DECIMAL(10,4)');
+      await this.addColumnIfNotExists('options_daily_iv', 'exp3_call_dv', 'DECIMAL(18,2)');
+      await this.addColumnIfNotExists('options_daily_iv', 'exp3_put_dv', 'DECIMAL(18,2)');
+
+      await this.setSetting('schema_version', String(CURRENT_SCHEMA_VERSION));
+
+      // Fold all migration DDL (ALTER COLUMN ... TYPE, ADD COLUMN, etc.) into the main
+      // database file and empty the WAL. Without this, DuckDB 1.4.x leaves the schema-
+      // altering statements in articles.db.wal; on the next open it replays them and
+      // crashes in BindDefaultValues while re-binding sequence/timestamp column defaults
+      // ("Failure while replaying WAL file ... no default database set"), which poisons
+      // the WAL on every subsequent run. Checkpointing here breaks that loop.
+      await new Promise((resolve) => {
+        this.connection.run('CHECKPOINT', (err) => {
+          if (err) console.warn('⚠️  CHECKPOINT after migrations failed (non-fatal):', err.message);
+          resolve();
+        });
+      });
+
+      console.log(`✓ Database migrations completed (schema v${CURRENT_SCHEMA_VERSION})`);
+    } catch (error) {
+      console.error('Error running migrations:', error);
+      throw error;
+    }
+  }
+
+
+  /**
+   * Ensure database connection is active
+   */
+  ensureConnection() {
+    if (!this.connection || !this.db) {
+      throw new Error('Database connection is not available. Please restart the application.');
+    }
+  }
+
+  /**
+   * Add a column to a table if it doesn't already exist
+   * @param {string} tableName - Name of the table
+   * @param {string} columnName - Name of the column to add
+   * @param {string} columnType - SQL type of the column
+   */
+  async addColumnIfNotExists(tableName, columnName, columnType) {
+    return new Promise((resolve) => {
+      // Attempt to select the column - if it works, column exists
+      const testSQL = `SELECT ${columnName} FROM ${tableName} LIMIT 0`;
+
+      this.connection.all(testSQL, (testErr) => {
+        if (testErr) {
+          // Column doesn't exist, try to add it
+          const alterSQL = `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnType}`;
+
+          this.connection.run(alterSQL, (alterErr) => {
+            if (alterErr) {
+              // If error contains "already exists", that's fine
+              if (alterErr.message && alterErr.message.includes('already exists')) {
+                console.log(`✓ Column '${columnName}' already exists in table '${tableName}'`);
+                resolve();
+              } else {
+                console.error(`⚠️  Error adding column ${columnName} to ${tableName}:`, alterErr.message);
+                // Don't reject - just resolve to allow app to continue
+                resolve();
+              }
+            } else {
+              console.log(`✓ Added column '${columnName}' to table '${tableName}'`);
+              resolve();
+            }
+          });
+        } else {
+          // Column already exists
+          console.log(`✓ Column '${columnName}' already exists in table '${tableName}'`);
+          resolve();
+        }
+      });
+    });
+  }
+
+  async recreatePortfolioHoldingsIfNeeded() {
+    return new Promise((resolve) => {
+      this.connection.all('SELECT shares FROM portfolio_holdings LIMIT 0', (err) => {
+        if (!err) {
+          // shares column exists, nothing to do
+          resolve();
+          return;
+        }
+        console.log('portfolio_holdings missing shares column — recreating table...');
+        this.connection.run('DROP TABLE IF EXISTS portfolio_holdings', (dropErr) => {
+          if (dropErr) {
+            console.error('Error dropping portfolio_holdings:', dropErr.message);
+            resolve();
+            return;
+          }
+          this.connection.run(`
+            CREATE TABLE portfolio_holdings (
+              id INTEGER PRIMARY KEY DEFAULT nextval('portfolio_holdings_id_seq'),
+              ticker TEXT NOT NULL UNIQUE,
+              shares DECIMAL(12,4) NOT NULL,
+              added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+          `, (createErr) => {
+            if (createErr) console.error('Error recreating portfolio_holdings:', createErr.message);
+            else console.log('✓ portfolio_holdings recreated with correct schema');
+            resolve();
+          });
+        });
+      });
+    });
+  }
+
+  // ===== Settings methods =====
+
+  /**
+   * Initialize default settings if they don't exist
+   */
+  async initializeSettings() {
+    // No default settings needed anymore (chunking removed)
+    // This method is kept for backward compatibility
+  }
+
+  /**
+   * Get a setting value
+   *
+   * @param {string} key - Setting key
+   * @param {string} defaultValue - Default value if not found
+   * @returns {Promise<string|null>} Setting value or default
+   */
+  async getSetting(key, defaultValue = null) {
+    const sql = 'SELECT value FROM settings WHERE key = $1';
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, key, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows.length > 0 ? rows[0].value : defaultValue);
+      });
+    });
+  }
+
+  /**
+   * Set a setting value
+   *
+   * @param {string} key - Setting key
+   * @param {string} value - Setting value
+   * @returns {Promise<void>}
+   */
+  async setSetting(key, value) {
+    const sql = `
+      INSERT INTO settings (key, value)
+      VALUES ($1, $2)
+      ON CONFLICT (key) DO UPDATE SET value = $2
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.run(sql, key, value, (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  }
+
+  /**
+   * Save an article to the database with embedding
+   */
+  async saveArticle(url, title, content, category, options = {}) {
+    const { generateEmbedding = true, publishedDate = null, tickers = [] } = options;
+
+    // Extract domain from URL
+    let domain = '';
+    try {
+      const urlObj = new URL(url);
+      domain = urlObj.hostname;
+    } catch (e) {
+      domain = 'unknown';
+    }
+
+    // Calculate word count
+    const wordCount = content.split(/\s+/).length;
+
+    // Generate embedding for full article if enabled
+    let embedding = null;
+    if (generateEmbedding) {
+      const embeddingService = require('./embeddings');
+      console.log(`  Generating embedding for full article...`);
+      embedding = await embeddingService.embed(content, {
+        task: 'search_document',
+        title: title,
+      });
+    }
+
+    // Convert embedding array to DuckDB array format
+    const embeddingValue = embedding ? `[${embedding.join(',')}]` : null;
+
+    // Convert tickers array to DuckDB array format
+    const tickersValue = tickers && tickers.length > 0 ? `[${tickers.map(t => `'${t}'`).join(',')}]` : null;
+
+    const sql = `
+      INSERT INTO articles (url, title, content, category, domain, word_count, embedding, published_date, tickers)
+      VALUES ($1, $2, $3, $4, $5, $6, $7::FLOAT[], $8, $9::TEXT[])
+      RETURNING id
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, url, title, content, category, domain, wordCount, embeddingValue, publishedDate, tickersValue, (err, result) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+
+        const articleId = result[0]?.id;
+        resolve({
+          id: articleId,
+          url,
+          title,
+          category,
+          domain,
+          wordCount,
+          publishedDate,
+          tickers
+        });
+      });
+    });
+  }
+
+  /**
+   * Get all articles, optionally filtered by category
+   */
+  async getAllArticles(categoryFilter = null, limit = 100) {
+    let sql = `
+      SELECT id, url, title, category, domain, saved_at, word_count, published_date, tickers
+      FROM articles
+    `;
+
+    const params = [];
+
+    if (categoryFilter) {
+      sql += ' WHERE category = ?';
+      params.push(categoryFilter);
+    }
+
+    sql += ' ORDER BY saved_at DESC LIMIT ?';
+    params.push(limit);
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ...params, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      });
+    });
+  }
+
+  /**
+   * Get article by ID
+   */
+  async getArticleById(articleId) {
+    const sql = `
+      SELECT id, url, title, content, category, domain, saved_at, word_count, embedding, published_date, tickers
+      FROM articles
+      WHERE id = ?
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, [articleId], (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows[0] || null);
+      });
+    });
+  }
+
+  /**
+   * Search articles by title or content
+   */
+  async searchArticles(searchTerm, categoryFilter = null) {
+    let sql = `
+      SELECT id, url, title, category, domain, saved_at, word_count, published_date, tickers
+      FROM articles
+      WHERE (title ILIKE ? OR content ILIKE ?)
+    `;
+
+    const params = [`%${searchTerm}%`, `%${searchTerm}%`];
+
+    if (categoryFilter) {
+      sql += ' AND category = ?';
+      params.push(categoryFilter);
+    }
+
+    sql += ' ORDER BY saved_at DESC LIMIT 100';
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ...params, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      });
+    });
+  }
+
+  /**
+   * Search articles by ticker symbol
+   * @param {string} ticker - Stock ticker symbol (e.g., 'AAPL', 'TSLA')
+   * @param {Object} options - Search options
+   * @param {string} options.categoryFilter - Filter by category
+   * @param {string} options.startDate - Start date for published_date filter (ISO string)
+   * @param {string} options.endDate - End date for published_date filter (ISO string)
+   * @param {number} options.limit - Maximum number of results (default: 100)
+   * @returns {Promise<Array>} Array of articles containing the ticker
+   */
+  async searchByTicker(ticker, options = {}) {
+    const {
+      categoryFilter = null,
+      startDate = null,
+      endDate = null,
+      limit = 100
+    } = options;
+
+    let sql = `
+      SELECT id, url, title, category, domain, saved_at, word_count, published_date, tickers
+      FROM articles
+      WHERE (list_contains(tickers, ?) OR list_contains(tickers, '*'))
+    `;
+
+    const params = [ticker];
+
+    if (categoryFilter) {
+      sql += ' AND category = ?';
+      params.push(categoryFilter);
+    }
+
+    if (startDate) {
+      sql += ' AND published_date >= ?';
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      sql += ' AND published_date <= ?';
+      params.push(endDate);
+    }
+
+    sql += ' ORDER BY published_date DESC NULLS LAST LIMIT ?';
+    params.push(limit);
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ...params, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      });
+    });
+  }
+
+  /**
+   * Get all unique tickers in the database with article counts
+   * @returns {Promise<Array>} Array of {ticker, count} objects
+   */
+  async getAllTickers() {
+    const sql = `
+      SELECT UNNEST(tickers) as ticker, COUNT(*) as count
+      FROM articles
+      WHERE tickers IS NOT NULL AND array_length(tickers) > 0
+      GROUP BY ticker
+      ORDER BY count DESC
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      });
+    });
+  }
+
+  /**
+   * Get statistics about saved articles
+   */
+  async getStats() {
+    const queries = {
+      total: 'SELECT COUNT(*) as count FROM articles',
+      good: "SELECT COUNT(*) as count FROM articles WHERE category = 'good'",
+      not_good: "SELECT COUNT(*) as count FROM articles WHERE category = 'not_good'",
+      top_domains: `
+        SELECT domain, COUNT(*) as count
+        FROM articles
+        GROUP BY domain
+        ORDER BY count DESC
+        LIMIT 5
+      `
+    };
+
+    const stats = {};
+
+    // Get total count
+    const total = await new Promise((resolve, reject) => {
+      this.connection.all(queries.total, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows[0]?.count || 0);
+      });
+    });
+    stats.total = total;
+
+    // Get good count
+    const good = await new Promise((resolve, reject) => {
+      this.connection.all(queries.good, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows[0]?.count || 0);
+      });
+    });
+    stats.good = good;
+
+    // Get not_good count
+    const not_good = await new Promise((resolve, reject) => {
+      this.connection.all(queries.not_good, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows[0]?.count || 0);
+      });
+    });
+    stats.not_good = not_good;
+
+    // Get top domains
+    const top_domains = await new Promise((resolve, reject) => {
+      this.connection.all(queries.top_domains, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+    stats.top_domains = top_domains;
+
+    return stats;
+  }
+
+  /**
+   * Get detailed statistics for enhanced dashboard
+   * @returns {Promise<Object>} Comprehensive statistics object
+   */
+  async getDetailedStats() {
+    // Total articles
+    const total = await new Promise((resolve, reject) => {
+      this.connection.all('SELECT COUNT(*) as count FROM articles', (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    // Word count statistics
+    const wordStats = await new Promise((resolve, reject) => {
+      this.connection.all(
+        'SELECT AVG(word_count) as avg, MIN(word_count) as min, MAX(word_count) as max FROM articles',
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows[0] || { avg: 0, min: 0, max: 0 });
+        }
+      );
+    });
+
+    // Unique domains count
+    const uniqueDomains = await new Promise((resolve, reject) => {
+      this.connection.all(
+        'SELECT COUNT(DISTINCT domain) as count FROM articles',
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(Number(rows[0]?.count || 0));
+        }
+      );
+    });
+
+    // Date range (first and last saved)
+    const dateRange = await new Promise((resolve, reject) => {
+      this.connection.all(
+        'SELECT MIN(saved_at) as first, MAX(saved_at) as last FROM articles',
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows[0] || { first: null, last: null });
+        }
+      );
+    });
+
+    // Top 5 domains
+    const topDomains = await new Promise((resolve, reject) => {
+      this.connection.all(
+        `SELECT domain, COUNT(*) as count
+         FROM articles
+         GROUP BY domain
+         ORDER BY count DESC
+         LIMIT 5`,
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows || []);
+        }
+      );
+    });
+
+    // Get embedding stats
+    const embeddingStats = await this.getEmbeddingStats();
+
+    // Get database file size
+    const fs = require('fs');
+    const path = require('path');
+    let dbSize = 0;
+    try {
+      const stats = fs.statSync(this.dbPath);
+      dbSize = stats.size;
+    } catch (err) {
+      console.error('Error getting database size:', err);
+    }
+
+    return {
+      total,
+      avgWordCount: Math.round(wordStats.avg || 0),
+      minWordCount: wordStats.min || 0,
+      maxWordCount: wordStats.max || 0,
+      uniqueDomains,
+      firstSaved: dateRange.first,
+      lastSaved: dateRange.last,
+      topDomains,
+      embeddingCoverage: embeddingStats.embeddingCoverage,
+      articlesWithEmbeddings: embeddingStats.articlesWithEmbeddings,
+      articlesWithoutEmbeddings: embeddingStats.articlesWithoutEmbeddings,
+      dbSizeBytes: dbSize,
+      dbSizeMB: (dbSize / (1024 * 1024)).toFixed(2)
+    };
+  }
+
+  /**
+   * Delete an article by ID
+   */
+  async deleteArticle(articleId) {
+    const sql = 'DELETE FROM articles WHERE id = ?';
+
+    return new Promise((resolve, reject) => {
+      this.connection.run(sql, [articleId], (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  }
+
+  /**
+   * Execute raw SQL query
+   * @param {string} sqlQuery - SQL query to execute
+   * @returns {Promise<Object>} Query results with metadata
+   */
+  async executeRawSQL(sqlQuery) {
+    // Check connection
+    if (!this.connection || !this.db) {
+      throw new Error('Database connection is not available');
+    }
+
+    // Trim and validate query
+    const query = sqlQuery.trim();
+    if (!query) {
+      throw new Error('Empty query');
+    }
+
+    return new Promise((resolve, reject) => {
+      const startTime = Date.now();
+
+      this.connection.all(query, (err, rows) => {
+        const executionTime = Date.now() - startTime;
+
+        if (err) {
+          reject({
+            error: err.message,
+            executionTime
+          });
+          return;
+        }
+
+        // Determine query type
+        const queryType = query.toUpperCase().trim().split(/\s+/)[0];
+        const isSelectQuery = queryType === 'SELECT' ||
+                             queryType === 'SHOW' ||
+                             queryType === 'DESCRIBE' ||
+                             queryType === 'EXPLAIN';
+
+        if (isSelectQuery) {
+          // Return rows with column metadata
+          const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+          resolve({
+            type: 'select',
+            rows: rows,
+            columns: columns,
+            rowCount: rows.length,
+            executionTime
+          });
+        } else {
+          // For INSERT/UPDATE/DELETE/etc.
+          resolve({
+            type: 'mutation',
+            success: true,
+            message: `Query executed successfully`,
+            executionTime
+          });
+        }
+      });
+    });
+  }
+
+  /**
+   * Search articles by semantic similarity using embeddings
+   *
+   * @param {string} queryText - Query text to search for
+   * @param {Object} options - Search options
+   * @param {string} options.categoryFilter - Filter by category ('good', 'not_good', or null for all)
+   * @param {number} options.limit - Maximum number of results (default: 10)
+   * @param {number} options.minSimilarity - Minimum similarity threshold 0-1 (default: 0.5)
+   * @returns {Promise<Array>} Array of articles with similarity scores
+   */
+  async searchBySimilarity(queryText, options = {}) {
+    const {
+      categoryFilter = null,
+      limit = 10,
+      minSimilarity = 0.5
+    } = options;
+
+    // Check connection before starting
+    if (!this.connection || !this.db) {
+      throw new Error('Database connection is not available');
+    }
+
+    const embeddingService = require('./embeddings');
+
+    // Generate embedding for query using 'search_query' task
+    console.log(`\n🔍 Searching for: "${queryText.substring(0, 100)}..."`);
+    const queryEmbedding = await embeddingService.embed(queryText, {
+      task: 'search_query'
+    });
+
+    // Get all articles with embeddings
+    let sql = `
+      SELECT id, url, title, content, category, domain, saved_at, word_count, embedding
+      FROM articles
+      WHERE embedding IS NOT NULL
+    `;
+
+    const params = [];
+    if (categoryFilter) {
+      sql += ` AND category = ?`;
+      params.push(categoryFilter);
+    }
+
+    const articles = await new Promise((resolve, reject) => {
+      // Check connection again right before query
+      if (!this.connection) {
+        reject(new Error('Database connection lost'));
+        return;
+      }
+
+      this.connection.all(sql, ...params, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      });
+    });
+
+    if (articles.length === 0) {
+      console.log('⚠️  No articles with embeddings found in database.');
+      return [];
+    }
+
+    console.log(`   Comparing against ${articles.length} articles...`);
+
+    // Calculate similarity for each article (skip mismatched dimensions)
+    const results = articles
+      .filter(article => {
+        // Skip articles with different embedding dimensions
+        if (article.embedding.length !== queryEmbedding.length) {
+          return false;
+        }
+        return true;
+      })
+      .map(article => {
+        const similarity = embeddingService.cosineSimilarity(queryEmbedding, article.embedding);
+        return {
+          id: article.id,
+          article_id: article.id,
+          url: article.url,
+          article_url: article.url,
+          title: article.title,
+          article_title: article.title,
+          category: article.category,
+          domain: article.domain,
+          word_count: article.word_count,
+          similarity: similarity
+        };
+      });
+
+    // Filter by minimum similarity and sort by similarity descending
+    const filteredResults = results
+      .filter(r => r.similarity >= minSimilarity)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, limit);
+
+    console.log(`✓ Found ${filteredResults.length} results above ${minSimilarity} similarity\n`);
+
+    return filteredResults;
+  }
+
+  /**
+   * Get statistics about embeddings
+   *
+   * @returns {Promise<Object>} Embedding statistics
+   */
+  async getEmbeddingStats() {
+    const totalArticles = await new Promise((resolve, reject) => {
+      this.connection.all('SELECT COUNT(*) as count FROM articles', (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    const articlesWithEmbeddings = await new Promise((resolve, reject) => {
+      this.connection.all('SELECT COUNT(*) as count FROM articles WHERE embedding IS NOT NULL', (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    return {
+      totalArticles,
+      articlesWithEmbeddings,
+      articlesWithoutEmbeddings: totalArticles - articlesWithEmbeddings,
+      embeddingCoverage: totalArticles > 0 ? ((articlesWithEmbeddings / totalArticles) * 100).toFixed(1) : '0.0'
+    };
+  }
+
+  /**
+   * Clear all embeddings (vectors only, keep articles)
+   */
+  async clearVectors() {
+    console.log('\n🗑️  Clearing all embeddings...');
+
+    return new Promise((resolve, reject) => {
+      this.connection.run(
+        'UPDATE articles SET embedding = NULL',
+        (err) => {
+          if (err) {
+            console.error('❌ Error clearing vectors:', err);
+            reject(err);
+          } else {
+            console.log('✓ All embeddings cleared\n');
+            resolve();
+          }
+        }
+      );
+    });
+  }
+
+  /**
+   * Clear comparison data only (good/not_good categories)
+   * Does NOT delete scraped news articles
+   */
+  async clearAllData() {
+    console.log('\n🗑️  Clearing comparison data (good/not_good articles)...');
+
+    // Ensure connection is active
+    this.ensureConnection();
+
+    try {
+      // Get IDs of comparison articles first
+      const comparisonArticleIds = await new Promise((resolve, reject) => {
+        this.connection.all(
+          "SELECT id FROM articles WHERE category IN ('good', 'not_good')",
+          (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows.map(r => r.id));
+          }
+        );
+      });
+
+      if (comparisonArticleIds.length === 0) {
+        console.log('  No comparison articles to delete');
+        return;
+      }
+
+      console.log(`  Found ${comparisonArticleIds.length} comparison articles to delete`);
+
+      // Delete chunks for these articles (if any exist)
+      if (comparisonArticleIds.length > 0) {
+        await new Promise((resolve, reject) => {
+          const placeholders = comparisonArticleIds.map(() => '?').join(',');
+          const sql = `DELETE FROM article_chunks WHERE article_id IN (${placeholders})`;
+
+          this.connection.run(sql, comparisonArticleIds, (err) => {
+            if (err) {
+              console.error('❌ Error clearing chunks:', err);
+              return reject(err);
+            }
+            console.log('  ✓ Comparison chunks deleted');
+            resolve();
+          });
+        });
+      }
+
+      // Delete comparison articles only
+      await new Promise((resolve, reject) => {
+        this.connection.run(
+          "DELETE FROM articles WHERE category IN ('good', 'not_good')",
+          (err) => {
+            if (err) {
+              console.error('❌ Error clearing comparison articles:', err);
+              return reject(err);
+            }
+            console.log('  ✓ Comparison articles deleted');
+            resolve();
+          }
+        );
+      });
+
+      console.log('✓ Comparison data cleared (scraped news preserved)\n');
+    } catch (err) {
+      console.error('❌ Error clearing data:', err);
+      throw err;
+    }
+  }
+
+  // ===== News Volume Tracking Methods =====
+
+  /**
+   * Save news count for a ticker
+   * @param {string} ticker - Stock ticker symbol
+   * @param {number} articleCount - Number of articles found
+   * @param {string} source - Source of the count (e.g., 'yahoo_finance')
+   * @param {string} pageUrl - URL of the page where count was taken
+   * @returns {Promise<Object>} Saved record with id
+   */
+  async saveNewsCount(ticker, articleCount, source, pageUrl) {
+    const sql = `
+      INSERT INTO news_volume (ticker, article_count, source, page_url)
+      VALUES ($1, $2, $3, $4)
+      RETURNING id, recorded_at
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ticker.toUpperCase(), articleCount, source, pageUrl, (err, result) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+
+        resolve({
+          id: result[0]?.id,
+          ticker: ticker.toUpperCase(),
+          articleCount: articleCount,
+          recordedAt: result[0]?.recorded_at,
+          source: source
+        });
+      });
+    });
+  }
+
+  /**
+   * Get news count history for a ticker
+   * @param {string} ticker - Stock ticker symbol
+   * @param {number} days - Number of days to look back (default: 30)
+   * @returns {Promise<Array>} Array of news count records
+   */
+  async getNewsCountHistory(ticker, days = 30) {
+    const sql = `
+      SELECT id, ticker, recorded_at, article_count, source, page_url
+      FROM news_volume
+      WHERE ticker = $1
+        AND recorded_at >= datetime('now', '-${days} days')
+      ORDER BY recorded_at DESC
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ticker.toUpperCase(), (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      });
+    });
+  }
+
+  /**
+   * Get all news count stats (for dashboard/overview)
+   * @returns {Promise<Object>} Statistics about news volume tracking
+   */
+  async getAllNewsCountStats() {
+    const totalRecords = await new Promise((resolve, reject) => {
+      this.connection.all('SELECT COUNT(*) as count FROM news_volume', (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    const uniqueTickers = await new Promise((resolve, reject) => {
+      this.connection.all('SELECT COUNT(DISTINCT ticker) as count FROM news_volume', (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    const recentCounts = await new Promise((resolve, reject) => {
+      this.connection.all(
+        `SELECT ticker, recorded_at, article_count, source
+         FROM news_volume
+         ORDER BY recorded_at DESC
+         LIMIT 10`,
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows);
+        }
+      );
+    });
+
+    return {
+      totalRecords,
+      uniqueTickers,
+      recentCounts
+    };
+  }
+
+  /**
+   * Get comprehensive stock statistics for settings page
+   * @returns {Promise<Object>} Stock news statistics
+   */
+  async getStockStats() {
+    // Get basic article counts
+    const total = await new Promise((resolve, reject) => {
+      this.connection.all('SELECT COUNT(*) as count FROM articles', (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    const stockNews = await new Promise((resolve, reject) => {
+      this.connection.all("SELECT COUNT(*) as count FROM articles WHERE category = 'stock_news'", (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    const notGood = await new Promise((resolve, reject) => {
+      this.connection.all("SELECT COUNT(*) as count FROM articles WHERE category = 'not_good'", (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    // Get ticker statistics
+    const uniqueTickers = await new Promise((resolve, reject) => {
+      this.connection.all(`
+        SELECT COUNT(DISTINCT UNNEST(tickers)) as count
+        FROM articles
+        WHERE tickers IS NOT NULL AND array_length(tickers) > 0
+      `, (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    const articlesWithTickers = await new Promise((resolve, reject) => {
+      this.connection.all(`
+        SELECT COUNT(*) as count
+        FROM articles
+        WHERE tickers IS NOT NULL AND array_length(tickers) > 0
+      `, (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    const articlesWithDates = await new Promise((resolve, reject) => {
+      this.connection.all(`
+        SELECT COUNT(*) as count
+        FROM articles
+        WHERE published_date IS NOT NULL
+      `, (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    // Get top tickers
+    const topTickers = await new Promise((resolve, reject) => {
+      this.connection.all(`
+        SELECT UNNEST(tickers) as ticker, COUNT(*) as count
+        FROM articles
+        WHERE tickers IS NOT NULL AND array_length(tickers) > 0
+        GROUP BY ticker
+        ORDER BY count DESC
+        LIMIT 10
+      `, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+
+    // Get news volume records count
+    const newsVolumeRecords = await new Promise((resolve, reject) => {
+      this.connection.all('SELECT COUNT(*) as count FROM news_volume', (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    // Get database size
+    const dbSizeMB = await this.getDatabaseSize();
+
+    return {
+      total,
+      stockNews,
+      notGood,
+      uniqueTickers,
+      articlesWithTickers,
+      articlesWithDates,
+      topTickers,
+      newsVolumeRecords,
+      dbSizeMB
+    };
+  }
+
+  /**
+   * Get recent news volume records
+   * @param {number} limit - Number of records to return (default: 20)
+   * @returns {Promise<Array>} Recent news volume records
+   */
+  async getRecentNewsVolume(limit = 20) {
+    const sql = `
+      SELECT ticker, recorded_at, article_count, source, page_url
+      FROM news_volume
+      ORDER BY recorded_at DESC
+      LIMIT $1
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, limit, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  /**
+   * Clear all news volume records
+   * @returns {Promise<void>}
+   */
+  async clearNewsVolume() {
+    const sql = 'DELETE FROM news_volume';
+
+    return new Promise((resolve, reject) => {
+      this.connection.run(sql, (err) => {
+        if (err) reject(err);
+        else {
+          console.log('✓ News volume data cleared');
+          resolve();
+        }
+      });
+    });
+  }
+
+  /**
+   * Get database file size in MB
+   * @returns {Promise<number>} Database size in MB
+   */
+  async getDatabaseSize() {
+    const fs = require('fs');
+    try {
+      const stats = fs.statSync(this.dbPath);
+      return (stats.size / (1024 * 1024)).toFixed(2);
+    } catch (err) {
+      console.error('Error getting database size:', err);
+      return 0;
+    }
+  }
+
+  // ===== Stock Price Tracking Methods =====
+
+  /**
+   * Save stock price data to database
+   * @param {string} ticker - Stock ticker symbol
+   * @param {string} date - Date in YYYY-MM-DD format
+   * @param {Object} priceData - Price data object {open, high, low, close, volume}
+   * @param {string} source - Data source (e.g., 'marketdata')
+   * @returns {Promise<Object>} Saved record
+   */
+  async saveStockPrice(ticker, date, priceData, source = 'marketdata') {
+    const sql = `
+      INSERT INTO stock_prices (ticker, date, open, high, low, close, volume, source)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      ON CONFLICT (ticker, date, source) DO UPDATE SET
+        open = $3,
+        high = $4,
+        low = $5,
+        close = $6,
+        volume = $7,
+        fetched_at = now()
+      RETURNING id
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(
+        sql,
+        ticker.toUpperCase(),
+        date,
+        priceData.open,
+        priceData.high,
+        priceData.low,
+        priceData.close,
+        priceData.volume,
+        source,
+        (err, result) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve({
+            id: result[0]?.id,
+            ticker: ticker.toUpperCase(),
+            date,
+            ...priceData
+          });
+        }
+      );
+    });
+  }
+
+  // ===== Stock Events Methods =====
+
+  /**
+   * Save stock events to database. Deletes existing events for this ticker
+   * within the given date range first, then inserts the fresh set.
+   * @param {string} ticker - Stock ticker symbol
+   * @param {Array} events - Events from analyzeStock()
+   * @param {string} benchmark - Benchmark ticker used in analysis
+   * @param {string} startDate - Start of analysis window (YYYY-MM-DD)
+   * @param {string} endDate - End of analysis window (YYYY-MM-DD)
+   * @returns {Promise<number>} Number of events saved
+   */
+  async saveStockEvents(ticker, events, benchmark = 'SPY', startDate = null, endDate = null) {
+    // Delete existing events within the analysis date range so stale events don't persist
+    if (startDate && endDate) {
+      await new Promise((resolve, reject) => {
+        this.connection.run(
+          'DELETE FROM stock_events WHERE ticker = $1 AND event_date >= $2 AND event_date <= $3',
+          ticker.toUpperCase(), startDate, endDate,
+          (err) => { if (err) reject(err); else resolve(); }
+        );
+      });
+    }
+    const sql = `
+      INSERT INTO stock_events (ticker, event_date, classification, strength, residual_return,
+        volume_gap_product, open, close, high, low, volume, benchmark)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      ON CONFLICT (ticker, event_date) DO UPDATE SET
+        classification = $3,
+        strength = $4,
+        residual_return = $5,
+        volume_gap_product = $6,
+        open = $7,
+        close = $8,
+        high = $9,
+        low = $10,
+        volume = $11,
+        benchmark = $12,
+        analyzed_at = now()
+      RETURNING id
+    `;
+
+    let saved = 0;
+    const savedEventIds = [];
+    for (const event of events) {
+      const dateStr = event.dateStr || (event.date ? event.date.toISOString().split('T')[0] : null);
+      if (!dateStr) continue;
+
+      const result = await new Promise((resolve, reject) => {
+        this.connection.all(
+          sql,
+          ticker.toUpperCase(),
+          dateStr,
+          event.classification || event.earningsClassification || 'unknown',
+          event.strength || event.eventStrength || 0,
+          event.residualReturn || 0,
+          event.volumeGapProduct || 0,
+          event.open || 0,
+          event.close || 0,
+          event.high || 0,
+          event.low || 0,
+          event.volume || 0,
+          benchmark.toUpperCase(),
+          (err, rows) => {
+            if (err) reject(err);
+            else { saved++; resolve(rows); }
+          }
+        );
+      });
+      if (result && result[0]?.id) {
+        savedEventIds.push({ eventId: result[0].id, dateStr });
+      }
+    }
+
+    console.log(`Saved ${saved} events for ${ticker} to stock_events`);
+    return { saved, eventIds: savedEventIds };
+  }
+
+  /**
+   * Get distinct tickers with their last analysis timestamp
+   * @returns {Promise<Array>} Rows of {ticker, last_analyzed}
+   */
+  async getAnalyzedTickers() {
+    return new Promise((resolve, reject) => {
+      this.connection.all(
+        `SELECT ticker, MAX(analyzed_at) AS last_analyzed
+         FROM stock_events
+         GROUP BY ticker
+         ORDER BY MAX(analyzed_at) DESC`,
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows || []);
+        }
+      );
+    });
+  }
+
+  /**
+   * Get total count of events in stock_events table
+   * @returns {Promise<number>} Total event count
+   */
+  async getTotalEventCount() {
+    return new Promise((resolve, reject) => {
+      this.connection.all(
+        'SELECT COUNT(*)::INTEGER AS cnt FROM stock_events',
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows[0]?.cnt || 0);
+        }
+      );
+    });
+  }
+
+  /**
+   * Get aggregate post-event forward returns across all stored events
+   * @param {number} maxForwardDays - Maximum forward days to compute (default 30)
+   * @param {number} minEvents - Minimum events per group to include (default 3)
+   * @returns {Promise<Array>} Rows of {classification, day, n_events, median_return, p25_return, p75_return}
+   */
+  async getAggregatePostEventReturns(maxForwardDays = 30, minEvents = 3) {
+    const sql = `
+      WITH event_base AS (
+        SELECT e.id AS event_id, e.ticker, e.event_date, e.classification,
+               e.residual_return, e.strength, sp.close AS event_close
+        FROM stock_events e
+        JOIN (
+          SELECT ticker, date, close,
+            ROW_NUMBER() OVER (PARTITION BY ticker, date ORDER BY fetched_at DESC) AS rn
+          FROM stock_prices
+        ) sp ON sp.ticker = e.ticker AND sp.date = e.event_date AND sp.rn = 1
+      ),
+      forward AS (
+        SELECT eb.event_id, eb.classification,
+          ROW_NUMBER() OVER (PARTITION BY eb.event_id ORDER BY sp.date) AS day_offset,
+          (sp.close - eb.event_close) / eb.event_close AS cum_return
+        FROM event_base eb
+        JOIN (
+          SELECT ticker, date, close,
+            ROW_NUMBER() OVER (PARTITION BY ticker, date ORDER BY fetched_at DESC) AS rn
+          FROM stock_prices
+        ) sp ON sp.ticker = eb.ticker AND sp.date > eb.event_date AND sp.rn = 1
+      ),
+      -- Only keep events that have at least maxForwardDays of forward data
+      -- so every day offset uses the same stable set of events
+      complete_events AS (
+        SELECT event_id
+        FROM forward
+        GROUP BY event_id
+        HAVING MAX(day_offset) >= $1
+      )
+      SELECT f.classification, f.day_offset AS day,
+        COUNT(*)::INTEGER AS n_events,
+        MEDIAN(f.cum_return) AS median_return,
+        QUANTILE_CONT(f.cum_return, 0.25) AS p25_return,
+        QUANTILE_CONT(f.cum_return, 0.75) AS p75_return
+      FROM forward f
+      INNER JOIN complete_events ce ON ce.event_id = f.event_id
+      WHERE f.day_offset <= $1
+      GROUP BY f.classification, f.day_offset
+      HAVING COUNT(*) >= $2
+      ORDER BY f.classification, f.day_offset
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, maxForwardDays, minEvents, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  /**
+   * Get count of distinct tickers in stock_events
+   * @returns {Promise<number>} Number of distinct tickers
+   */
+  async getDistinctEventTickers() {
+    return new Promise((resolve, reject) => {
+      this.connection.all(
+        'SELECT COUNT(DISTINCT ticker)::INTEGER AS cnt FROM stock_events',
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows[0]?.cnt || 0);
+        }
+      );
+    });
+  }
+
+  // ===== Event Options Features Methods =====
+
+  /**
+   * Save options feature vector associated with an event
+   * @param {number} eventId - stock_events.id
+   * @param {string} snapshotDate - ISO timestamp of the options snapshot
+   * @param {number} lagDays - Days between event and snapshot
+   * @param {Array<number>} featureVector - 22-element feature vector
+   */
+  async saveEventOptionsFeatures(eventId, snapshotDate, lagDays, featureVector) {
+    // Convert Float64Array to DuckDB array format (same pattern as saveArticle)
+    const fvValue = featureVector ? `[${Array.from(featureVector).join(',')}]` : null;
+
+    const sql = `
+      INSERT INTO event_options_features (event_id, snapshot_date, snapshot_lag_days, feature_vector)
+      VALUES ($1, $2, $3, $4::FLOAT[25])
+      ON CONFLICT (event_id) DO UPDATE SET
+        snapshot_date = $2,
+        snapshot_lag_days = $3,
+        feature_vector = $4::FLOAT[25],
+        created_at = now()
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.run(
+        sql,
+        eventId,
+        snapshotDate,
+        lagDays,
+        fvValue,
+        (err) => {
+          if (err) reject(err);
+          else resolve();
+        }
+      );
+    });
+  }
+
+  /**
+   * Get all event options features with classification (for KNN matching)
+   * @returns {Promise<Array>} Rows with event_id, classification, feature_vector, snapshot_lag_days
+   */
+  async getEventOptionsFeatures() {
+    const sql = `
+      SELECT eof.event_id, e.classification, eof.feature_vector, eof.snapshot_lag_days
+      FROM event_options_features eof
+      JOIN stock_events e ON e.id = eof.event_id
+      WHERE eof.feature_vector IS NOT NULL
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  // ===== Options Chain History Methods (MarketData backfill) =====
+
+  /**
+   * Bulk-insert raw option contract rows into options_chain_history.
+   * Rows are stored exactly as returned by the API — no metric computation here.
+   * @param {Array<Object>} rows - Contract rows from MarketDataClient.fetchHistoricalChain,
+   *   each augmented with ticker, date, source
+   * @returns {Promise<number>} Number of rows processed
+   */
+  async saveChainRows(rows) {
+    if (!rows || rows.length === 0) return 0;
+
+    const COLS = 20;
+    const BATCH = 500; // 500 rows × 20 cols = 10k params per statement
+    let processed = 0;
+
+    for (let i = 0; i < rows.length; i += BATCH) {
+      const batch = rows.slice(i, i + BATCH);
+      const values = [];
+      const params = [];
+      batch.forEach((r, j) => {
+        const p = [];
+        for (let k = 1; k <= COLS; k++) p.push(`$${j * COLS + k}`);
+        values.push(`(${p.join(',')})`);
+        params.push(
+          r.ticker.toUpperCase(), r.date, r.optionSymbol, r.expiration, r.side,
+          r.strike, r.bid, r.ask, r.mid, r.last,
+          r.volume, r.openInterest, r.iv, r.delta, r.gamma, r.theta, r.vega,
+          r.underlyingPrice, r.source, r.fetchedAt || new Date().toISOString()
+        );
+      });
+
+      const sql = `
+        INSERT INTO options_chain_history (
+          ticker, date, option_symbol, expiration_date, side,
+          strike, bid, ask, mid, last_price,
+          volume, open_interest, iv, delta, gamma, theta, vega,
+          underlying_price, source, fetched_at
+        ) VALUES ${values.join(',')}
+        ON CONFLICT (ticker, date, option_symbol) DO UPDATE SET
+          bid = EXCLUDED.bid, ask = EXCLUDED.ask, mid = EXCLUDED.mid,
+          last_price = EXCLUDED.last_price, volume = EXCLUDED.volume,
+          open_interest = EXCLUDED.open_interest, iv = EXCLUDED.iv,
+          delta = EXCLUDED.delta, gamma = EXCLUDED.gamma,
+          theta = EXCLUDED.theta, vega = EXCLUDED.vega,
+          underlying_price = EXCLUDED.underlying_price,
+          source = EXCLUDED.source, fetched_at = EXCLUDED.fetched_at
+      `;
+
+      await new Promise((resolve, reject) => {
+        this.connection.run(sql, ...params, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      processed += batch.length;
+    }
+    return processed;
+  }
+
+  /**
+   * Get the set of (ticker, date) pairs already present in options_chain_history.
+   * Used by the backfill to skip already-downloaded days.
+   * @returns {Promise<Set<string>>} Set of "TICKER|YYYY-MM-DD" keys
+   */
+  async getExistingChainDays() {
+    return new Promise((resolve, reject) => {
+      this.connection.all(
+        `SELECT DISTINCT ticker, date::TEXT AS d FROM options_chain_history`,
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(new Set((rows || []).map(r => `${r.ticker}|${String(r.d).split(' ')[0]}`)));
+        }
+      );
+    });
+  }
+
+  /**
+   * Clear options_daily_iv (derived table — rebuilt from options_chain_history).
+   * @returns {Promise<void>}
+   */
+  async clearDailyIV() {
+    return new Promise((resolve, reject) => {
+      this.connection.run('DELETE FROM options_daily_iv', (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  }
+
+  /**
+   * Bulk-insert derived per-day IV rows into options_daily_iv.
+   * Rows are produced by ci/backfill-marketdata.js (BSM-implied IV computed
+   * from the raw chain rows, then aggregated per day/expiration).
+   * @param {Array<Object>} rows - One row per (ticker, date)
+   * @returns {Promise<number>} Number of rows processed
+   */
+  async saveDailyIVRows(rows) {
+    if (!rows || rows.length === 0) return 0;
+
+    const COLS = 24;
+    const BATCH = 500;
+    let processed = 0;
+
+    for (let i = 0; i < rows.length; i += BATCH) {
+      const batch = rows.slice(i, i + BATCH);
+      const values = [];
+      const params = [];
+      batch.forEach((r, j) => {
+        const p = [];
+        for (let k = 1; k <= COLS; k++) p.push(`$${j * COLS + k}`);
+        values.push(`(${p.join(',')})`);
+        params.push(
+          r.ticker.toUpperCase(), r.date,
+          r.exp1_label, r.exp1_call_iv, r.exp1_put_iv, r.exp1_atm_call_iv, r.exp1_atm_put_iv,
+          r.exp1_call_dv, r.exp1_put_dv,
+          r.exp2_label, r.exp2_call_iv, r.exp2_put_iv, r.exp2_atm_call_iv, r.exp2_atm_put_iv,
+          r.exp2_call_dv, r.exp2_put_dv,
+          r.exp3_label, r.exp3_call_iv, r.exp3_put_iv, r.exp3_atm_call_iv, r.exp3_atm_put_iv,
+          r.exp3_call_dv, r.exp3_put_dv,
+          r.source || 'derived'
+        );
+      });
+
+      const sql = `
+        INSERT INTO options_daily_iv (
+          ticker, date,
+          exp1_label, exp1_call_iv, exp1_put_iv, exp1_atm_call_iv, exp1_atm_put_iv,
+          exp1_call_dv, exp1_put_dv,
+          exp2_label, exp2_call_iv, exp2_put_iv, exp2_atm_call_iv, exp2_atm_put_iv,
+          exp2_call_dv, exp2_put_dv,
+          exp3_label, exp3_call_iv, exp3_put_iv, exp3_atm_call_iv, exp3_atm_put_iv,
+          exp3_call_dv, exp3_put_dv,
+          source
+        ) VALUES ${values.join(',')}
+        ON CONFLICT (ticker, date) DO UPDATE SET
+          exp1_label = EXCLUDED.exp1_label, exp1_call_iv = EXCLUDED.exp1_call_iv,
+          exp1_put_iv = EXCLUDED.exp1_put_iv, exp1_atm_call_iv = EXCLUDED.exp1_atm_call_iv,
+          exp1_atm_put_iv = EXCLUDED.exp1_atm_put_iv,
+          exp1_call_dv = EXCLUDED.exp1_call_dv, exp1_put_dv = EXCLUDED.exp1_put_dv,
+          exp2_label = EXCLUDED.exp2_label, exp2_call_iv = EXCLUDED.exp2_call_iv,
+          exp2_put_iv = EXCLUDED.exp2_put_iv, exp2_atm_call_iv = EXCLUDED.exp2_atm_call_iv,
+          exp2_atm_put_iv = EXCLUDED.exp2_atm_put_iv,
+          exp2_call_dv = EXCLUDED.exp2_call_dv, exp2_put_dv = EXCLUDED.exp2_put_dv,
+          exp3_label = EXCLUDED.exp3_label, exp3_call_iv = EXCLUDED.exp3_call_iv,
+          exp3_put_iv = EXCLUDED.exp3_put_iv, exp3_atm_call_iv = EXCLUDED.exp3_atm_call_iv,
+          exp3_atm_put_iv = EXCLUDED.exp3_atm_put_iv,
+          exp3_call_dv = EXCLUDED.exp3_call_dv, exp3_put_dv = EXCLUDED.exp3_put_dv,
+          source = EXCLUDED.source, fetched_at = now()
+      `;
+
+      await new Promise((resolve, reject) => {
+        this.connection.run(sql, ...params, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      processed += batch.length;
+    }
+    return processed;
+  }
+
+  /**
+   * Get the derived daily IV series, optionally filtered to one ticker.
+   * @param {string} [ticker]
+   * @returns {Promise<Array>} Rows ordered by ticker, date
+   */
+  async getDailyIVHistory(ticker = null) {
+    const sql = ticker
+      ? 'SELECT * FROM options_daily_iv WHERE ticker = $1 ORDER BY date'
+      : 'SELECT * FROM options_daily_iv ORDER BY ticker, date';
+    return new Promise((resolve, reject) => {
+      const cb = (err, rows) => { if (err) reject(err); else resolve(rows || []); };
+      if (ticker) this.connection.all(sql, ticker.toUpperCase(), cb);
+      else this.connection.all(sql, cb);
+    });
+  }
+
+  /**
+   * Daily bars for one ticker from a start date onward, newest row per date.
+   * stock_prices is unique on (ticker, date, source), so a date can carry both a
+   * 'marketdata' and a 'screening' row; the most recently fetched one wins,
+   * matching how the analytics queries above dedupe.
+   * @param {string} ticker
+   * @param {string} fromDate - YYYY-MM-DD, inclusive
+   * @returns {Promise<Array>} [{date, open, high, low, close, volume}] oldest-first
+   */
+  async getDailyBars(ticker, fromDate) {
+    const sql = `
+      SELECT date, open, high, low, close, volume FROM (
+        SELECT date, open, high, low, close, volume,
+          ROW_NUMBER() OVER (PARTITION BY date ORDER BY fetched_at DESC) AS rn
+        FROM stock_prices
+        WHERE ticker = $1 AND date >= $2
+      ) WHERE rn = 1
+      ORDER BY date
+    `;
+    const rows = await new Promise((resolve, reject) => {
+      this.connection.all(sql, ticker.toUpperCase(), fromDate, (err, r) => {
+        if (err) reject(err);
+        else resolve(r || []);
+      });
+    });
+    return rows.map(r => ({
+      date: r.date instanceof Date ? r.date.toISOString().slice(0, 10) : String(r.date).split('T')[0].split(' ')[0],
+      open: r.open == null ? null : Number(r.open),
+      high: r.high == null ? null : Number(r.high),
+      low: r.low == null ? null : Number(r.low),
+      close: r.close == null ? null : Number(r.close),
+      volume: r.volume == null ? null : Number(r.volume),
+    }));
+  }
+
+  /**
+   * Load full IV-history records as {ticker: [record, ...]}, the shape that
+   * replaced ci/weighted-iv-history.json. Records come back sorted by date and
+   * carry their stored screening metadata (sector/eventTags/dailyReturn) merged
+   * back onto the JSON body, so callers see exactly the old file's structure.
+   * @param {string} [ticker] - Optional single-ticker filter
+   * @returns {Promise<Object>} {ticker: [records]}
+   */
+  async getIVHistoryRecords(ticker = null) {
+    const sql = ticker
+      ? 'SELECT * FROM iv_history_records WHERE ticker = $1 ORDER BY date'
+      : 'SELECT * FROM iv_history_records ORDER BY ticker, date';
+    const rows = await new Promise((resolve, reject) => {
+      const cb = (err, r) => { if (err) reject(err); else resolve(r || []); };
+      if (ticker) this.connection.all(sql, ticker.toUpperCase(), cb);
+      else this.connection.all(sql, cb);
+    });
+
+    const out = {};
+    for (const row of rows) {
+      let rec;
+      try {
+        rec = typeof row.record === 'string' ? JSON.parse(row.record) : row.record;
+      } catch (_) {
+        continue; // skip unparseable rows rather than breaking the whole load
+      }
+      if (!rec || typeof rec !== 'object') continue;
+      // The DuckDB driver hands back DATE columns as JS Date objects, whose
+      // String() form is "Thu Jul 31 2025 …" rather than an ISO date. Normalize
+      // via toISOString() so records keep the plain YYYY-MM-DD keys that the
+      // screening UI matches on. Use UTC parts: the Date is midnight UTC, so a
+      // local-time format would shift the day west of Greenwich.
+      rec.date = row.date instanceof Date
+        ? row.date.toISOString().slice(0, 10)
+        : String(row.date).split('T')[0].split(' ')[0];
+      if (row.sector) rec.sector = row.sector;
+      if (row.daily_return != null) rec.dailyReturn = Number(row.daily_return);
+      if (row.event_tags) {
+        try {
+          const tags = JSON.parse(row.event_tags);
+          if (Array.isArray(tags) && tags.length > 0) rec.eventTags = tags;
+        } catch (_) { /* leave tags off if malformed */ }
+      }
+      if (!out[row.ticker]) out[row.ticker] = [];
+      out[row.ticker].push(rec);
+    }
+    return out;
+  }
+
+  /**
+   * Upsert IV-history records. Accepts {ticker: [records]} in the same shape
+   * getIVHistoryRecords returns. Metadata fields are lifted into columns and
+   * also left on the JSON body so a record round-trips unchanged.
+   * @param {Object} history - {ticker: [records]}
+   * @returns {Promise<number>} Number of records written
+   */
+  async saveIVHistoryRecords(history) {
+    if (!history || typeof history !== 'object') return 0;
+
+    const flat = [];
+    for (const [ticker, records] of Object.entries(history)) {
+      if (!Array.isArray(records)) continue;
+      for (const rec of records) {
+        if (!rec || !rec.date) continue;
+        flat.push({ ticker: ticker.toUpperCase(), rec });
+      }
+    }
+    if (flat.length === 0) return 0;
+
+    const COLS = 7;
+    const BATCH = 200;
+    let processed = 0;
+
+    for (let i = 0; i < flat.length; i += BATCH) {
+      const batch = flat.slice(i, i + BATCH);
+      const values = [];
+      const params = [];
+      batch.forEach(({ ticker, rec }, j) => {
+        const p = [];
+        for (let k = 1; k <= COLS; k++) p.push(`$${j * COLS + k}`);
+        values.push(`(${p.join(',')})`);
+        params.push(
+          ticker,
+          rec.date,
+          rec.sector || null,
+          rec.dailyReturn != null ? Number(rec.dailyReturn) : null,
+          Array.isArray(rec.eventTags) && rec.eventTags.length > 0 ? JSON.stringify(rec.eventTags) : null,
+          JSON.stringify(rec),
+          rec.source || 'derived'
+        );
+      });
+
+      const sql = `
+        INSERT INTO iv_history_records (
+          ticker, date, sector, daily_return, event_tags, record, source
+        ) VALUES ${values.join(',')}
+        ON CONFLICT (ticker, date) DO UPDATE SET
+          sector = EXCLUDED.sector,
+          daily_return = EXCLUDED.daily_return,
+          event_tags = EXCLUDED.event_tags,
+          record = EXCLUDED.record,
+          source = EXCLUDED.source,
+          fetched_at = now()
+      `;
+
+      await new Promise((resolve, reject) => {
+        this.connection.run(sql, ...params, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      processed += batch.length;
+    }
+    return processed;
+  }
+
+  /**
+   * Replace every stored record for the given tickers. Used by the Phase D
+   * rebuild, where derived records supersede all prior snapshots for a ticker
+   * (tickers absent from the list keep their existing rows).
+   * @param {Array<string>} tickers
+   * @returns {Promise<void>}
+   */
+  async clearIVHistoryForTickers(tickers) {
+    if (!tickers || tickers.length === 0) return;
+    const list = tickers.map(t => `'${String(t).toUpperCase().replace(/'/g, "''")}'`).join(',');
+    await new Promise((resolve, reject) => {
+      this.connection.run(
+        `DELETE FROM iv_history_records WHERE ticker IN (${list})`,
+        (err) => { if (err) reject(err); else resolve(); }
+      );
+    });
+  }
+
+
+  /**
+   * Get per-event, per-day forward returns (not aggregated)
+   * @param {Array<number>} eventIds - List of event IDs
+   * @param {number} maxForwardDays - Maximum forward days
+   * @returns {Promise<Array>} Rows of { event_id, classification, day, cum_return }
+   */
+  async getPerEventForwardReturns(eventIds, maxForwardDays = 60) {
+    if (!eventIds || eventIds.length === 0) return [];
+
+    const idList = eventIds.join(',');
+    const sql = `
+      WITH event_base AS (
+        SELECT e.id AS event_id, e.ticker, e.event_date, e.classification,
+               sp.close AS event_close
+        FROM stock_events e
+        JOIN (
+          SELECT ticker, date, close,
+            ROW_NUMBER() OVER (PARTITION BY ticker, date ORDER BY fetched_at DESC) AS rn
+          FROM stock_prices
+        ) sp ON sp.ticker = e.ticker AND sp.date = e.event_date AND sp.rn = 1
+        WHERE e.id IN (${idList})
+      ),
+      forward AS (
+        SELECT eb.event_id, eb.classification,
+          ROW_NUMBER() OVER (PARTITION BY eb.event_id ORDER BY sp.date) AS day_offset,
+          (sp.close - eb.event_close) / eb.event_close AS cum_return
+        FROM event_base eb
+        JOIN (
+          SELECT ticker, date, close,
+            ROW_NUMBER() OVER (PARTITION BY ticker, date ORDER BY fetched_at DESC) AS rn
+          FROM stock_prices
+        ) sp ON sp.ticker = eb.ticker AND sp.date > eb.event_date AND sp.rn = 1
+      )
+      SELECT event_id, classification, day_offset AS day, cum_return
+      FROM forward
+      WHERE day_offset <= ${maxForwardDays}
+      ORDER BY event_id, day_offset
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, (err, rows) => {
+        if (err) reject(err);
+        else resolve((rows || []).map(r => ({
+          event_id: Number(r.event_id),
+          classification: r.classification,
+          day: Number(r.day),
+          cum_return: Number(r.cum_return),
+        })));
+      });
+    });
+  }
+
+  /**
+   * Find nearest options snapshot date for a ticker relative to an event date
+   * @param {string} ticker - Stock ticker
+   * @param {string} eventDate - Event date (YYYY-MM-DD)
+   * @returns {Promise<Object|null>} { snapshotDate, lagDays } or null
+   */
+  async findNearestOptionsSnapshot(ticker, eventDate) {
+    const sql = `
+      SELECT snapshot_date,
+        DATEDIFF('day', snapshot_date::DATE, $2::DATE) AS lag_days
+      FROM options_snapshots
+      WHERE ticker = $1
+        AND snapshot_date <= $2::DATE
+      ORDER BY lag_days ASC
+      LIMIT 1
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ticker.toUpperCase(), eventDate, (err, rows) => {
+        if (err) reject(err);
+        else if (rows && rows.length > 0) {
+          resolve({
+            snapshotDate: rows[0].snapshot_date,
+            lagDays: Number(rows[0].lag_days),
+          });
+        } else {
+          resolve(null);
+        }
+      });
+    });
+  }
+
+  /**
+   * Get all options snapshot rows for a specific (ticker, snapshot_date)
+   * @param {string} ticker - Stock ticker
+   * @param {string} snapshotDate - ISO date/timestamp of the snapshot
+   * @returns {Promise<Array>} Per-expiration rows sorted by expiration_date ASC
+   */
+  async getOptionsSnapshotsByDate(ticker, snapshotDate) {
+    const sql = `
+      SELECT expiration_date,
+             total_call_dollar_volume, total_put_dollar_volume,
+             total_call_dollar_volume_all, total_put_dollar_volume_all,
+             avg_call_iv, avg_put_iv, avg_call_iv_all, avg_put_iv_all,
+             atm_call_iv, atm_put_iv
+      FROM options_snapshots
+      WHERE ticker = $1 AND snapshot_date::DATE = $2::DATE
+      ORDER BY expiration_date ASC
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ticker.toUpperCase(), snapshotDate, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  /**
+   * Look up event IDs by (ticker, event_date) pairs.
+   * @param {Array<{ticker: string, eventDate: string}>} pairs
+   * @returns {Promise<Array<{event_id: number, ticker: string, event_date: string, classification: string}>>}
+   */
+  async getEventIdsByTickerDates(pairs) {
+    if (!pairs || pairs.length === 0) return [];
+
+    const conditions = pairs
+      .map(p => `(ticker = '${p.ticker.replace(/'/g, "''")}' AND event_date = '${p.eventDate}')`)
+      .join(' OR ');
+
+    const sql = `
+      SELECT id AS event_id, ticker, event_date::TEXT AS event_date, classification
+      FROM stock_events
+      WHERE ${conditions}
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, (err, rows) => {
+        if (err) reject(err);
+        else resolve((rows || []).map(r => ({
+          event_id: Number(r.event_id),
+          ticker: r.ticker,
+          event_date: r.event_date,
+          classification: r.classification,
+        })));
+      });
+    });
+  }
+
+  /**
+   * Get all stock events with optional cached feature vectors (LEFT JOIN)
+   * @returns {Promise<Array>} Rows with event_id, classification, ticker, event_date, feature_vector, snapshot_lag_days
+   */
+  async getAllEventsWithOptionalFeatures() {
+    const sql = `
+      SELECT e.id AS event_id, e.classification, e.ticker, e.event_date,
+             eof.feature_vector, eof.snapshot_lag_days
+      FROM stock_events e
+      LEFT JOIN event_options_features eof ON eof.event_id = e.id
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  // ===== Snapshot Options Features Methods =====
+
+  /**
+   * Get all unique (ticker, snapshot_date) LEFT JOINed with cached feature vectors
+   * @returns {Promise<Array>} Rows with ticker, snapshot_date, feature_vector
+   */
+  async getAllSnapshotDatesWithOptionalFeatures() {
+    const sql = `
+      SELECT DISTINCT os.ticker, os.snapshot_date::DATE AS snapshot_date, sof.feature_vector
+      FROM options_snapshots os
+      LEFT JOIN snapshot_options_features sof
+        ON sof.ticker = os.ticker AND sof.snapshot_date::DATE = os.snapshot_date::DATE
+      ORDER BY os.ticker, os.snapshot_date
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  /**
+   * Upsert cached feature vector for a snapshot
+   * @param {string} ticker - Stock ticker
+   * @param {string} snapshotDate - ISO date/timestamp
+   * @param {Float64Array|Array} featureVector - 19-element feature vector
+   */
+  async saveSnapshotOptionsFeatures(ticker, snapshotDate, featureVector) {
+    const fvValue = featureVector ? `[${Array.from(featureVector).join(',')}]` : null;
+
+    const sql = `
+      INSERT INTO snapshot_options_features (ticker, snapshot_date, feature_vector)
+      VALUES ($1, $2::DATE, $3::FLOAT[25])
+      ON CONFLICT (ticker, snapshot_date) DO UPDATE SET
+        feature_vector = $3::FLOAT[25],
+        created_at = now()
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.run(
+        sql,
+        ticker.toUpperCase(),
+        snapshotDate,
+        fvValue,
+        (err) => {
+          if (err) reject(err);
+          else resolve();
+        }
+      );
+    });
+  }
+
+  /**
+   * Get forward cumulative returns from arbitrary (ticker, date) pairs
+   * @param {Array<Object>} dateEntries - [{id, ticker, snapshotDate}]
+   * @param {number} maxForwardDays - Maximum forward days
+   * @returns {Promise<Array>} Rows of { id, day, cum_return }
+   */
+  async getForwardReturnsFromDates(dateEntries, maxForwardDays = 60) {
+    if (!dateEntries || dateEntries.length === 0) return [];
+
+    // Build VALUES list for CTE (ensure dates are YYYY-MM-DD)
+    const toISO = (d) => {
+      const dt = new Date(d);
+      return dt.toISOString().split('T')[0];
+    };
+    const valuesList = dateEntries.map(e =>
+      `(${e.id}, '${e.ticker.replace(/'/g, "''")}', '${toISO(e.snapshotDate)}'::DATE)`
+    ).join(', ');
+
+    const sql = `
+      WITH entries(entry_id, ticker, snap_date) AS (
+        VALUES ${valuesList}
+      ),
+      entry_base AS (
+        SELECT e.entry_id, e.ticker, e.snap_date, sp.close AS base_close
+        FROM entries e
+        JOIN (
+          SELECT ticker, date, close,
+            ROW_NUMBER() OVER (PARTITION BY ticker, date ORDER BY fetched_at DESC) AS rn
+          FROM stock_prices
+        ) sp ON sp.ticker = e.ticker AND sp.date <= e.snap_date AND sp.rn = 1
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY e.entry_id ORDER BY sp.date DESC) = 1
+      ),
+      forward AS (
+        SELECT eb.entry_id,
+          ROW_NUMBER() OVER (PARTITION BY eb.entry_id ORDER BY sp.date) AS day_offset,
+          (sp.close - eb.base_close) / eb.base_close AS cum_return
+        FROM entry_base eb
+        JOIN (
+          SELECT ticker, date, close,
+            ROW_NUMBER() OVER (PARTITION BY ticker, date ORDER BY fetched_at DESC) AS rn
+          FROM stock_prices
+        ) sp ON sp.ticker = eb.ticker AND sp.date > eb.snap_date AND sp.rn = 1
+      )
+      SELECT entry_id AS id, day_offset AS day, cum_return
+      FROM forward
+      WHERE day_offset <= ${maxForwardDays}
+      ORDER BY entry_id, day_offset
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, (err, rows) => {
+        if (err) reject(err);
+        else resolve((rows || []).map(r => ({
+          id: Number(r.id),
+          day: Number(r.day),
+          cum_return: Number(r.cum_return),
+        })));
+      });
+    });
+  }
+
+  // ===== Options Snapshot Methods =====
+
+  /**
+   * Save options snapshot to database
+   * @param {string} ticker - Stock ticker symbol
+   * @param {string} snapshotDate - Snapshot timestamp (ISO string)
+   * @param {string} expirationDate - Expiration date (YYYY-MM-DD)
+   * @param {number} currentPrice - Current stock price
+   * @param {Object} metrics - Options metrics from computeExpirationMetrics
+   * @returns {Promise<Object>} Saved record
+   */
+  async saveOptionsSnapshot(ticker, snapshotDate, expirationDate, currentPrice, metrics) {
+    const sql = `
+      INSERT INTO options_snapshots (
+        ticker, snapshot_date, expiration_date, current_price,
+        total_call_volume, total_put_volume, put_call_ratio,
+        total_call_oi, total_put_oi, put_call_oi_ratio,
+        atm_call_iv, atm_put_iv, avg_call_iv, avg_put_iv,
+        max_call_volume_strike, max_put_volume_strike,
+        max_call_oi_strike, max_put_oi_strike,
+        unusual_volume_count,
+        call_voi, put_voi, total_call_dollar_volume, total_put_dollar_volume, conviction_ratio,
+        total_call_dollar_volume_all, total_put_dollar_volume_all, conviction_ratio_all,
+        avg_call_iv_all, avg_put_iv_all
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
+      ON CONFLICT (ticker, snapshot_date, expiration_date) DO UPDATE SET
+        current_price = $4,
+        total_call_volume = $5,
+        total_put_volume = $6,
+        put_call_ratio = $7,
+        total_call_oi = $8,
+        total_put_oi = $9,
+        put_call_oi_ratio = $10,
+        atm_call_iv = $11,
+        atm_put_iv = $12,
+        avg_call_iv = $13,
+        avg_put_iv = $14,
+        max_call_volume_strike = $15,
+        max_put_volume_strike = $16,
+        max_call_oi_strike = $17,
+        max_put_oi_strike = $18,
+        unusual_volume_count = $19,
+        call_voi = $20,
+        put_voi = $21,
+        total_call_dollar_volume = $22,
+        total_put_dollar_volume = $23,
+        conviction_ratio = $24,
+        total_call_dollar_volume_all = $25,
+        total_put_dollar_volume_all = $26,
+        conviction_ratio_all = $27,
+        avg_call_iv_all = $28,
+        avg_put_iv_all = $29
+      RETURNING id
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(
+        sql,
+        ticker.toUpperCase(),
+        snapshotDate,
+        expirationDate,
+        currentPrice,
+        metrics.totalCallVolume,
+        metrics.totalPutVolume,
+        metrics.putCallRatio,
+        metrics.totalCallOI,
+        metrics.totalPutOI,
+        metrics.putCallOIRatio,
+        metrics.atmCallIV,
+        metrics.atmPutIV,
+        metrics.avgCallIV,
+        metrics.avgPutIV,
+        metrics.maxCallVolumeStrike,
+        metrics.maxPutVolumeStrike,
+        metrics.maxCallOIStrike,
+        metrics.maxPutOIStrike,
+        metrics.unusualVolumeCount,
+        metrics.callVOI || null,
+        metrics.putVOI || null,
+        metrics.totalCallDollarVolume || null,
+        metrics.totalPutDollarVolume || null,
+        metrics.convictionRatio || null,
+        metrics.totalCallDollarVolumeAll || null,
+        metrics.totalPutDollarVolumeAll || null,
+        metrics.convictionRatioAll || null,
+        metrics.avgCallIVAll || null,
+        metrics.avgPutIVAll || null,
+        (err, result) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve({
+            id: result[0]?.id,
+            ticker: ticker.toUpperCase(),
+            snapshotDate,
+            expirationDate
+          });
+        }
+      );
+    });
+  }
+
+  /**
+   * Get options snapshots for a ticker within a date range
+   * @param {string} ticker - Stock ticker symbol
+   * @param {number} days - Number of days to look back (default: 30)
+   * @returns {Promise<Array>} Array of snapshot records
+   */
+  async getOptionsSnapshots(ticker, days = 30) {
+    const sql = `
+      SELECT *
+      FROM options_snapshots
+      WHERE ticker = $1
+        AND snapshot_date >= CURRENT_TIMESTAMP - INTERVAL '${days} days'
+      ORDER BY snapshot_date DESC, expiration_date ASC
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ticker.toUpperCase(), (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  /**
+   * Get latest options snapshot for a ticker
+   * @param {string} ticker - Stock ticker symbol
+   * @returns {Promise<Array>} Latest snapshot records (one per expiration)
+   */
+  async getLatestOptionsSnapshot(ticker) {
+    const sql = `
+      SELECT *
+      FROM options_snapshots
+      WHERE ticker = $1
+        AND snapshot_date = (
+          SELECT MAX(snapshot_date)
+          FROM options_snapshots
+          WHERE ticker = $1
+        )
+      ORDER BY expiration_date ASC
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ticker.toUpperCase(), (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  /**
+   * Get price history for a ticker
+   * @param {string} ticker - Stock ticker symbol
+   * @param {Object} options - Query options
+   * @param {string} options.startDate - Start date (YYYY-MM-DD)
+   * @param {string} options.endDate - End date (YYYY-MM-DD)
+   * @param {number} options.limit - Max number of records
+   * @param {string} options.source - Data source filter
+   * @returns {Promise<Array>} Array of price records
+   */
+  async getPriceHistory(ticker, options = {}) {
+    const {
+      startDate = null,
+      endDate = null,
+      limit = 365,
+      source = 'marketdata'
+    } = options;
+
+    let sql = `
+      SELECT ticker, date, open, high, low, close, volume, source, fetched_at
+      FROM stock_prices
+      WHERE ticker = $1 AND source = $2
+    `;
+
+    const params = [ticker.toUpperCase(), source];
+
+    if (startDate) {
+      sql += ` AND date >= $${params.length + 1}`;
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      sql += ` AND date <= $${params.length + 1}`;
+      params.push(endDate);
+    }
+
+    sql += ` ORDER BY date DESC LIMIT $${params.length + 1}`;
+    params.push(limit);
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ...params, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  /**
+   * Get latest price for a ticker
+   * @param {string} ticker - Stock ticker symbol
+   * @param {string} source - Data source
+   * @returns {Promise<Object|null>} Latest price record or null
+   */
+  async getLatestPrice(ticker, source = 'marketdata') {
+    const sql = `
+      SELECT ticker, date, open, high, low, close, volume, source, fetched_at
+      FROM stock_prices
+      WHERE ticker = $1 AND source = $2
+      ORDER BY date DESC
+      LIMIT 1
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ticker.toUpperCase(), source, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows.length > 0 ? rows[0] : null);
+      });
+    });
+  }
+
+  /**
+   * Add a ticker to watchlist
+   * @param {string} ticker - Stock ticker symbol
+   * @param {boolean} autoUpdate - Enable automatic updates
+   * @returns {Promise<Object>} Added ticker record
+   */
+  async addWatchedTicker(ticker, autoUpdate = true) {
+    const sql = `
+      INSERT INTO watched_tickers (ticker, auto_update)
+      VALUES ($1, $2)
+      ON CONFLICT (ticker) DO UPDATE SET auto_update = $2
+      RETURNING id, ticker, added_at, auto_update
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ticker.toUpperCase(), autoUpdate, (err, result) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(result[0]);
+      });
+    });
+  }
+
+  /**
+   * Remove a ticker from watchlist
+   * @param {string} ticker - Stock ticker symbol
+   * @returns {Promise<void>}
+   */
+  async removeWatchedTicker(ticker) {
+    const sql = 'DELETE FROM watched_tickers WHERE ticker = $1';
+
+    return new Promise((resolve, reject) => {
+      this.connection.run(sql, ticker.toUpperCase(), (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  }
+
+  /**
+   * Get all watched tickers
+   * @param {boolean} autoUpdateOnly - Only return tickers with auto_update enabled
+   * @returns {Promise<Array>} Array of watched ticker records
+   */
+  async getWatchedTickers(autoUpdateOnly = false) {
+    let sql = 'SELECT id, ticker, added_at, auto_update FROM watched_tickers';
+
+    if (autoUpdateOnly) {
+      sql += ' WHERE auto_update = true';
+    }
+
+    sql += ' ORDER BY ticker ASC';
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  /**
+   * Check if ticker is being watched
+   * @param {string} ticker - Stock ticker symbol
+   * @returns {Promise<boolean>} True if watched
+   */
+  async isTickerWatched(ticker) {
+    const sql = 'SELECT COUNT(*) as count FROM watched_tickers WHERE ticker = $1';
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ticker.toUpperCase(), (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows[0]?.count > 0);
+      });
+    });
+  }
+
+  /**
+   * Get stock price statistics
+   * @returns {Promise<Object>} Price data statistics
+   */
+  async getPriceStats() {
+    const totalPrices = await new Promise((resolve, reject) => {
+      this.connection.all('SELECT COUNT(*) as count FROM stock_prices', (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    const uniqueTickers = await new Promise((resolve, reject) => {
+      this.connection.all('SELECT COUNT(DISTINCT ticker) as count FROM stock_prices', (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    const dateRange = await new Promise((resolve, reject) => {
+      this.connection.all(
+        'SELECT MIN(date) as earliest, MAX(date) as latest FROM stock_prices',
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows[0] || { earliest: null, latest: null });
+        }
+      );
+    });
+
+    const watchedCount = await new Promise((resolve, reject) => {
+      this.connection.all('SELECT COUNT(*) as count FROM watched_tickers', (err, rows) => {
+        if (err) reject(err);
+        else resolve(Number(rows[0]?.count || 0));
+      });
+    });
+
+    return {
+      totalPrices,
+      uniqueTickers,
+      earliestDate: dateRange.earliest,
+      latestDate: dateRange.latest,
+      watchedCount
+    };
+  }
+
+  // ===== News Harvesting Support Methods =====
+
+  /**
+   * Get articles with embeddings for a ticker (for uniqueness calculation)
+   * @param {string} ticker - Stock ticker symbol
+   * @param {Object} options - Query options
+   * @param {string} options.excludeArticleId - Article ID to exclude from results
+   * @param {number} options.limit - Max articles to return (default: 100)
+   * @returns {Promise<Array>} Articles with embeddings
+   */
+  async getArticlesWithEmbeddingsByTicker(ticker, options = {}) {
+    const { excludeArticleId = null, limit = 100 } = options;
+
+    let sql = `
+      SELECT id, url, title, published_date, embedding
+      FROM articles
+      WHERE embedding IS NOT NULL
+        AND (list_contains(tickers, ?) OR list_contains(tickers, '*'))
+    `;
+
+    const params = [ticker.toUpperCase()];
+
+    if (excludeArticleId) {
+      sql += ' AND id != ?';
+      params.push(excludeArticleId);
+    }
+
+    sql += ' ORDER BY published_date DESC NULLS LAST LIMIT ?';
+    params.push(limit);
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(sql, ...params, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  /**
+   * Get articles by ticker within a date range (with embeddings for similarity)
+   * @param {string} ticker - Stock ticker symbol
+   * @param {Date} centerDate - Center date for range
+   * @param {number} dayRange - Days before/after center date
+   * @returns {Promise<Array>} Articles within date range
+   */
+  async getArticlesByTickerAndDateRange(ticker, centerDate, dayRange = 3) {
+    const startDate = new Date(centerDate);
+    startDate.setDate(startDate.getDate() - dayRange);
+    const endDate = new Date(centerDate);
+    endDate.setDate(endDate.getDate() + dayRange);
+
+    const sql = `
+      SELECT id, url, title, content, published_date, embedding, tickers
+      FROM articles
+      WHERE (list_contains(tickers, ?) OR list_contains(tickers, '*'))
+        AND published_date >= ?
+        AND published_date <= ?
+      ORDER BY published_date DESC
+    `;
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(
+        sql,
+        ticker.toUpperCase(),
+        startDate.toISOString(),
+        endDate.toISOString(),
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows || []);
+        }
+      );
+    });
+  }
+
+  /**
+   * Get all articles by category
+   * @param {string} category - Category to filter by ('not_good', 'stock_news', etc.)
+   * @returns {Promise<Array>} Articles in that category
+   */
+  async getArticlesByCategory(category) {
+    return new Promise((resolve, reject) => {
+      this.connection.all(
+        'SELECT id, title, content FROM articles WHERE category = ?',
+        category,
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows || []);
+        }
+      );
+    });
+  }
+
+  /**
+   * Update article content and regenerate embedding
+   * Used for boilerplate cleaning
+   * @param {number} articleId - Article ID to update
+   * @param {string} newContent - New cleaned content
+   * @param {string} title - Article title for embedding context
+   */
+  async updateArticleContent(articleId, newContent, title = null) {
+    const embeddingService = require('./embeddings');
+
+    // Generate new embedding for cleaned content
+    const embedding = await embeddingService.embed(newContent, {
+      task: 'search_document',
+      title: title
+    });
+
+    // Convert embedding array to DuckDB array format (same as saveArticle)
+    const embeddingValue = embedding ? `[${embedding.join(',')}]` : null;
+
+    // Update article
+    return new Promise((resolve, reject) => {
+      this.connection.run(
+        'UPDATE articles SET content = ?, embedding = ?::FLOAT[], word_count = ? WHERE id = ?',
+        newContent,
+        embeddingValue,
+        newContent.split(/\s+/).length,
+        articleId,
+        (err) => {
+          if (err) reject(err);
+          else resolve({ success: true, embeddingRegenerated: true });
+        }
+      );
+    });
+  }
+
+  /**
+   * Get corpus statistics for the news harvesting feature
+   * @returns {Promise<Object>} Corpus statistics
+   */
+  async getCorpusStats() {
+    const totalStockNews = await new Promise((resolve, reject) => {
+      this.connection.all(
+        "SELECT COUNT(*) as count FROM articles WHERE category = 'stock_news'",
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(Number(rows[0]?.count || 0));
+        }
+      );
+    });
+
+    const withEmbeddings = await new Promise((resolve, reject) => {
+      this.connection.all(
+        "SELECT COUNT(*) as count FROM articles WHERE category = 'stock_news' AND embedding IS NOT NULL",
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(Number(rows[0]?.count || 0));
+        }
+      );
+    });
+
+    const dateRange = await new Promise((resolve, reject) => {
+      this.connection.all(
+        `SELECT MIN(published_date) as earliest, MAX(published_date) as latest
+         FROM articles
+         WHERE category = 'stock_news' AND published_date IS NOT NULL`,
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows[0] || { earliest: null, latest: null });
+        }
+      );
+    });
+
+    const tickerCounts = await new Promise((resolve, reject) => {
+      this.connection.all(
+        `SELECT ticker, COUNT(*) as count
+         FROM (
+           SELECT UNNEST(tickers) as ticker
+           FROM articles
+           WHERE category = 'stock_news' AND tickers IS NOT NULL AND array_length(tickers) > 0
+         )
+         GROUP BY ticker
+         ORDER BY count DESC
+         LIMIT 20`,
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows || []);
+        }
+      );
+    });
+
+    // Calculate date span in days
+    let dateSpanDays = 0;
+    if (dateRange.earliest && dateRange.latest) {
+      const earliest = new Date(dateRange.earliest);
+      const latest = new Date(dateRange.latest);
+      dateSpanDays = Math.ceil((latest - earliest) / (1000 * 60 * 60 * 24));
+    }
+
+    return {
+      totalStockNews,
+      withEmbeddings,
+      earliestArticle: dateRange.earliest,
+      latestArticle: dateRange.latest,
+      dateSpanDays,
+      tickerCounts,
+      isReadyForAnalysis: totalStockNews >= 50 && dateSpanDays >= 7
+    };
+  }
+
+  /**
+   * Close database connection
+   */
+  async close() {
+    return new Promise((resolve) => {
+      if (this.connection) {
+        this.connection.close(() => {
+          if (this.db) {
+            this.db.close(() => {
+              resolve();
+            });
+          } else {
+            resolve();
+          }
+        });
+      } else {
+        resolve();
+      }
+    });
+  }
+}
+
+module.exports = ArticleDatabase;

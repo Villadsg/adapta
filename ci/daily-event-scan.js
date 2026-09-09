@@ -1,15 +1,13 @@
 #!/usr/bin/env node
 
 /**
- * Super-Favorites Scan — standalone CI job that, for each ticker in
- * ci/screening-super-favorites.json, computes recent events + current
+ * Ticker Scan — standalone CI job that, for each ticker in the
+ * TICKERS env var (comma-separated), computes recent events + current
  * options metrics and sends a Telegram message.
  *
  * Run: TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... \
  *      MARKET_DATA_API_KEY=... TWELVE_DATA_API_KEY=... EODHD_API_KEY=... \
- *      node ci/daily-event-scan.js
- *
- * Override tickers (e.g. for manual dispatch): TICKERS=AXON,QCOM
+ *      TICKERS=AXON,QCOM,NVDA node ci/daily-event-scan.js
  */
 
 const path = require('path');
@@ -41,7 +39,7 @@ Module._resolveFilename = function (request, parent, ...rest) {
 
 const fs = require('fs');
 const config = require('./config.json');
-const { sendMessage, formatSuperFavoriteMessage } = require('./telegram');
+const { sendMessage } = require('./telegram');
 
 const ArticleDatabase = require('../src/services/database');
 const StockAnalysisService = require('../src/services/stockAnalysis');
@@ -49,29 +47,23 @@ const OptionsAnalysisService = require('../src/services/optionsAnalysis');
 const IBOptionsProvider = require('../src/services/ibOptionsProvider');
 
 const DB_PATH = path.join(__dirname, '..', 'data', 'events.db');
-const FAVORITES_PATH = path.join(__dirname, 'screening-super-favorites.json');
 
 async function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function loadTickers() {
-  if (process.env.TICKERS) {
-    return process.env.TICKERS.split(',').map((t) => t.trim()).filter(Boolean);
+  if (!process.env.TICKERS) {
+    throw new Error('TICKERS env var is required (comma-separated tickers)');
   }
-  const raw = fs.readFileSync(FAVORITES_PATH, 'utf8');
-  const parsed = JSON.parse(raw);
-  if (!Array.isArray(parsed)) {
-    throw new Error(`Expected array in ${FAVORITES_PATH}`);
-  }
-  return parsed;
+  return process.env.TICKERS.split(',').map((t) => t.trim()).filter(Boolean);
 }
 
 async function main() {
   const tickers = loadTickers();
   const { benchmark, days, minEvents, delayBetweenTickersMs } = config;
 
-  console.log(`=== Super-Favorites Scan ===`);
+  console.log(`=== Ticker Scan ===`);
   console.log(`Tickers (${tickers.length}): ${tickers.join(', ')}`);
   console.log(`Benchmark: ${benchmark} | Days: ${days} | Min events: ${minEvents}`);
   console.log('');
@@ -122,7 +114,7 @@ async function main() {
     }
 
     try {
-      const message = formatSuperFavoriteMessage(ticker, events, optionsData);
+      const message = formatTickerMessage(ticker, events, optionsData);
       console.log(`\n${message}\n`);
       await sendMessage(message);
       sent.push(ticker);

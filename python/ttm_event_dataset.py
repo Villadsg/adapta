@@ -46,9 +46,9 @@ import pandas as pd
 # Options history lives in DuckDB (options_daily_iv), derived from raw
 # marketdata.app chains by ci/backfill-marketdata.js phase D. It replaces the
 # former ci/weighted-iv-history.json, which was a by-product of screening runs.
-# Note the DB carries two expirations (exp1/exp2) rather than the JSON's three;
-# _dv_weighted() skips missing expirations, so pooling is unchanged in form.
-OPTIONS_EXPIRATIONS = ("exp1", "exp2")
+# Note the DB now carries three expirations (exp1/exp2/exp3, exp3 added by
+# schema migration 15), matching the JSON record layout.
+OPTIONS_EXPIRATIONS = ("exp1", "exp2", "exp3")
 
 # Fixed OTM moneyness buckets, derived per (ticker, date, expiration, side) by
 # ttm_options_buckets.py into the options_daily_buckets table.
@@ -120,6 +120,38 @@ PUT_OPTION_CHANNELS = [
     "atm_put_iv_delta",
 ]
 ALL_OPTION_CHANNELS = OPTION_CHANNELS[:4] + PUT_OPTION_CHANNELS + OPTION_CHANNELS[4:]
+
+# 20-channel "full" event set: the 16-channel base set with the put-side
+# options mirrors spliced in alongside the call channels.
+FULL_CHANNELS = [
+    *CHANNELS[:7],
+    *ALL_OPTION_CHANNELS,
+    "options_missing",
+]
+
+# Weekly (5-trading-day) aggregates of the percentile-ranked options metrics.
+# Computed in build_options_features on the centred ranks.
+WEEKLY_OPTION_CHANNELS = [
+    "total_option_dv_log_rank_wmax",   # 5d max of the total option DV rank
+    "total_option_dv_log_rank_wmean",  # 5d mean of the total option DV rank
+    "atm_call_iv_rank_wmax",           # 5d max of the ATM call IV rank
+    "atm_put_iv_rank_wmax",            # 5d max of the ATM put IV rank
+    "call_iv_spread_rank_wslope",      # 5d change in the call IV spread rank
+    "put_iv_spread_rank_wslope",       # 5d change in the put IV spread rank
+    "dv_x_iv_wmean",                   # 5d mean of min(DV rank, ATM call IV rank)
+]
+
+# Channels full2 adds on top of full: the third expiration's DTE plus the
+# weekly aggregates above.
+FULL2_EXTRA_CHANNELS = ["exp3_dte_log"] + WEEKLY_OPTION_CHANNELS
+
+# 28-channel "full2" event set.
+FULL2_CHANNELS = [
+    *CHANNELS[:7],
+    *ALL_OPTION_CHANNELS,
+    *FULL2_EXTRA_CHANNELS,
+    "options_missing",
+]
 
 # Direction-model channel set: drops log_event_magnitude (direction-agnostic
 # by construction — it encodes move SIZE, not sign) and adds the put-side
@@ -335,15 +367,14 @@ def load_options_history(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
 
         # Pool the expirations with dollar-volume weights, mirroring
         # combineHistRecord() in main.js so the model sees the same weighted
-        # IV the rest of the app reports. _dv_weighted takes three positional
-        # expirations; pass None for the third since the DB carries two.
-        exp1, exp2 = exps
-        call_iv = _dv_weighted(exp1, exp2, None, _otm_call_iv, _call_weight)
-        put_iv = _dv_weighted(exp1, exp2, None, _otm_put_iv, _put_weight)
-        atm_call_iv = _dv_weighted(exp1, exp2, None, _atm_call_iv, _atm_call_weight)
-        atm_put_iv = _dv_weighted(exp1, exp2, None, _atm_put_iv, _atm_put_weight)
+        # IV the rest of the app reports.
+        exp1, exp2, exp3 = exps
+        call_iv = _dv_weighted(exp1, exp2, exp3, _otm_call_iv, _call_weight)
+        put_iv = _dv_weighted(exp1, exp2, exp3, _otm_put_iv, _put_weight)
+        atm_call_iv = _dv_weighted(exp1, exp2, exp3, _atm_call_iv, _atm_call_weight)
+        atm_put_iv = _dv_weighted(exp1, exp2, exp3, _atm_put_iv, _atm_put_weight)
 
-        # Days until each referenced expiration (log-scaled). The exp1/exp2
+        # Days until each referenced expiration (log-scaled). The expN
         # labels alone hide whether "exp1" is 3 or 40 days out.
         day = pd.to_datetime(r["date"]).date()
         dtes = []
@@ -367,6 +398,7 @@ def load_options_history(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
             "put_dv": put_dv,
             "exp1_dte_log": dtes[0],
             "exp2_dte_log": dtes[1],
+            "exp3_dte_log": dtes[2],
             # Not available in options_daily_iv; kept for column compatibility.
             "deep_otm_call_pct": None,
             "deep_otm_put_pct": None,
@@ -454,9 +486,9 @@ def build_options_features(
     df["put_iv_spread_delta"] = df.groupby("ticker")["put_iv_spread_rank"].diff()
     df["atm_put_iv_delta"] = df.groupby("ticker")["atm_put_iv_rank"].diff()
 
-    # Centre log-DTE on log1p(30) (~30 days, a typical exp1/exp2 distance) so
+    # Centre log-DTE on log1p(30) (~30 days, a typical exp1/exp2/exp3 distance) so
     # the 0.0 missing-value fill reads as "typical expiry", not "expires today".
-    for col in ("exp1_dte_log", "exp2_dte_log"):
+    for col in ("exp1_dte_log", "exp2_dte_log", "exp3_dte_log"):
         if col not in df.columns:
             df[col] = np.nan
         df[col] = df[col] - np.log1p(30.0)
@@ -491,7 +523,32 @@ def build_options_features(
     # NaNs are deliberately preserved here: build_ticker_features forward-fills
     # them across non-snapshot days and only then zero-fills, so filling now
     # would both defeat the forward-fill and mask the options_missing flag.
-    return df[["ticker", "date"] + ALL_OPTION_CHANNELS]
+
+    # Weekly (5-trading-day) aggregates of the centred ranks.
+    grp = df.groupby("ticker")
+    df["total_option_dv_log_rank_wmax"] = grp["total_option_dv_log_rank"].transform(
+        lambda x: x.rolling(5, min_periods=1).max()
+    )
+    df["total_option_dv_log_rank_wmean"] = grp["total_option_dv_log_rank"].transform(
+        lambda x: x.rolling(5, min_periods=1).mean()
+    )
+    df["atm_call_iv_rank_wmax"] = grp["atm_call_iv_rank"].transform(
+        lambda x: x.rolling(5, min_periods=1).max()
+    )
+    df["atm_put_iv_rank_wmax"] = grp["atm_put_iv_rank"].transform(
+        lambda x: x.rolling(5, min_periods=1).max()
+    )
+    df["call_iv_spread_rank_wslope"] = grp["call_iv_spread_rank"].diff(5)
+    df["put_iv_spread_rank_wslope"] = grp["put_iv_spread_rank"].diff(5)
+    # Joint DV-and-IV stress: high only when both the DV rank and the ATM call
+    # IV rank are high (min as a smooth "and"), smoothed over the week.
+    df["_dv_x_iv"] = np.minimum(df["total_option_dv_log_rank"], df["atm_call_iv_rank"])
+    df["dv_x_iv_wmean"] = df.groupby("ticker")["_dv_x_iv"].transform(
+        lambda x: x.rolling(5, min_periods=1).mean()
+    )
+    df = df.drop(columns=["_dv_x_iv"])
+
+    return df[["ticker", "date"] + ALL_OPTION_CHANNELS + FULL2_EXTRA_CHANNELS]
 
 
 def compute_event_magnitude(row) -> float:
@@ -537,16 +594,16 @@ def build_ticker_features(df: pd.DataFrame, opts_df: pd.DataFrame = None) -> pd.
         # Forward-fill options features up to 5 trading days so a missing snapshot
         # does not immediately zero out the signal. The missing flag reflects
         # whether any value within the fill window was actually observed.
-        for col in ALL_OPTION_CHANNELS:
+        for col in ALL_OPTION_CHANNELS + FULL2_EXTRA_CHANNELS:
             if col not in df.columns:
                 df[col] = np.nan
             df[col] = df.groupby("ticker")[col].transform(lambda x: x.ffill(limit=5))
         # A date is non-missing if it was directly observed OR successfully filled.
         df["options_missing"] = df[ALL_OPTION_CHANNELS].isna().all(axis=1).astype(float)
-        for col in ALL_OPTION_CHANNELS:
+        for col in ALL_OPTION_CHANNELS + FULL2_EXTRA_CHANNELS:
             df[col] = df[col].fillna(0.0).astype(float)
     else:
-        for col in ALL_OPTION_CHANNELS:
+        for col in ALL_OPTION_CHANNELS + FULL2_EXTRA_CHANNELS:
             df[col] = 0.0
         df["options_missing"] = 1.0
 
@@ -669,6 +726,10 @@ def main():
     parser.add_argument("--target", choices=["event", "direction"], default="event",
                         help="event: predict top-quantile volume*|return| days; "
                              "direction: predict the sign of the next-day return")
+    parser.add_argument("--channel-set", choices=["event", "full", "full2"], default="event",
+                        help="event: the 16-channel CHANNELS set; full: CHANNELS plus the "
+                             "put-side options mirrors (20 channels); full2: full plus "
+                             "exp3_dte_log and weekly aggregate options channels (28 channels)")
     args = parser.parse_args()
 
     if not os.path.exists(args.db):
@@ -720,7 +781,10 @@ def main():
     prices = pd.concat(ticker_frames, ignore_index=True)
 
     # Build windows
-    channels = DIRECTION_CHANNELS if args.target == "direction" else CHANNELS
+    if args.target == "direction":
+        channels = DIRECTION_CHANNELS
+    else:
+        channels = {"event": CHANNELS, "full": FULL_CHANNELS, "full2": FULL2_CHANNELS}[args.channel_set]
     all_samples = []
     for ticker, grp in prices.groupby("ticker"):
         samples = make_windows(grp, args.context_length, channels, target=args.target)
