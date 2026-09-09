@@ -2482,9 +2482,7 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     // Both are display-only: neither feeds the event/gap math.
     const lastCloseNum = typeof h.lastClose === 'number' && h.lastClose > 0 ? h.lastClose : null;
     const latestPriceNum = typeof h.latestPrice === 'number' && h.latestPrice > 0 ? h.latestPrice : null;
-    const lastCloseVal = lastCloseNum != null ? lastCloseNum : -1;
     const latestPriceVal = latestPriceNum != null ? latestPriceNum : -1;
-    const lastCloseStr = lastCloseNum != null ? lastCloseNum.toFixed(2) : '';
     const extMovePct = (lastCloseNum != null && latestPriceNum != null)
       ? ((latestPriceNum - lastCloseNum) / lastCloseNum) * 100
       : null;
@@ -2505,7 +2503,6 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
       <td data-v="${tagsSortKey}" style="font-size:0.82em; max-width:240px;">${tagsCell}</td>
       <td data-v="${h.classification || 'zzz'}" style="color:${color}; font-weight:bold;">${label}</td>
       <td data-v="${eventProb != null ? eventProb : -1}" style="text-align:right; color:${eventProbColor}; font-weight:600;" title="TTM-R3 next-day event probability">${eventProbStr}</td>
-      <td data-v="${lastCloseVal}" style="text-align:right;">${lastCloseStr}</td>
       <td data-v="${latestPriceVal}" style="text-align:right; color:${extMoveColor};" title="${extTitle}">${latestPriceStr}</td>
       <td data-v="${mcap}" style="text-align:right;">${mcapStr}</td>
       <td data-v="${optDV}" style="text-align:right;">${optDVStr}</td>
@@ -2518,7 +2515,7 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
       <td data-v="${putSpreadVal}" style="text-align:right; color:rgba(245,101,101,0.7); font-size:0.88em;${leanBg('lvl','Put Spr',putSpreadRank)}">${putSpreadStr}</td>
     </tr>
     <tr class="chart-row" data-chart-for="${h.ticker}" style="display:none;">
-      <td colspan="17" style="padding:0; background:#1a1d23;">
+      <td colspan="16" style="padding:0; background:#1a1d23;">
         <div style="display:flex; gap:12px; align-items:stretch; margin:12px 20px 8px;">
           <div id="summary-${h.ticker}" style="flex:0 1 78ch; padding:14px 18px; background:#262a33; border-left:3px solid #4a5a8a; border-radius:6px; color:#cdd5e0; font-size:0.98em; line-height:1.65; max-height:200px; overflow-y:auto;"></div>
           <div style="flex:1 1 0; min-width:280px; height:200px; background:#262a33; border-radius:6px; padding:6px 10px;">
@@ -2887,7 +2884,6 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
   <th>Tags<span class="sort-arrow"></span></th>
   <th>Classification<span class="sort-arrow"></span></th>
   <th style="text-align:right;" title="TTM-R3 next-day event probability">Event Prob<span class="sort-arrow"></span></th>
-  <th style="text-align:right;" title="Last regular-session close (16:00 ET)">Close<span class="sort-arrow"></span></th>
   <th style="text-align:right;" title="Latest quoted price, including pre-market and after-hours when the regular session is closed. % is the move vs the last regular close.">Last (ext)<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Mkt Cap<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Opt $ Vol<span class="sort-arrow"></span></th>

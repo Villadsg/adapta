@@ -5,7 +5,8 @@ node_modules/
 *.db
 *.db.wal
 *.db.bak
-articles.db*
+*.db.bak*
+*.db.wal.bak*
 
 # Large regenerable data artifacts.
 # weighted-iv-history.json is retired: IV history now lives in DuckDB
