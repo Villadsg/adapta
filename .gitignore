@@ -24,6 +24,7 @@ ci/screening-runs/
 data/ttm-events/
 data/ttm-events-full/
 data/ttm-events-full2/
+data/ttm-events-options_only/
 data/ttm-direction/*.jsonl
 data/ttm-direction/stats.json
 
@@ -56,7 +57,7 @@ build/
 out/
 
 # Python cache
-python/__pycache__/
+__pycache__/
 *.pyc
 
 # Cache
