@@ -10,7 +10,8 @@ TimesFM 3.0's native covariate support -- the remaining channels (price/volume
 past_only_covariates. Scoring is identical: P(event) from the target's
 1-step-ahead quantile forecast vs T_log = log1p(event_threshold).
 
-Uses data/ttm-events-full/test_aligned.jsonl: full-channel contexts rebuilt
+Uses data/ttm-events-<channels>/test_aligned.jsonl (default: full2): full-channel
+contexts rebuilt
 from the current DB, aligned to the original data/ttm-events/test.jsonl sample
 ids, labels and threshold so results are directly comparable to the univariate
 TimesFM run and the fine-tuned TTM classifier.
@@ -49,7 +50,11 @@ def prob_above_threshold(quantile_values, quantile_levels, t_log):
 
 def main():
     parser = argparse.ArgumentParser(description="Zero-shot TimesFM 3.0 multivariate event back-test")
-    parser.add_argument("--test", default="data/ttm-events-full/test_aligned.jsonl")
+    parser.add_argument("--test", default=None,
+                        help="Aligned test JSONL; defaults to data/ttm-events-<channels>/test_aligned.jsonl")
+    parser.add_argument("--channels", choices=["full", "full2", "options_only"], default="full2",
+                        help="Channel-set variant of the aligned test file (channel 0 = target, "
+                             "rest = past_only_covariates). options_only has no price/volume channels.")
     parser.add_argument("--stats", default="data/ttm-events/stats.json",
                         help="stats.json carrying the event_threshold the labels were built with")
     parser.add_argument("--output", default="python/models/timesfm-3.0-event-multivariate/backtest.json")
@@ -61,8 +66,11 @@ def main():
     event_threshold = float(stats["event_threshold"])
     t_log = float(np.log1p(event_threshold))
 
+    test_path = Path(args.test) if args.test else Path(f"data/ttm-events-{args.channels}/test_aligned.jsonl")
+    dataset_stats = json.loads((test_path.parent / "stats.json").read_text())
+
     samples = []
-    with open(args.test) as f:
+    with open(test_path) as f:
         for line in f:
             line = line.strip()
             if line:
@@ -124,9 +132,11 @@ def main():
         "checkpoint": args.checkpoint,
         "zero_shot": True,
         "mode": "multivariate_past_covariates",
+        "channels": args.channels,
+        "test_file": str(test_path),
         "n_target_series": 1,
         "n_past_covariates": int(covariates[0].shape[0]),
-        "covariate_channels": json.loads(Path("data/ttm-events-full/stats.json").read_text())["channels"][1:],
+        "covariate_channels": dataset_stats["channels"][1:],
         "n_samples": int(len(samples)),
         "positives": int(labels.sum()),
         "event_threshold": event_threshold,

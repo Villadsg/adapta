@@ -153,6 +153,17 @@ FULL2_CHANNELS = [
     "options_missing",
 ]
 
+# Options-only event set: drops the price/volume channels (log_close,
+# log_volume, return, gap, range, volatility) and keeps only the target plus
+# the options-derived block. Used to test whether the options features alone
+# carry the event signal.
+OPTIONS_ONLY_CHANNELS = [
+    "log_event_magnitude",
+    *ALL_OPTION_CHANNELS,
+    *FULL2_EXTRA_CHANNELS,
+    "options_missing",
+]
+
 # Direction-model channel set: drops log_event_magnitude (direction-agnostic
 # by construction — it encodes move SIZE, not sign) and adds the put-side
 # mirrors to the call channels.
@@ -639,12 +650,15 @@ def make_windows(
         window = values_all[i - context_length:i]
         target_row = df.iloc[i]
 
-        # Local centering for log_close and log_volume
+        # Local centering for log_close and log_volume (skipped for channel
+        # sets that do not carry them, e.g. OPTIONS_ONLY_CHANNELS).
         window_local = window.copy()
-        last_log_close = window[-1, feature_cols.index("log_close")]
-        med_log_volume = float(np.nanmedian(window[:, feature_cols.index("log_volume")]))
-        window_local[:, feature_cols.index("log_close")] -= last_log_close
-        window_local[:, feature_cols.index("log_volume")] -= med_log_volume
+        if "log_close" in feature_cols:
+            idx = feature_cols.index("log_close")
+            window_local[:, idx] -= window[-1, idx]
+        if "log_volume" in feature_cols:
+            idx = feature_cols.index("log_volume")
+            window_local[:, idx] -= float(np.nanmedian(window[:, idx]))
 
         target_raw = (
             float(target_row["event_magnitude"])
@@ -726,10 +740,12 @@ def main():
     parser.add_argument("--target", choices=["event", "direction"], default="event",
                         help="event: predict top-quantile volume*|return| days; "
                              "direction: predict the sign of the next-day return")
-    parser.add_argument("--channel-set", choices=["event", "full", "full2"], default="event",
+    parser.add_argument("--channel-set", choices=["event", "full", "full2", "options_only"], default="event",
                         help="event: the 16-channel CHANNELS set; full: CHANNELS plus the "
                              "put-side options mirrors (20 channels); full2: full plus "
-                             "exp3_dte_log and weekly aggregate options channels (28 channels)")
+                             "exp3_dte_log and weekly aggregate options channels (28 channels); "
+                             "options_only: target plus options channels only, no price/volume "
+                             "channels (21 channels)")
     args = parser.parse_args()
 
     if not os.path.exists(args.db):
@@ -784,7 +800,7 @@ def main():
     if args.target == "direction":
         channels = DIRECTION_CHANNELS
     else:
-        channels = {"event": CHANNELS, "full": FULL_CHANNELS, "full2": FULL2_CHANNELS}[args.channel_set]
+        channels = {"event": CHANNELS, "full": FULL_CHANNELS, "full2": FULL2_CHANNELS, "options_only": OPTIONS_ONLY_CHANNELS}[args.channel_set]
     all_samples = []
     for ticker, grp in prices.groupby("ticker"):
         samples = make_windows(grp, args.context_length, channels, target=args.target)

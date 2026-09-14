@@ -350,7 +350,7 @@ async function forecastEventMagnitude() {
   forecastRunBtn.disabled = true;
   forecastRunBtn.classList.add('is-loading');
   forecastRunBtn.textContent = '⏳ Running...';
-  showToast('Forecasting', `Running TTM-R3 for ${ticker}...`, 'info');
+  showToast('Forecasting', `Running TimesFM 3.0 for ${ticker}...`, 'info');
 
   try {
     console.log('[Forecast] calling IPC forecastEventMagnitude');

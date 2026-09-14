@@ -3640,8 +3640,31 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
               const putMap = {};
               exp.puts.forEach(p => { putMap[p.strike] = p; });
 
-              const callDollarVol = strikes.map(s => callMap[s] ? callMap[s].dollarVol : 0);
-              const putDollarVol = strikes.map(s => putMap[s] ? putMap[s].dollarVol : 0);
+              let callDollarVol = strikes.map(s => callMap[s] ? callMap[s].dollarVol : 0);
+              let putDollarVol = strikes.map(s => putMap[s] ? putMap[s].dollarVol : 0);
+
+              // Nearest expiration only: replace today's per-strike $Vol with the
+              // sum over the last 5 trading-day snapshots (matched by expiration
+              // label across exp1/exp2/exp3, since exp1 rolls after each expiry).
+              let volAggDays = 0;
+              if (ei === 0 && ivHistoryMap[ticker]) {
+                const recent = ivHistoryMap[ticker]
+                  .filter(r => r && r.date)
+                  .sort((a, b) => a.date.localeCompare(b.date))
+                  .slice(-5);
+                const callAgg = {}, putAgg = {};
+                for (const rec of recent) {
+                  const e = ['exp1', 'exp2', 'exp3'].map(k => rec[k]).find(x => x && x.label === exp.label);
+                  if (!e || (!(e.calls || []).length && !(e.puts || []).length)) continue;
+                  volAggDays++;
+                  (e.calls || []).forEach(c => { callAgg[c.strike] = (callAgg[c.strike] || 0) + (c.dv || 0); });
+                  (e.puts || []).forEach(p => { putAgg[p.strike] = (putAgg[p.strike] || 0) + (p.dv || 0); });
+                }
+                if (volAggDays > 0) {
+                  callDollarVol = strikes.map(s => callAgg[s] || 0);
+                  putDollarVol = strikes.map(s => putAgg[s] || 0);
+                }
+              }
               const callDollarOI = strikes.map(s => callMap[s] ? callMap[s].dollarOI : 0);
               const putDollarOI = strikes.map(s => putMap[s] ? putMap[s].dollarOI : 0);
               const callIV = strikes.map(s => callMap[s] && callMap[s].iv > 0 ? callMap[s].iv : null);
@@ -3675,7 +3698,7 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
                   maintainAspectRatio: false,
                   animation: { duration: 200 },
                   plugins: {
-                    title: { display: true, text: 'Exp: ' + exp.label, color: '#b0b0b0', font: { size: 11 } },
+                    title: { display: true, text: 'Exp: ' + exp.label + (volAggDays > 0 ? ' ($Vol = ' + volAggDays + 'd agg)' : ''), color: '#b0b0b0', font: { size: 11 } },
                     legend: { display: false },
                     tooltip: {
                       callbacks: {

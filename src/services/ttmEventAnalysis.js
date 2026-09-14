@@ -1,8 +1,8 @@
 /**
- * TTM Event Analysis Service
+ * TimesFM Event Analysis Service
  *
- * Wraps the fine-tuned IBM Granite TTM-R3 event-classification model.
- * Spawns `python/ttm_event_forecast.py` and returns the parsed JSON forecast.
+ * Wraps the Google TimesFM 3.0 multivariate forecasting model.
+ * Spawns `python/timesfm_event_forecast.py` and returns the parsed JSON forecast.
  */
 
 const { spawn } = require('child_process');
@@ -14,27 +14,9 @@ class TTMEventAnalysisService {
   constructor(options = {}) {
     this.projectRoot = options.projectRoot || path.resolve(__dirname, '..', '..');
     this.pythonExe = options.pythonExe || path.join(this.projectRoot, 'python', 'venv-ttm', 'bin', 'python');
-    this.scriptPath = options.scriptPath || path.join(this.projectRoot, 'python', 'ttm_event_forecast.py');
-    // ttm-event-r3-dte: 16-channel feature set — the 14 channels of
-    // ttm-event-r3-y1-ns plus exp1/exp2 days-to-expiry (log-scaled, centred
-    // on 30d). Test AUROC 0.800, statistically tied with the 14-channel
-    // reproduction (0.805; the original y1-ns 0.825 did not reproduce on
-    // current data). Put-side mirrors (20ch: 0.758) and per-moneyness-bucket
-    // DV ranks (40-60ch: 0.72-0.75) were tested and regressed — see the NOTE
-    // in python/ttm_event_dataset.py CHANNELS.
-    //
-    // The scaling choice dominates everything else here: the target is driven by
-    // the ABSOLUTE level of recent event magnitude, and the previous "std"
-    // setting z-normalized each window, erasing exactly that signal (AUROC 0.621).
-    //
-    // NOTE: its event threshold (432,294) differs from ttm-event-r3-opt's
-    // (1,030,342) because the threshold is the 80th percentile of the training
-    // window's event magnitudes. Probabilities from the two checkpoints are NOT
-    // comparable — do not mix historical values across the switch.
-    //
-    // Older ttm-event-r3* checkpoints predate the options channels and will be
-    // rejected by the channel-count check in ttm_event_forecast.py.
-    this.modelDir = options.modelDir || path.join(this.projectRoot, 'python', 'models', 'ttm-event-r3-dte', 'final');
+    this.scriptPath = options.scriptPath || path.join(this.projectRoot, 'python', 'timesfm_event_forecast.py');
+    // TimesFM 3.0 uses the checkpoint path directly.
+    this.modelDir = options.modelDir || 'google/timesfm-3.0-pytorch';
     this.datasetStats = options.datasetStats || path.join(this.projectRoot, 'data', 'ttm-events', 'stats.json');
     this.dbPath = options.dbPath || path.join(this.projectRoot, 'articles.db');
     // 'auto' lets the script pick CUDA when available and fall back to CPU.
