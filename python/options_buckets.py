@@ -19,14 +19,19 @@ Output table `options_daily_buckets` (long format):
 Idempotent: rows are written with INSERT OR REPLACE per (ticker, date), so the
 script can be re-run or resumed with --skip-existing.
 
+The same pass also fills `options_daily_strike_stats` (top_dv_share,
+eff_strikes, call_centroid_m, put_centroid_m — strike-level structure the
+fixed buckets can't express). Use --strike-stats-only to fill just that table.
+
 Usage:
-  python/venv-ttm/bin/python python/ttm_options_buckets.py --db articles.db
+  python/venv-ttm/bin/python python/options_buckets.py --db articles.db
 """
 
 import argparse
 import math
 
 import duckdb
+import numpy as np
 
 RISK_FREE_RATE = 0.045
 
@@ -115,6 +120,53 @@ CREATE TABLE IF NOT EXISTS options_daily_buckets (
 )
 """
 
+# Per-day strike-level structure stats (the strike chart below bucket
+# resolution): whale concentration, effective strike count, and the DV-weighted
+# OTM placement of call and put dollar volume. Computed over ALL contracts with
+# volume, not just the bucketed OTM slice.
+STRIKE_STATS_SQL = """
+CREATE TABLE IF NOT EXISTS options_daily_strike_stats (
+    ticker VARCHAR,
+    date DATE,
+    top_dv_share DOUBLE,
+    eff_strikes DOUBLE,
+    call_centroid_m DOUBLE,
+    put_centroid_m DOUBLE,
+    UNIQUE(ticker, date)
+)
+"""
+
+
+def strike_stats(contracts, spot: float):
+    """(top_dv_share, eff_strikes, call_centroid_m, put_centroid_m) for one
+    ticker-day, or None when there is no dollar volume.
+
+    contracts: (exp, side, strike, last_price, volume, underlying_price) rows
+    already filtered to volume > 0 and positive prices.
+    """
+    dvs = []
+    call_w, put_w = [], []  # (dv, otm distance from ATM) per contract
+    for _exp, side, strike, last, volume, _u in contracts:
+        dv = float(volume) * float(last) * 100
+        if dv <= 0:
+            continue
+        dvs.append(dv)
+        m = float(strike) / spot
+        if side == "call" and m >= 1.0:
+            call_w.append((dv, m - 1.0))
+        elif side == "put" and m <= 1.0:
+            put_w.append((dv, 1.0 - m))
+    total = sum(dvs)
+    if total <= 0:
+        return None
+    top = max(dvs) / total
+    p = np.array(dvs) / total
+    eff = float(np.exp(-(p * np.log(p)).sum()))  # permutation entropy, per-side neutral
+    def centroid(pairs):
+        w = sum(x for x, _ in pairs)
+        return sum(x * d for x, d in pairs) / w if w > 0 else None
+    return top, eff, centroid(call_w), centroid(put_w)
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -124,10 +176,16 @@ def main():
         action="store_true",
         help="Skip (ticker, date) pairs already present in options_daily_buckets",
     )
+    parser.add_argument(
+        "--strike-stats-only",
+        action="store_true",
+        help="Only fill options_daily_strike_stats (skip the IV/bucket derivation)",
+    )
     args = parser.parse_args()
 
     con = duckdb.connect(args.db)
     con.execute(CREATE_SQL)
+    con.execute(STRIKE_STATS_SQL)
 
     days = con.execute(
         "SELECT DISTINCT ticker, date::TEXT AS d FROM options_chain_history ORDER BY ticker, date"
@@ -137,7 +195,18 @@ def main():
         done = set(
             con.execute("SELECT DISTINCT ticker, date::TEXT FROM options_daily_buckets").fetchall()
         )
-        days = [(t, d) for t, d in days if (t, d.split(" ")[0]) not in done]
+        done_stats = set(
+            con.execute(
+                "SELECT DISTINCT ticker, date::TEXT FROM options_daily_strike_stats"
+            ).fetchall()
+        )
+        keep = []
+        for t, d in days:
+            key = (t, d.split(" ")[0])
+            table = done_stats if args.strike_stats_only else done
+            if key not in table:
+                keep.append((t, d))
+        days = keep
 
     print(f"{len(days)} ticker-days to derive")
 
@@ -147,9 +216,15 @@ def main():
         "INSERT OR REPLACE INTO options_daily_buckets "
         "(ticker, date, exp, side, bucket, iv, dv) VALUES (?, ?, ?, ?, ?, ?, ?)"
     )
+    stats_sql = (
+        "INSERT OR REPLACE INTO options_daily_strike_stats "
+        "(ticker, date, top_dv_share, eff_strikes, call_centroid_m, put_centroid_m) "
+        "VALUES (?, ?, ?, ?, ?, ?)"
+    )
 
     processed = 0
     pending = []
+    pending_stats = []
     for ticker, d in days:
         day = d.split(" ")[0]
         contracts = con.execute(
@@ -165,6 +240,19 @@ def main():
             continue
 
         S = float(contracts[0][5])
+
+        stats = strike_stats(contracts, S)
+        if stats is not None:
+            pending_stats.append((ticker, day, *stats))
+
+        if args.strike_stats_only:
+            if len(pending_stats) >= 50000:
+                con.executemany(stats_sql, pending_stats)
+                pending_stats.clear()
+            if processed % 1000 == 0:
+                print(f"  derived {processed}/{len(days)} ticker-days")
+            continue
+
         y, m, dd = (int(x) for x in day.split("-"))
         day_date = date_cls(y, m, dd)
 
@@ -207,8 +295,12 @@ def main():
 
     if pending:
         con.executemany(insert_sql, pending)
+    if pending_stats:
+        con.executemany(stats_sql, pending_stats)
     n = con.execute("SELECT COUNT(*) FROM options_daily_buckets").fetchone()[0]
-    print(f"Done. options_daily_buckets now holds {n} rows.")
+    s = con.execute("SELECT COUNT(*) FROM options_daily_strike_stats").fetchone()[0]
+    print(f"Done. options_daily_buckets holds {n} rows; "
+          f"options_daily_strike_stats holds {s} rows.")
 
 
 if __name__ == "__main__":

@@ -1,57 +1,30 @@
+"""Shared feature/dataset-building code for the event and direction models.
+
+Extracted from the former ttm_event_dataset.py when the TTM-R3 fine-tuning
+pipeline was removed; the TimesFM 3.0 scripts and the adapta package build
+their feature channels here.
+
+Channel 0 of a channel set is the model's target series; the rest are passed
+to TimesFM as past_only_covariates.
+
+Options history lives in DuckDB (options_daily_iv), derived from raw
+marketdata.app chains by ci/backfill-marketdata.js phase D, with per-moneyness
+buckets from options_daily_buckets (python/options_buckets.py).
 """
-Build a binary classification dataset for TTM-R3 next-day "big event" forecasting.
-
-A "big event" is defined as a day whose event magnitude (volume * |return|)
-lands in the global top 20% of the training set. Per-ticker normalization is
-removed; instead we feed log(event_magnitude + 1) as a global channel and let
-TTM's internal standardization handle scale differences.
-
-Reads from the project's DuckDB (`articles.db`) and emits sliding-window
-samples. The context length is chosen to be divisible by TTM-R3's pretrained
-patch size (9) so patch weights are preserved.
-
-Output formats:
-- `train.jsonl` / `val.jsonl` / `test.jsonl` lines:
-  {
-    "id": "AAPL_2024-01-15",
-    "ticker": "AAPL",
-    "date": "2024-01-15",
-    "context": {
-      "dates": [...],
-      "values": [[...], ...]   # (context_length, n_channels)
-    },
-    "label": 1,                # 1 = next day is a top-20% event
-    "target_raw": 1234567.89,  # next-day volume * |return|
-  }
-
-Run:
-    python/venv-ttm/bin/python python/ttm_event_dataset.py --db articles.db --out data/ttm-events
-"""
-
-import argparse
-import json
-import math
-import os
-import sys
-from pathlib import Path
 
 import duckdb
 import numpy as np
 import pandas as pd
 
 
-# Feature channels (must match model num_input_channels).
-# Channel 0 is the log event magnitude of past days; the rest are covariates.
-#
+
 # Options history lives in DuckDB (options_daily_iv), derived from raw
-# marketdata.app chains by ci/backfill-marketdata.js phase D. It replaces the
-# former ci/weighted-iv-history.json, which was a by-product of screening runs.
-# Note the DB now carries three expirations (exp1/exp2/exp3, exp3 added by
-# schema migration 15), matching the JSON record layout.
+# marketdata.app chains by ci/backfill-marketdata.js phase D. The DB carries
+# three expirations (exp1/exp2/exp3, exp3 added by schema migration 15).
 OPTIONS_EXPIRATIONS = ("exp1", "exp2", "exp3")
 
 # Fixed OTM moneyness buckets, derived per (ticker, date, expiration, side) by
-# ttm_options_buckets.py into the options_daily_buckets table.
+# options_buckets.py into the options_daily_buckets table.
 BUCKET_IDS = (1, 2, 3, 4, 5)
 # Slimmed to dollar-volume ranks only: a 60-channel run including the bucket IV
 # ranks overfit and regressed (test AUROC 0.718 vs the 14-channel 0.825). The
@@ -65,14 +38,58 @@ BUCKET_CHANNELS = [
     for b in BUCKET_IDS
 ]
 
+# Per-bucket put/call relativities, both computable from options_daily_buckets:
+#   put_call_dv_ratio — put DV vs call DV at the SAME moneyness (the red-vs-green
+#     bar balance in the strike chart)
+#   pc_iv_skew        — put IV minus call IV at the same bucket (smile asymmetry)
+SKEW_CHANNELS = [
+    f"b{b}_{stat}_rank"
+    for b in BUCKET_IDS
+    for stat in ("put_call_dv_ratio", "pc_iv_skew")
+]
+
+# Strike-level structure from options_chain_history (the bars of the strike
+# chart, below bucket resolution):
+#   strike_conc_rank    — share of the day's option DV in the single largest
+#                         contract ("whale" bars like a single huge strike)
+#   eff_strikes_rank    — DV-entropy "effective number of active strikes"
+#   call_centroid_rank  — DV-weighted mean OTM distance of calls (where the
+#                         green/red action sits relative to spot)
+#   put_centroid_rank
+STRIKE_CHANNELS = [
+    "strike_conc_rank",
+    "eff_strikes_rank",
+    "call_centroid_rank",
+    "put_centroid_rank",
+]
+
+# Weekly (5-trading-day) aggregates of the percentile-ranked options metrics.
+# Computed in build_options_features on the centred ranks.
+WEEKLY_OPTION_CHANNELS = [
+    "total_option_dv_log_rank_wmax",   # 5d max of the total option DV rank
+    "total_option_dv_log_rank_wmean",  # 5d mean of the total option DV rank
+    "atm_call_iv_rank_wmax",           # 5d max of the ATM call IV rank
+    "atm_put_iv_rank_wmax",            # 5d max of the ATM put IV rank
+    "call_iv_spread_rank_wslope",      # 5d change in the call IV spread rank
+    "put_iv_spread_rank_wslope",       # 5d change in the put IV spread rank
+    "dv_x_iv_wmean",                   # 5d mean of min(DV rank, ATM call IV rank)
+]
+
+# Extra channels beyond the core options block: the third expiration's DTE,
+# the weekly aggregates, and the strike-structure channels (bucket skew +
+# per-contract stats).
+FULL2_EXTRA_CHANNELS = (
+    ["exp3_dte_log"] + WEEKLY_OPTION_CHANNELS + SKEW_CHANNELS + STRIKE_CHANNELS
+)
+
+# Plot-faithful channel set: the event-magnitude target plus options-derived
+# channels only. The old price/volume covariates (log_close, log_volume,
+# return, gap, range, volatility) were removed — nothing in the strike chart
+# maps to them, and the options block carries the predictive signal. The price
+# columns are still computed by build_ticker_features; they are just no longer
+# fed to the models.
 CHANNELS = [
-    "log_event_magnitude",    # log(volume * |return| + 1)
-    "log_close",              # log(close), centered on last value in window
-    "log_volume",             # log(volume), centered on median of window
-    "return",                 # close-to-close log return
-    "gap",                    # (open - prev_close) / prev_close
-    "range",                  # (high - low) / close
-    "volatility",             # rolling std of returns over window
+    "log_event_magnitude",    # log(volume * |return| + 1) — the target
     # Options channels. All IV inputs are dollar-volume-weighted (see
     # build_options_features); levels are within-ticker percentile ranks so
     # cross-ticker IV scale differences do not leak into the model.
@@ -87,12 +104,8 @@ CHANNELS = [
     # expiry rather than "expires today".
     "exp1_dte_log",
     "exp2_dte_log",
-    # NOTE: put-side mirrors (put_iv_spread_rank/delta, atm_put_iv_rank/delta)
-    # and the per-moneyness-bucket DV ranks (BUCKET_CHANNELS) were tested
-    # against this channel set and regressed test AUROC (put side 0.758,
-    # buckets 0.72-0.75, vs ~0.80 here) at the current ~16k training samples.
-    # The code stays in build_options_features; re-add the channels here when
-    # the history is deeper.
+    # Put mirrors, exp3 DTE, weekly aggregates, and strike-structure channels.
+    *FULL2_EXTRA_CHANNELS,
     "options_missing",           # 1 if no options snapshot for this date
 ]
 
@@ -121,107 +134,55 @@ PUT_OPTION_CHANNELS = [
 ]
 ALL_OPTION_CHANNELS = OPTION_CHANNELS[:4] + PUT_OPTION_CHANNELS + OPTION_CHANNELS[4:]
 
-# 20-channel "full" event set: the 16-channel base set with the put-side
-# options mirrors spliced in alongside the call channels.
-FULL_CHANNELS = [
-    *CHANNELS[:7],
-    *ALL_OPTION_CHANNELS,
-    "options_missing",
-]
+# Legacy aliases. Since the price/volume channels were pruned, every event
+# set is the same plot-faithful list; the distinct names are kept so old
+# scripts and lab presets keep resolving.
+FULL_CHANNELS = list(CHANNELS)
+FULL2_CHANNELS = list(CHANNELS)
+OPTIONS_ONLY_CHANNELS = list(CHANNELS)
 
-# Weekly (5-trading-day) aggregates of the percentile-ranked options metrics.
-# Computed in build_options_features on the centred ranks.
-WEEKLY_OPTION_CHANNELS = [
-    "total_option_dv_log_rank_wmax",   # 5d max of the total option DV rank
-    "total_option_dv_log_rank_wmean",  # 5d mean of the total option DV rank
-    "atm_call_iv_rank_wmax",           # 5d max of the ATM call IV rank
-    "atm_put_iv_rank_wmax",            # 5d max of the ATM put IV rank
-    "call_iv_spread_rank_wslope",      # 5d change in the call IV spread rank
-    "put_iv_spread_rank_wslope",       # 5d change in the put IV spread rank
-    "dv_x_iv_wmean",                   # 5d mean of min(DV rank, ATM call IV rank)
-]
-
-# Channels full2 adds on top of full: the third expiration's DTE plus the
-# weekly aggregates above.
-FULL2_EXTRA_CHANNELS = ["exp3_dte_log"] + WEEKLY_OPTION_CHANNELS
-
-# 28-channel "full2" event set.
-FULL2_CHANNELS = [
-    *CHANNELS[:7],
-    *ALL_OPTION_CHANNELS,
-    *FULL2_EXTRA_CHANNELS,
-    "options_missing",
-]
-
-# Options-only event set: drops the price/volume channels (log_close,
-# log_volume, return, gap, range, volatility) and keeps only the target plus
-# the options-derived block. Used to test whether the options features alone
-# carry the event signal.
-OPTIONS_ONLY_CHANNELS = [
-    "log_event_magnitude",
-    *ALL_OPTION_CHANNELS,
-    *FULL2_EXTRA_CHANNELS,
-    "options_missing",
-]
-
-# Direction-model channel set: drops log_event_magnitude (direction-agnostic
-# by construction — it encodes move SIZE, not sign) and adds the put-side
-# mirrors to the call channels.
+# Direction-model channel set: log_close as the forecast target series
+# (channel 0) plus the same options-derived covariates.
 DIRECTION_CHANNELS = [
     "log_close",
-    "log_volume",
-    "return",
-    "gap",
-    "range",
-    "volatility",
     *ALL_OPTION_CHANNELS,
+    *FULL2_EXTRA_CHANNELS,
     "options_missing",
 ]
 N_CHANNELS = len(CHANNELS)
 
+# Legacy price/volume covariates. Pruned from the production sets (nothing in
+# the strike chart maps to them) but still computed by build_ticker_features
+# and kept as a named list so the Model Lab can compare the pruned set
+# head-to-head against the pre-prune setup on identical samples.
+PRICE_CHANNELS = ["log_close", "log_volume", "return", "gap", "range", "volatility"]
+
+# The pre-prune "full2" event set (target + price/volume covariates + the
+# options block). Lab-only; not used by the production forecast scripts.
+FULL2_LEGACY_CHANNELS = [
+    "log_event_magnitude",
+    *PRICE_CHANNELS,
+    *ALL_OPTION_CHANNELS,
+    *FULL2_EXTRA_CHANNELS,
+    "options_missing",
+]
+
 # Target definition
-EVENT_QUANTILE = 0.80  # top 20% of training-set event magnitudes are "events"
+EVENT_QUANTILE = 0.92  # a ticker's own top 8% of days are "events" — relative, not global
 CONTEXT_LENGTH = 36    # divisible by TTM-R3 patch_length = 9
+MIN_THRESHOLD_DAYS = 60  # trading days of history needed before a per-ticker threshold is trusted
 
 
-def load_prices(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
-    """Load all price bars from stock_prices, keeping the latest close per (ticker, date)."""
-    query = """
-        SELECT
-            ticker,
-            date,
-            open,
-            high,
-            low,
-            close,
-            volume
-        FROM (
-            SELECT *,
-                ROW_NUMBER() OVER (PARTITION BY ticker, date ORDER BY fetched_at DESC) AS rn
-            FROM stock_prices
-        )
-        WHERE rn = 1
-        ORDER BY ticker, date
-    """
-    df = con.execute(query).fetchdf()
-    df["date"] = pd.to_datetime(df["date"]).dt.date
-    for col in ["open", "high", "low", "close", "volume"]:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-    return df
-
-
-def load_events(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
-    """Load historical stock events keyed by (ticker, date)."""
-    query = """
-        SELECT ticker, event_date, classification,
-               residual_return, volume_gap_product
-        FROM stock_events
-    """
-    df = con.execute(query).fetchdf()
-    df["event_date"] = pd.to_datetime(df["event_date"]).dt.date
-    df["residual_return"] = pd.to_numeric(df["residual_return"], errors="coerce")
-    df["volume_gap_product"] = pd.to_numeric(df["volume_gap_product"], errors="coerce")
-    return df
+def per_ticker_threshold(magnitudes, quantile=EVENT_QUANTILE, min_days=MIN_THRESHOLD_DAYS):
+    """Event threshold from a ticker's OWN history: the `quantile` percentile
+    of its event magnitudes, so ~top (1 - quantile) of its trading days count
+    as event days regardless of the ticker's absolute volume/price scale.
+    Returns None when there is too little history to trust the quantile."""
+    vals = np.asarray(magnitudes, dtype=float)
+    vals = vals[np.isfinite(vals) & (vals > 0)]
+    if len(vals) < min_days:
+        return None
+    return float(np.quantile(vals, quantile))
 
 
 def _pos(value):
@@ -463,8 +424,29 @@ def load_options_buckets(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     return wide
 
 
+def load_options_strike_stats(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    """Load per-day strike-level stats from DuckDB (options_daily_strike_stats).
+
+    One row per (ticker, date) with the raw columns top_dv_share, eff_strikes,
+    call_centroid_m, put_centroid_m computed by python/options_buckets.py from
+    the raw contracts in options_chain_history. Empty DataFrame when the table
+    is missing (strike stats not yet backfilled).
+    """
+    try:
+        wide = con.execute(
+            "SELECT * FROM options_daily_strike_stats ORDER BY ticker, date"
+        ).fetch_df()
+    except duckdb.CatalogException:
+        return pd.DataFrame()
+    if wide.empty:
+        return pd.DataFrame()
+    wide["date"] = pd.to_datetime(wide["date"]).dt.date
+    return wide
+
+
 def build_options_features(
-    opts_df: pd.DataFrame, buckets_df: pd.DataFrame = None
+    opts_df: pd.DataFrame, buckets_df: pd.DataFrame = None,
+    strike_stats_df: pd.DataFrame = None,
 ) -> pd.DataFrame:
     """Compute percentile-ranked options features and their day-over-day deltas.
 
@@ -518,6 +500,42 @@ def build_options_features(
                 df[raw_col] = np.log1p(df[raw_col].fillna(0))
             df[ch] = df.groupby("ticker")[raw_col].transform(_pct_rank)
 
+        # Put/call relativities at matched moneyness, pooled over exp1+exp2
+        # (the bucket table covers the two nearest expirations). The DV ratio
+        # is the red-vs-green bar balance at one moneyness slice; the IV skew
+        # is put IV minus call IV there.
+        for b in BUCKET_IDS:
+            def _col(name):
+                return df[name] if name in df.columns else pd.Series(np.nan, index=df.index)
+            call_dv = sum(_col(f"exp{e}_call_b{b}_dv") for e in (1, 2))
+            put_dv = sum(_col(f"exp{e}_put_b{b}_dv") for e in (1, 2))
+            call_iv = pd.concat([_col(f"exp{e}_call_b{b}_iv") for e in (1, 2)], axis=1).mean(axis=1)
+            put_iv = pd.concat([_col(f"exp{e}_put_b{b}_iv") for e in (1, 2)], axis=1).mean(axis=1)
+            df[f"b{b}_put_call_dv_ratio"] = np.where(call_dv > 0, put_dv / call_dv, np.nan)
+            df[f"b{b}_pc_iv_skew"] = put_iv - call_iv
+            # exp1/exp2 bucket columns are absent when the bucket table is
+            # missing entirely; normalise to NaN so the rank below is NaN too.
+            for raw in (f"b{b}_put_call_dv_ratio", f"b{b}_pc_iv_skew"):
+                df[raw] = df[raw].replace([np.inf, -np.inf], np.nan)
+                df[f"{raw}_rank"] = df.groupby("ticker")[raw].transform(_pct_rank)
+
+    # Strike-level structure from the raw chains (whale concentration,
+    # effective strike count, OTM placement of call/put dollar volume).
+    if strike_stats_df is not None and not strike_stats_df.empty:
+        df = df.merge(strike_stats_df, on=["ticker", "date"], how="left")
+    else:
+        for raw in ("top_dv_share", "eff_strikes", "call_centroid_m", "put_centroid_m"):
+            if raw not in df.columns:
+                df[raw] = np.nan
+    strike_ranks = {
+        "top_dv_share": "strike_conc_rank",
+        "eff_strikes": "eff_strikes_rank",
+        "call_centroid_m": "call_centroid_rank",
+        "put_centroid_m": "put_centroid_rank",
+    }
+    for raw, ch in strike_ranks.items():
+        df[ch] = df.groupby("ticker")[raw].transform(_pct_rank)
+
     # Centre the rank levels on 0 (ranks are 0-100) so that the 0.0 used for
     # unobserved days sits at the middle of the distribution rather than at the
     # bottom of it. Without this, a missing snapshot would read as "lowest IV
@@ -525,7 +543,7 @@ def build_options_features(
     for col in ("call_iv_spread_rank", "put_iv_spread_rank",
                 "atm_call_iv_rank", "atm_put_iv_rank",
                 "total_option_dv_log_rank", "put_call_dv_ratio_rank",
-                *BUCKET_CHANNELS):
+                *BUCKET_CHANNELS, *SKEW_CHANNELS, *STRIKE_CHANNELS):
         if col in df.columns:
             df[col] = df[col] - 50.0
         else:
@@ -625,244 +643,3 @@ def build_ticker_features(df: pd.DataFrame, opts_df: pd.DataFrame = None) -> pd.
     return df
 
 
-def make_windows(
-    df: pd.DataFrame,
-    context_length: int,
-    feature_cols: list[str],
-    target: str = "event",
-) -> list[dict]:
-    """Create sliding-window samples from a single ticker dataframe.
-
-    target="event"     -> target_raw is the day's event magnitude; labels are
-                          assigned later via a global quantile threshold.
-    target="direction" -> target_raw is the day's close-to-close log return;
-                          label is its sign (1 = up), assigned in main().
-    """
-    df = df.sort_values("date").reset_index(drop=True)
-    samples = []
-    n = len(df)
-    if n < context_length + 1:
-        return samples
-
-    values_all = df[feature_cols].to_numpy(dtype=np.float32)
-
-    for i in range(context_length, n):
-        window = values_all[i - context_length:i]
-        target_row = df.iloc[i]
-
-        # Local centering for log_close and log_volume (skipped for channel
-        # sets that do not carry them, e.g. OPTIONS_ONLY_CHANNELS).
-        window_local = window.copy()
-        if "log_close" in feature_cols:
-            idx = feature_cols.index("log_close")
-            window_local[:, idx] -= window[-1, idx]
-        if "log_volume" in feature_cols:
-            idx = feature_cols.index("log_volume")
-            window_local[:, idx] -= float(np.nanmedian(window[:, idx]))
-
-        target_raw = (
-            float(target_row["event_magnitude"])
-            if target == "event"
-            else float(target_row["return"])
-        )
-
-        sample = {
-            "id": f"{target_row['ticker']}_{target_row['date']}",
-            "ticker": target_row["ticker"],
-            "date": str(target_row["date"]),
-            "context": {
-                "dates": [str(d) for d in df["date"].iloc[i - context_length:i].tolist()],
-                "values": window_local.tolist(),
-            },
-            "target_raw": target_raw,
-            "label": 0,  # filled in after the global threshold is computed
-        }
-        samples.append(sample)
-
-    return samples
-
-
-def split_samples(samples: list[dict], train_ratio: float = 0.7, val_ratio: float = 0.15) -> tuple:
-    """Chronological split with date-disjoint folds.
-
-    Sorting by (ticker, date) and slicing would partition the data by ticker
-    alphabetically rather than by time -- train would hold one set of tickers and
-    test an entirely disjoint set, all covering the same dates. That measures
-    cross-ticker generalization, not next-day forecasting, and lets the model see
-    the future of every test date during training.
-
-    Splitting on date boundaries instead keeps every ticker in all three folds
-    while guaranteeing that no training sample post-dates a validation or test
-    sample. Cut points snap to date boundaries so a single date never straddles
-    two folds.
-    """
-    samples_sorted = sorted(samples, key=lambda s: (s["date"], s["ticker"]))
-    dates = sorted({s["date"] for s in samples_sorted})
-    if not dates:
-        return [], [], []
-
-    n_dates = len(dates)
-    n_train_dates = int(n_dates * train_ratio)
-    n_val_dates = int(n_dates * val_ratio)
-    train_end = dates[n_train_dates] if n_train_dates < n_dates else None
-    val_end = dates[n_train_dates + n_val_dates] if n_train_dates + n_val_dates < n_dates else None
-
-    train, val, test = [], [], []
-    for s in samples_sorted:
-        if train_end is None or s["date"] < train_end:
-            train.append(s)
-        elif val_end is None or s["date"] < val_end:
-            val.append(s)
-        else:
-            test.append(s)
-    return train, val, test
-
-
-def apply_labels(samples: list[dict], threshold: float) -> None:
-    """Assign binary labels based on the global event-magnitude threshold."""
-    for s in samples:
-        s["label"] = 1 if s["target_raw"] >= threshold else 0
-
-
-def write_jsonl(samples: list[dict], path: Path):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
-        for s in samples:
-            f.write(json.dumps(s) + "\n")
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Build TTM-R3 binary event dataset")
-    parser.add_argument("--db", default="articles.db", help="Path to DuckDB database")
-    parser.add_argument("--out", default="data/ttm-events", help="Output directory")
-    parser.add_argument("--context-length", type=int, default=CONTEXT_LENGTH, help="History window length")
-    parser.add_argument("--event-quantile", type=float, default=EVENT_QUANTILE, help="Global event threshold quantile")
-    parser.add_argument("--target", choices=["event", "direction"], default="event",
-                        help="event: predict top-quantile volume*|return| days; "
-                             "direction: predict the sign of the next-day return")
-    parser.add_argument("--channel-set", choices=["event", "full", "full2", "options_only"], default="event",
-                        help="event: the 16-channel CHANNELS set; full: CHANNELS plus the "
-                             "put-side options mirrors (20 channels); full2: full plus "
-                             "exp3_dte_log and weekly aggregate options channels (28 channels); "
-                             "options_only: target plus options channels only, no price/volume "
-                             "channels (21 channels)")
-    args = parser.parse_args()
-
-    if not os.path.exists(args.db):
-        print(f"Database not found: {args.db}", file=sys.stderr)
-        sys.exit(1)
-
-    con = duckdb.connect(args.db, read_only=True)
-    try:
-        prices = load_prices(con)
-        events = load_events(con)
-        # Options history also comes from the DB, so read it before closing.
-        opts_history = load_options_history(con)
-        opts_buckets = load_options_buckets(con)
-    finally:
-        con.close()
-
-    if prices.empty:
-        print("No price data found.", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"Loaded {len(prices)} price rows across {prices['ticker'].nunique()} tickers")
-    print(f"Loaded {len(events)} historical events")
-
-    # Pre-compute percentile-ranked options features.
-    if not opts_history.empty:
-        opts_history = build_options_features(opts_history, opts_buckets)
-        print(f"Loaded options history for {opts_history['ticker'].nunique()} tickers / {len(opts_history)} rows")
-        if opts_buckets.empty:
-            print("No options_daily_buckets table; bucket channels will be zeroed.")
-    else:
-        print("No options history found; options channels will be zeroed.")
-
-    # Build features per ticker
-    ticker_frames = []
-    for ticker, grp in prices.groupby("ticker"):
-        ticker_opts = opts_history[opts_history["ticker"] == ticker] if not opts_history.empty else None
-        framed = build_ticker_features(grp, ticker_opts)
-        # Where historical volume_gap_product exists, prefer it for the target.
-        merged = grp[["ticker", "date"]].merge(
-            events[["ticker", "event_date", "volume_gap_product"]],
-            left_on=["ticker", "date"],
-            right_on=["ticker", "event_date"],
-            how="left",
-        )
-        framed["event_magnitude"] = merged["volume_gap_product"].fillna(framed["event_magnitude"])
-        framed["log_event_magnitude"] = np.log1p(framed["event_magnitude"])
-        ticker_frames.append(framed)
-
-    prices = pd.concat(ticker_frames, ignore_index=True)
-
-    # Build windows
-    if args.target == "direction":
-        channels = DIRECTION_CHANNELS
-    else:
-        channels = {"event": CHANNELS, "full": FULL_CHANNELS, "full2": FULL2_CHANNELS, "options_only": OPTIONS_ONLY_CHANNELS}[args.channel_set]
-    all_samples = []
-    for ticker, grp in prices.groupby("ticker"):
-        samples = make_windows(grp, args.context_length, channels, target=args.target)
-        all_samples.extend(samples)
-
-    if not all_samples:
-        print("No samples generated. Check context length and available data.", file=sys.stderr)
-        sys.exit(1)
-
-    train, val, test = split_samples(all_samples)
-
-    if args.target == "direction":
-        # Label = sign of the next-day log return. No threshold to learn from
-        # the train fold; store 0.0 so downstream tooling has a value.
-        threshold = 0.0
-        apply_labels(train, threshold)
-        apply_labels(val, threshold)
-        apply_labels(test, threshold)
-    else:
-        # Global threshold comes from training labels only to avoid leakage.
-        train_magnitudes = [s["target_raw"] for s in train]
-        threshold = float(np.quantile(train_magnitudes, args.event_quantile))
-        apply_labels(train, threshold)
-        apply_labels(val, threshold)
-        apply_labels(test, threshold)
-
-    out_dir = Path(args.out)
-    write_jsonl(train, out_dir / "train.jsonl")
-    write_jsonl(val, out_dir / "val.jsonl")
-    write_jsonl(test, out_dir / "test.jsonl")
-
-    train_labels = [s["label"] for s in train]
-    pos = sum(train_labels)
-    neg = len(train_labels) - pos
-    class_weight = neg / pos if pos > 0 else 1.0
-    bce_pos_weight = math.sqrt(class_weight)
-
-    stats = {
-        "target": args.target,
-        "tickers": sorted(prices["ticker"].unique().tolist()),
-        "context_length": args.context_length,
-        "n_channels": len(channels),
-        "channels": channels,
-        "event_quantile": args.event_quantile,
-        "event_threshold": threshold,
-        "train_samples": len(train),
-        "val_samples": len(val),
-        "test_samples": len(test),
-        "train_positives": pos,
-        "train_negatives": neg,
-        "class_weight": round(class_weight, 4),
-        "bce_pos_weight": round(bce_pos_weight, 4),
-    }
-    with open(out_dir / "stats.json", "w") as f:
-        json.dump(stats, f, indent=2)
-
-    print(f"Wrote {len(train)} train / {len(val)} val / {len(test)} test samples to {out_dir}")
-    print(f"Global event threshold (top {(1 - args.event_quantile) * 100:.0f}%): {threshold:,.2f}")
-    print(f"Train positives: {pos} ({pos / len(train):.1%}), negatives: {neg}")
-    print(f"Class weight (neg/pos): {class_weight:.3f}")
-    print(f"Channels: {channels}")
-
-
-if __name__ == "__main__":
-    main()

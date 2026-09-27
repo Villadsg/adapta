@@ -145,6 +145,9 @@ adapta/
 ├── ci/
 │   ├── ticker-screen.js             # Screening logic, UNIVERSE list, revision ranking
 │   ├── daily-event-scan.js          # GitHub Actions daily scan with Telegram alerts
+│   ├── backfill-marketdata.js       # MarketData.app backfill phases A–D; --maintenance for cron
+│   ├── options-coverage.js          # Classifies tickers: covered / stale / pending / confirmed options-less
+│   ├── options-coverage.json        # Coverage report (generated; skip list for phase C)
 │   ├── config.json                  # Screening config (tickers, thresholds)
 │   ├── screening-results.html       # Latest screening output (generated)
 │   ├── screening-favorites.json     # Starred tickers (generated)

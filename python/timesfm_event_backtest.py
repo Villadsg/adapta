@@ -3,7 +3,7 @@
 NOTE: TimesFM 3.0 pretrained weights are licensed under the
 `timesfm-non-commercial-license-v1.0` (non-commercial, non-production use only).
 
-Parallel experiment to python/ttm_event_backtest.py: predicts the next-day
+Parallel experiment to python/timesfm_event_backtest.py: predicts the next-day
 log_event_magnitude (channel 0 of each test sample's context) with TimesFM 3.0,
 converts the 1-step quantile forecast into P(event) by linear interpolation
 against T_log = log1p(event_threshold), and reports the same metrics plus the
@@ -20,7 +20,7 @@ from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_sc
 
 from timesfm3 import ModelConfig, TimesFM3Evaluator
 
-STATS_PATH = Path("data/ttm-events/stats.json")
+STATS_PATH = Path("data/events/stats.json")
 
 
 def metrics(probs, labels):
@@ -49,7 +49,7 @@ def prob_above_threshold(quantile_values, quantile_levels, t_log):
 
 def main():
     parser = argparse.ArgumentParser(description="Zero-shot TimesFM 3.0 event back-test")
-    parser.add_argument("--test", default="data/ttm-events/test.jsonl")
+    parser.add_argument("--test", default="data/events/test.jsonl")
     parser.add_argument("--output", default="python/models/timesfm-3.0-event/backtest.json")
     parser.add_argument("--checkpoint", default="google/timesfm-3.0-pytorch")
     parser.add_argument("--batch-size", type=int, default=256)

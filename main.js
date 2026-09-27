@@ -1,4 +1,5 @@
 const path = require('path');
+const { spawn } = require('child_process');
 // .env.local first (real keys, gitignored), then .env as fallback.
 require('dotenv').config({ path: [path.join(__dirname, '.env.local'), path.join(__dirname, '.env')] });
 
@@ -19,6 +20,16 @@ global.fetch = function(url, opts = {}) {
 };
 
 const { app, BrowserWindow, ipcMain, globalShortcut } = require('electron');
+
+// Sites behind bot protection (idealista/DataDome, Yahoo, ...) flag the default
+// Electron UA, which contains the app name and an "Electron/x.y" token. Identify
+// as the bundled Chromium version instead; keep the real platform so the UA stays
+// consistent with the sec-ch-ua / navigator.userAgentData client hints.
+const UA_PLATFORM =
+  process.platform === 'win32' ? 'Windows NT 10.0; Win64; x64' :
+  process.platform === 'darwin' ? 'Macintosh; Intel Mac OS X' :
+  'X11; Linux x86_64';
+app.userAgentFallback = `Mozilla/5.0 (${UA_PLATFORM}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`;
 const ArticleDatabase = require('./src/services/database');
 const PriceTrackingService = require('./src/services/priceTracking');
 const RunArchiver = require('./src/services/runArchiver');
@@ -28,6 +39,9 @@ const IBOptionsProvider = require('./src/services/ibOptionsProvider');
 const articleExtractor = require('./src/services/articleExtractor');
 const ChronosHoldPeriodService = require('./src/services/chronosHoldPeriod');
 const TTMEventAnalysisService = require('./src/services/ttmEventAnalysis');
+const TimesFMDirectionService = require('./src/services/timesfmDirection');
+const TimesFMLabService = require('./src/services/timesfmLab');
+const LabInsightsService = require('./src/services/labInsights');
 const { screenTickers, reviseTickers, formatAge } = require('./ci/ticker-screen');
 const { classifyTickerNews, tagTickerEvents } = require('./src/services/newsClassifier');
 const YahooFinance = require('yahoo-finance2').default;
@@ -46,6 +60,9 @@ let optionsAnalyzer;
 let chronosHoldService;
 let runArchiver;
 let ttmEventService;
+let timesfmDirectionService;
+let timesfmLabService;
+let labInsightsService;
 
 
 // Performance optimization: debounce timers
@@ -624,6 +641,113 @@ ipcMain.handle('forecast-event-magnitude', async (event, ticker, date = null) =>
   }
 });
 
+// Model lab: feature-adjustable TimesFM backtests streamed to the UI.
+
+// Channel/preset metadata for the lab UI, extracted from the Python source of
+// truth once per app session and cached.
+let labMetaCache = null;
+ipcMain.handle('lab-meta', async () => {
+  if (labMetaCache) return labMetaCache;
+  try {
+    const stdout = await new Promise((resolve, reject) => {
+      const child = spawn(timesfmLabService.pythonExe,
+        [timesfmLabService.scriptPath, '--dump-channels'],
+        { cwd: __dirname, env: process.env });
+      let out = '', err = '';
+      child.stdout.on('data', (d) => { out += d.toString(); });
+      child.stderr.on('data', (d) => { err += d.toString(); });
+      child.on('error', reject);
+      child.on('close', (code) => code === 0 ? resolve(out) : reject(new Error(err || `exit ${code}`)));
+    });
+    labMetaCache = JSON.parse(stdout);
+    return labMetaCache;
+  } catch (error) {
+    console.error('[Lab] meta extraction failed:', error.message);
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle('lab-search', async (event) => {
+  try {
+    if (!timesfmLabService) {
+      return { success: false, error: 'Lab service not initialized' };
+    }
+    if (timesfmLabService.isRunning()) {
+      return { success: false, error: 'A search is already in progress' };
+    }
+    const sender = event.sender;
+    const result = await timesfmLabService.search((line) => {
+      if (!sender.isDestroyed()) sender.send('lab-log', { line });
+    });
+    return { success: true, ...result };
+  } catch (error) {
+    console.error('[Lab] search failed:', error.message);
+    return { success: false, error: error.message };
+  }
+});
+
+// Backtest the current production feature setup for both targets as-is.
+ipcMain.handle('lab-backtest', async (event) => {
+  try {
+    if (!timesfmLabService) {
+      return { success: false, error: 'Lab service not initialized' };
+    }
+    if (timesfmLabService.isRunning()) {
+      return { success: false, error: 'A lab run is already in progress' };
+    }
+    const sender = event.sender;
+    const result = await timesfmLabService.backtest((line) => {
+      if (!sender.isDestroyed()) sender.send('lab-log', { line });
+    });
+    return { success: true, ...result };
+  } catch (error) {
+    console.error('[Lab] backtest failed:', error.message);
+    return { success: false, error: error.message };
+  }
+});
+
+// Local-LLM narration of search results / dataset checks (advisory text only).
+ipcMain.handle('lab-insights', async (event, kind, payload) => {
+  try {
+    if (!labInsightsService) {
+      return { success: false, error: 'Insights service not initialized' };
+    }
+    const text = kind === 'dataset'
+      ? await labInsightsService.datasetInsights(payload || {})
+      : await labInsightsService.searchInsights(payload || {});
+    if (!text) return { success: false, error: 'Empty response from insight model' };
+    return { success: true, text };
+  } catch (error) {
+    console.error('[Insights] generation failed:', error.message);
+    return { success: false, error: error.message };
+  }
+});
+
+// Dataset health summary for the lab UI (sample counts, coverage, warnings).
+ipcMain.handle('lab-dataset', async () => {
+  try {
+    if (!timesfmLabService) {
+      return { success: false, error: 'Lab service not initialized' };
+    }
+    return { success: true, info: await timesfmLabService.datasetInfo() };
+  } catch (error) {
+    console.error('[Lab] dataset check failed:', error.message);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('lab-cancel', async () => {
+  if (timesfmLabService && timesfmLabService.cancel()) {
+    console.log('[Lab] Cancel requested');
+    return { success: true };
+  }
+  return { success: false, error: 'No search in progress' };
+});
+
+ipcMain.handle('lab-status', async () => {
+  return { running: !!(timesfmLabService && timesfmLabService.isRunning()) };
+});
+
 // Combine IV from a saved history record (exp1/exp2/exp3 format) using the
 // single-pool scheme: each quantity is weighted across expirations by its own DV.
 //
@@ -774,6 +898,21 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       }
     }
 
+    // Feature sets promoted from the Model Lab, if any: per-target channel
+    // lists that override the production defaults for both forecasts.
+    // Target-only sets (length 1) are valid — the search prunes to them when
+    // no covariate earns its keep; the python side handles no-covariate input.
+    let labChannels = {};
+    try {
+      labChannels = (await database.getSetting('screening.channels', {})) || {};
+    } catch (_) { /* defaults are fine */ }
+    const isValidChannels = (list, targetChannel) =>
+      Array.isArray(list) && list.length >= 1 && list[0] === targetChannel;
+    const eventChannels = isValidChannels(labChannels.event, 'log_event_magnitude') ? labChannels.event : null;
+    const directionChannels = isValidChannels(labChannels.direction, 'log_close') ? labChannels.direction : null;
+    if (eventChannels) console.log(`[Screen] Event forecast using lab feature set (${eventChannels.length} channels)`);
+    if (directionChannels) console.log(`[Screen] Direction forecast using lab feature set (${directionChannels.length} channels)`);
+
     // Enrich every screened ticker with its next-day TTM event probability.
     // All tickers go through ONE batched forward pass (GPU when available), so
     // the model weights and Python startup are paid once for the whole run —
@@ -792,7 +931,7 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
         console.log(`[Screen] Running batched TTM event forecast for ${toForecast.length} ticker(s)...`);
         const t0 = Date.now();
         try {
-          const probs = await ttmEventService.forecastProbabilities(toForecast);
+          const probs = await ttmEventService.forecastProbabilities(toForecast, null, eventChannels);
           for (const [ticker, prob] of probs) {
             const entry = tickerMap.get(ticker);
             if (entry) entry.eventProbability = prob;
@@ -800,6 +939,39 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
           console.log(`[Screen] TTM forecast: ${probs.size}/${toForecast.length} scored in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
         } catch (err) {
           console.error(`[Screen] TTM batch forecast failed: ${err.message}`);
+        }
+      }
+    }
+
+    // Direction forecast: probability of a positive return on the next
+    // trading day (options-only covariates).
+    if (timesfmDirectionService) {
+      const tickerMap = new Map();
+      for (const entry of result.allTickers) {
+        if (entry.ticker && !entry.skipped && !entry.error) {
+          tickerMap.set(entry.ticker, entry);
+        }
+      }
+      const toForecast = [...tickerMap.keys()];
+
+      if (toForecast.length > 0) {
+        console.log(`[Screen] Running batched TimesFM direction forecast for ${toForecast.length} ticker(s)...`);
+        const t0 = Date.now();
+        try {
+          const recs = await timesfmDirectionService.forecastRecords(toForecast, null, directionChannels);
+          for (const [ticker, rec] of recs) {
+            const entry = tickerMap.get(ticker);
+            if (entry) entry.directionForecast = {
+              upProbability: rec.up_probability,
+              downProbability: rec.down_probability,
+              medianReturnPct: rec.median_return_pct,
+              horizonTradingDays: rec.horizon_trading_days,
+              forecastDate: rec.forecast_date,
+            };
+          }
+          console.log(`[Screen] Direction forecast: ${recs.size}/${toForecast.length} scored in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+        } catch (err) {
+          console.error(`[Screen] Direction batch forecast failed: ${err.message}`);
         }
       }
     }
@@ -1587,6 +1759,9 @@ async function initBackend() {
     outputDir: path.join(__dirname, 'ci', 'screening-runs'),
   });
   ttmEventService = new TTMEventAnalysisService();
+  timesfmDirectionService = new TimesFMDirectionService();
+  timesfmLabService = new TimesFMLabService();
+  labInsightsService = new LabInsightsService();
 
   priceTracker.setOptionsAnalyzer(optionsAnalyzer);
 
@@ -1628,6 +1803,7 @@ app.on('window-all-closed', async () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  if (labInsightsService && labInsightsService.shutdown) labInsightsService.shutdown();
 });
 
 app.on('activate', () => {

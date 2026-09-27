@@ -17,7 +17,7 @@ class TTMEventAnalysisService {
     this.scriptPath = options.scriptPath || path.join(this.projectRoot, 'python', 'timesfm_event_forecast.py');
     // TimesFM 3.0 uses the checkpoint path directly.
     this.modelDir = options.modelDir || 'google/timesfm-3.0-pytorch';
-    this.datasetStats = options.datasetStats || path.join(this.projectRoot, 'data', 'ttm-events', 'stats.json');
+    this.datasetStats = options.datasetStats || path.join(this.projectRoot, 'data', 'events', 'stats.json');
     this.dbPath = options.dbPath || path.join(this.projectRoot, 'articles.db');
     // 'auto' lets the script pick CUDA when available and fall back to CPU.
     this.device = options.device || process.env.TTM_DEVICE || 'auto';
@@ -30,7 +30,7 @@ class TTMEventAnalysisService {
    * @param {Object} payload - {ticker, date} or {tickers, date}
    * @returns {Promise<Object>} Parsed JSON from the script
    */
-  _run(payload) {
+  _run(payload, channels = null) {
     return new Promise((resolve, reject) => {
       // DuckDB does not allow a second process to read the DB while the main
       // Electron process holds the write lock. Copy to a temp file first.
@@ -51,6 +51,9 @@ class TTMEventAnalysisService {
         '--dataset-stats', this.datasetStats,
         '--device', this.device,
       ];
+      if (Array.isArray(channels) && channels.length > 0) {
+        args.push('--channels', channels.join(','));
+      }
 
       const child = spawn(this.pythonExe, args, {
         cwd: this.projectRoot,
@@ -97,8 +100,8 @@ class TTMEventAnalysisService {
    * @param {string|null} date Optional target date (YYYY-MM-DD)
    * @returns {Promise<Object>}
    */
-  async forecast(ticker, date = null) {
-    return this._run({ ticker, date });
+  async forecast(ticker, date = null, channels = null) {
+    return this._run({ ticker, date }, channels);
   }
 
   /**
@@ -116,12 +119,12 @@ class TTMEventAnalysisService {
    * @param {string|null} date Optional target date (YYYY-MM-DD)
    * @returns {Promise<{results: Array, errors: Array, device: string, count: number}>}
    */
-  async forecastBatch(tickers, date = null) {
+  async forecastBatch(tickers, date = null, channels = null) {
     const list = (tickers || []).map(t => String(t).toUpperCase()).filter(Boolean);
     if (list.length === 0) {
       return { results: [], errors: [], device: this.device, count: 0 };
     }
-    return this._run({ tickers: list, date });
+    return this._run({ tickers: list, date }, channels);
   }
 
   /**
@@ -131,9 +134,9 @@ class TTMEventAnalysisService {
    * @param {string|null} date
    * @returns {Promise<Map<string, number>>}
    */
-  async forecastProbabilities(tickers, date = null) {
+  async forecastProbabilities(tickers, date = null, channels = null) {
     const out = new Map();
-    const batch = await this.forecastBatch(tickers, date);
+    const batch = await this.forecastBatch(tickers, date, channels);
     for (const r of batch.results || []) {
       if (r.ticker && typeof r.event_probability === 'number') {
         out.set(r.ticker, r.event_probability);

@@ -23,10 +23,18 @@
  *   MARKET_DATA_API_KEY=... node ci/backfill-marketdata.js             # all phases A→D
  *   node ci/backfill-marketdata.js --phase=C                           # one phase only
  *   node ci/backfill-marketdata.js --phase=C --tickers=AAPL,QCOM       # subset
+ *   node ci/backfill-marketdata.js --phase=A,C                         # comma list
+ *   node ci/backfill-marketdata.js --phase=A,C --lookback=10           # short phase A window
+ *   node ci/backfill-marketdata.js --maintenance                       # A(1y)+C+D + coverage report
  *
- * Phase C is resumable: already-downloaded (ticker, date) pairs in
- * options_chain_history are skipped, and no-data days are remembered in
- * ci/backfill-state.json.
+ * Cron recipe (options data maintenance, see ci/options-coverage.js):
+ *   daily:   --phase=A,C --lookback=10   (refresh candles + new chain days)
+ *   weekly:  --maintenance               (full year + IV re-derive + prune list)
+ * Phase C is incremental: already-downloaded (ticker, date) pairs in
+ * options_chain_history are skipped, no-data days are remembered in
+ * ci/backfill-state.json, and tickers confirmed options-less by
+ * ci/options-coverage.json are skipped entirely. Needs the articles.db
+ * writer lock — skip quietly when the Electron app is holding it.
  */
 
 const path = require('path');
@@ -52,12 +60,14 @@ function sleep(ms) {
 }
 
 function parseArgs() {
-  const args = { phase: 'all', tickers: null };
+  const args = { phase: 'all', tickers: null, lookback: LOOKBACK_DAYS, maintenance: false };
   for (const a of process.argv.slice(2)) {
     if (a.startsWith('--phase=')) args.phase = a.slice('--phase='.length).toUpperCase();
     if (a.startsWith('--tickers=')) {
       args.tickers = a.slice('--tickers='.length).split(',').map(t => t.trim().toUpperCase()).filter(Boolean);
     }
+    if (a.startsWith('--lookback=')) args.lookback = parseInt(a.slice('--lookback='.length), 10) || LOOKBACK_DAYS;
+    if (a === '--maintenance') args.maintenance = true;
   }
   return args;
 }
@@ -113,9 +123,9 @@ async function loadBars(database, ticker, source) {
 
 // --- Phases ---
 
-async function phaseA(client, database, tickers) {
-  console.log('\n=== Phase A: daily candles (1y) → stock_prices (source=marketdata) ===');
-  const from = dateNDaysAgo(LOOKBACK_DAYS);
+async function phaseA(client, database, tickers, lookbackDays = LOOKBACK_DAYS) {
+  console.log(`\n=== Phase A: daily candles (${Math.round(lookbackDays / 7)}w) → stock_prices (source=marketdata) ===`);
+  const from = dateNDaysAgo(lookbackDays);
   const to = today();
   const symbols = [BENCHMARK, ...tickers.filter(t => t !== BENCHMARK)];
 
@@ -177,15 +187,16 @@ async function phaseB(database, tickers) {
   console.log(`[B] Done. ${totalEvents} events written.`);
 }
 
-async function phaseC(client, database, tickers, state) {
+async function phaseC(client, database, tickers, state, confirmedMissing = new Set()) {
   console.log('\n=== Phase C: raw historical options chains → options_chain_history ===');
   const existing = await database.getExistingChainDays();
   const noData = new Set(state.noDataDays || []);
 
-  // Build the full task list first (skip benchmark + non-US tickers + already-done days)
+  // Build the full task list first (skip benchmark + non-US tickers +
+  // vendor-confirmed-options-less tickers + already-done days)
   const tasks = [];
   for (const ticker of tickers) {
-    if (ticker === BENCHMARK || CHAIN_SKIP.has(ticker)) continue;
+    if (ticker === BENCHMARK || CHAIN_SKIP.has(ticker) || confirmedMissing.has(ticker)) continue;
     const bars = await loadBars(database, ticker, 'marketdata');
     for (const b of bars) {
       const key = `${ticker}|${b.date}`;
@@ -495,10 +506,21 @@ async function phaseD(database) {
 
 async function main() {
   const args = parseArgs();
-  const phases = args.phase === 'all' ? ['A', 'B', 'C', 'D'] : [args.phase];
+  if (args.maintenance) args.phase = 'A,C,D';
+  const phases = args.phase === 'all' ? ['A', 'B', 'C', 'D'] : args.phase.split(',').map(p => p.trim()).filter(Boolean);
 
   const database = new ArticleDatabase(DB_PATH);
-  await database.initialize();
+  try {
+    await database.initialize();
+  } catch (err) {
+    // DuckDB allows a single writer: the Electron app holds articles.db while
+    // it is open. Cron runs should skip quietly and let the next run try again.
+    if (/lock/i.test(err.message || '')) {
+      console.error(`[${new Date().toISOString()}] articles.db is locked (app open?) — skipping this run.`);
+      process.exit(0);
+    }
+    throw err;
+  }
 
   const needsApi = phases.some(p => p === 'A' || p === 'C');
   const apiKey = process.env.MARKETDATA_API_KEY || process.env.MARKET_DATA_API_KEY;
@@ -507,14 +529,27 @@ async function main() {
   const tickers = await getBackfillTickers(database, args.tickers);
   console.log(`Backfill phases: ${phases.join(',')} | tickers: ${tickers.length} | percentile: p${PERCENTILE}`);
 
+  // Tickers ci/options-coverage.json confirmed options-less: the vendor has
+  // returned zero chains for them repeatedly, so stop spending credits.
+  let confirmedMissing = new Set();
+  try {
+    const coverage = JSON.parse(fs.readFileSync(path.join(__dirname, 'options-coverage.json'), 'utf-8'));
+    confirmedMissing = new Set(coverage.skip_tickers || []);
+    if (confirmedMissing.size) console.log(`Skipping ${confirmedMissing.size} vendor-confirmed options-less tickers: ${[...confirmedMissing].join(', ')}`);
+  } catch (_) { /* no coverage report yet — first run classifies everything as pending */ }
+
   const state = loadState();
   try {
     for (const p of phases) {
-      if (p === 'A') await phaseA(client, database, tickers);
+      if (p === 'A') await phaseA(client, database, tickers, args.lookback);
       else if (p === 'B') await phaseB(database, tickers);
-      else if (p === 'C') await phaseC(client, database, tickers, state);
+      else if (p === 'C') await phaseC(client, database, tickers, state, confirmedMissing);
       else if (p === 'D') await phaseD(database);
       else throw new Error(`Unknown phase: ${p}`);
+    }
+    if (args.maintenance) {
+      const { writeCoverageReport, printReport } = require('./options-coverage');
+      printReport(await writeCoverageReport(database, state));
     }
   } finally {
     try { database.db?.close(); } catch (_) { /* ignore */ }

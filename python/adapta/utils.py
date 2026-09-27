@@ -1,4 +1,4 @@
-from ttm_event_dataset import build_ticker_features
+from event_dataset import build_ticker_features
 
 
 def build_result(ticker: str, prob: float, event_threshold: float, meta: dict,

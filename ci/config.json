@@ -21,7 +21,9 @@
     "NOW",
     "SMCI",
     "VOYG",
-    "DELL"
+    "DELL",
+    "AMD",
+    "INTC"
   ],
   "screenDays": 100,
   "screenLookbackDays": 5,
@@ -37,10 +39,10 @@
     "SMCI"
   ],
   "lastShuffleDraw": [
-    "BE",
-    "SKHY",
-    "DLO",
-    "RYN",
-    "NLY"
+    "DNOW",
+    "RKT",
+    "CBRS",
+    "CRWV",
+    "DJT"
   ]
 }

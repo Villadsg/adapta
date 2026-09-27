@@ -905,3 +905,508 @@ screenRun.addEventListener('click', async () => {
   // Open simplywall.st as the only startup tab.
   await createTab('https://simplywall.st/dashboard');
 })();
+
+
+// ---- Model Lab (minimal feature sets for the screening forecasts) ----
+const btnLab = document.getElementById('btn-lab');
+const labModal = document.getElementById('lab-modal');
+const labSearchBtn = document.getElementById('lab-search');
+const labBacktestBtn = document.getElementById('lab-backtest');
+const labCloseBtn = document.getElementById('lab-close');
+const labCancelRunBtn = document.getElementById('lab-cancel-run');
+const labResetBtn = document.getElementById('lab-reset');
+const labLog = document.getElementById('lab-log');
+const labGroups = document.getElementById('lab-groups');
+const labReviewModal = document.getElementById('lab-review-modal');
+const labReviewGroups = document.getElementById('lab-review-groups');
+const labReviewAcceptBtn = document.getElementById('lab-review-accept');
+const labReviewDeclineBtn = document.getElementById('lab-review-decline');
+let labPendingSearch = null; // search result awaiting accept/decline
+
+const labEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const labFmt = (v) => (v == null ? '—' : Number(v).toFixed(4));
+let labMeta = null;
+
+// The two screening forecast groups. `preset` names the production default
+// each group falls back to until a search has chosen something better.
+const LAB_GROUP_INFO = {
+  direction: {
+    title: 'Direction → tomorrow',
+    blurb: 'Will the price be higher tomorrow? (P(up→1d) column)',
+    preset: 'options',
+  },
+  event: {
+    title: 'Big event tomorrow',
+    blurb: "Is tomorrow one of this ticker's own top-8% volume × move days? (Event Prob column)",
+    preset: 'full2',
+  },
+};
+
+async function labScreeningChannels() {
+  try {
+    return (await window.electronAPI.getSetting('screening.channels', {})) || {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function labFeatureRow(ch, targetCh) {
+  const desc = (labMeta && labMeta.descriptions && labMeta.descriptions[ch]) || '';
+  const isTarget = ch === targetCh;
+  return `<div class="lab-feature${isTarget ? ' target' : ''}">
+    <span class="lab-feature-name">${labEsc(ch)}${isTarget ? '<em>target</em>' : ''}</span>
+    <span class="lab-feature-desc">${labEsc(desc)}</span>
+  </div>`;
+}
+
+function labFeatureList(channels) {
+  // One row per feature, grouped by category; the target series leads the
+  // list. The container scrolls when the rows outgrow the modal.
+  const targetCh = channels[0];
+  const active = new Set(channels);
+  const seen = new Set([targetCh]);
+  let html = labFeatureRow(targetCh, targetCh);
+  for (const [group, members] of (labMeta && labMeta.groups) || []) {
+    const present = members.filter(c => active.has(c) && !seen.has(c));
+    if (!present.length) continue;
+    present.forEach(c => seen.add(c));
+    html += `<div class="lab-feature-group-label">${labEsc(group)}</div>` +
+      present.map(c => labFeatureRow(c, targetCh)).join('');
+  }
+  const rest = channels.filter(c => !seen.has(c));
+  if (rest.length) {
+    html += `<div class="lab-feature-group-label">Other</div>` +
+      rest.map(c => labFeatureRow(c, targetCh)).join('');
+  }
+  return html;
+}
+
+// Tags marking where a pool feature is currently used.
+function labTagHtml(target, on) {
+  const label = target === 'direction' ? 'dir' : 'event';
+  const tip = target === 'direction'
+    ? 'Used in the direction → tomorrow prediction'
+    : 'Used in the event prediction';
+  return `<span class="lab-tag ${target}${on ? '' : ' off'}"${on ? ` title="${tip}"` : ' aria-hidden="true"'}>${label}</span>`;
+}
+
+function labPoolRow(ch, targetChs, usedIn) {
+  const desc = (labMeta && labMeta.descriptions && labMeta.descriptions[ch]) || '';
+  const targetFor = targetChs[ch]; // 'direction' | 'event' | undefined
+  return `<div class="lab-feature lab-feature-pool${targetFor ? ' target' : ''}">
+    <span class="lab-feature-name">${labEsc(ch)}${targetFor ? '<em>target</em>' : ''}</span>
+    <span class="lab-feature-desc">${labEsc(desc)}</span>
+    <span class="lab-feature-tags">${labTagHtml('direction', usedIn.direction.has(ch))}${labTagHtml('event', usedIn.event.has(ch))}</span>
+  </div>`;
+}
+
+function labPoolList(directionChannels, eventChannels) {
+  // The complete pool the search draws from: both target series plus every
+  // grouped covariate. Rows carry dir/event tags for current membership.
+  const usedIn = {
+    direction: new Set(directionChannels),
+    event: new Set(eventChannels),
+  };
+  const targetChs = {};
+  if (directionChannels[0]) targetChs[directionChannels[0]] = 'direction';
+  if (eventChannels[0]) targetChs[eventChannels[0]] = 'event';
+  const seen = new Set(Object.keys(targetChs));
+  let html = `<div class="lab-feature-group-label">Target series</div>` +
+    [...seen].map(ch => labPoolRow(ch, targetChs, usedIn)).join('');
+  for (const [group, members] of (labMeta && labMeta.groups) || []) {
+    const present = members.filter(c => !seen.has(c));
+    if (!present.length) continue;
+    present.forEach(c => seen.add(c));
+    html += `<div class="lab-feature-group-label">${labEsc(group)}</div>` +
+      present.map(c => labPoolRow(c, targetChs, usedIn)).join('');
+  }
+  return html;
+}
+
+async function renderLabGroups() {
+  if (!labGroups || !labMeta) return;
+  const saved = await labScreeningChannels();
+  const current = {}; // target -> channel list currently in use
+  for (const target of Object.keys(LAB_GROUP_INFO)) {
+    const info = LAB_GROUP_INFO[target];
+    const presetCh = (labMeta.presets[target] || {})[info.preset] || [];
+    const custom = Array.isArray(saved[target]) && saved[target].length >= 1 ? saved[target] : null;
+    current[target] = { channels: custom || presetCh, custom, info };
+  }
+
+  let html = '';
+  for (const [target, { channels, custom, info }] of Object.entries(current)) {
+    const auroc = custom ? saved[target + 'Auroc'] : null;
+    const source = custom
+      ? `chosen by search ${labEsc(saved[target + 'SavedAt'] || '')}` +
+        (auroc != null ? ` · backtest AUROC ${labFmt(auroc)}` : '')
+      : 'production default';
+    html += `<div class="lab-group"><details class="lab-collapse">
+      <summary>
+        <span class="lab-chevron" aria-hidden="true"></span>
+        <b>${labEsc(info.title)}</b>
+        <span class="lab-group-meta">${channels.length} features · ${source}</span>
+      </summary>
+      <div class="lab-group-sub">${labEsc(info.blurb)}</div>
+      <div class="lab-feature-list">${labFeatureList(channels)}</div>
+    </details></div>`;
+  }
+
+  html += `<div class="lab-group"><details id="lab-dataset" class="lab-collapse">
+    <summary>
+      <span class="lab-chevron" aria-hidden="true"></span>
+      <b>Dataset</b>
+      <span class="lab-group-meta">checking…</span>
+    </summary>
+    <div class="lab-group-sub">Automatic health check of the data behind the search — sample sizes, coverage and warnings.</div>
+    <div class="lab-feature-list lab-dataset-body" style="display:block;">
+      <div style="color:#6b7a8d;font-size:0.8em;padding:6px 12px;">Checking dataset…</div>
+    </div>
+  </details></div>`;
+
+  const poolSize = new Set([...current.direction.channels, ...current.event.channels]).size;
+  const poolTotal = Math.max(poolSize,
+    2 + ((labMeta.groups || []).reduce((n, [, m]) => n + m.length, 0)));
+  html += `<div class="lab-group"><details class="lab-collapse">
+    <summary>
+      <span class="lab-chevron" aria-hidden="true"></span>
+      <b>Feature pool</b>
+      <span class="lab-group-meta">${poolTotal} features searched through</span>
+    </summary>
+    <div class="lab-group-sub">Every feature the search can choose from. Tags show which predictions currently use each one.</div>
+    <div class="lab-feature-list">${labPoolList(current.direction.channels, current.event.channels)}</div>
+  </details></div>`;
+  labGroups.innerHTML = html;
+}
+
+async function openLabModal() {
+  await window.electronAPI.showModal();
+  labModal.style.display = 'flex';
+  if (!labMeta) {
+    labGroups.innerHTML = '<div style="color:#6b7a8d;font-size:0.85em;">Loading current features…</div>';
+    const meta = await window.electronAPI.labMeta();
+    if (!meta || meta.error) {
+      labGroups.innerHTML = `<div style="color:#f66;font-size:0.85em;">Could not load feature metadata: ${labEsc(meta?.error || 'unknown error')}</div>`;
+      return;
+    }
+    labMeta = meta;
+  }
+  await renderLabGroups();
+  labRenderDataset(); // async health check; fills its own section
+}
+
+async function labRenderDataset() {
+  const box = document.getElementById('lab-dataset');
+  if (!box) return;
+  const body = box.querySelector('.lab-dataset-body');
+  const metaEl = box.querySelector('.lab-group-meta');
+  const checked = (info) => {
+    const t = (info && info.generated_at || '').split(' ')[1] || '';
+    return `checked ${labEsc(t)}`;
+  };
+
+  let res;
+  try {
+    res = await window.electronAPI.labDataset();
+  } catch (err) {
+    res = { success: false, error: err.message || String(err) };
+  }
+  if (!res.success || !res.info || res.info.error) {
+    const msg = (res.info && res.info.error) || res.error || 'unknown error';
+    metaEl.textContent = 'check failed';
+    body.innerHTML = `<div class="lab-warn">⚠ Dataset check failed: ${labEsc(msg)}</div>`;
+    return;
+  }
+
+  const info = res.info;
+  const row = (k, v) => `<div class="lab-ds-row"><span>${k}</span><span>${labEsc(v)}</span></div>`;
+  let html = '';
+  if (info.db) {
+    html += row('Price history', `${info.db.tickers} tickers · ${info.db.date_min} → ${info.db.date_max} · ${Number(info.db.price_rows).toLocaleString()} rows`);
+  }
+  if (info.options && info.db) {
+    html += row('Options coverage', `${info.options.tickers_with_options}/${info.db.tickers} tickers with options data`);
+  }
+  const labels = { direction: 'Direction samples', event: 'Event samples' };
+  for (const [target, label] of Object.entries(labels)) {
+    const r = (info.targets || {})[target];
+    if (!r) continue;
+    if (!r.available) {
+      html += row(label, 'not available');
+    } else {
+      let v = `${Number(r.samples).toLocaleString()} samples · ${r.tickers} tickers · ${(r.positive_rate * 100).toFixed(1)}% positive`;
+      if (r.median_horizon_days) v += ` · median horizon ${r.median_horizon_days}d`;
+      html += row(label, v);
+    }
+  }
+  if (info.pool_size) html += row('Feature pool', `${info.pool_size} variables searched through`);
+  const evt = (info.targets || {}).event;
+  if (evt && evt.available) {
+    html += row('Event rule', `per ticker: own top 8% of trading days` +
+      (evt.median_threshold ? ` · median threshold ${Number(evt.median_threshold).toLocaleString()}` : ''));
+  }
+
+  const warns = info.warnings || [];
+  if (warns.length) {
+    html += warns.map(w => `<div class="lab-warn">⚠ ${labEsc(w)}</div>`).join('');
+    html += `<div class="lab-insights" id="lab-dataset-ai" style="border-top:1px solid #2a303b;"></div>`;
+  } else {
+    html += `<div class="lab-ok">✓ No warnings — dataset looks healthy.</div>`;
+  }
+  body.innerHTML = html;
+  metaEl.textContent = warns.length
+    ? `${warns.length} warning${warns.length > 1 ? 's' : ''} · ${checked(info)}`
+    : `healthy · ${checked(info)}`;
+  if (warns.length) {
+    labFetchInsights('dataset', info, document.getElementById('lab-dataset-ai'));
+  }
+}
+
+async function runLabSearch() {
+  labSearchBtn.disabled = true;
+  labSearchBtn.textContent = '⏳ Searching…';
+  if (labBacktestBtn) labBacktestBtn.disabled = true;
+  labCancelRunBtn.style.display = '';
+  labResetBtn.style.display = 'none';
+  labLog.style.display = 'block';
+  labLog.textContent = '';
+  try {
+    const res = await window.electronAPI.labSearch();
+    if (!res || !res.success) {
+      showToast('Lab Error', (res && res.error) || 'Search failed', 'error', 6000);
+      return;
+    }
+    // Hand the result to the review modal — nothing is stored until Accept.
+    const s = res.search || {};
+    const hasResult = ['direction', 'event'].some(t => s[t] && Array.isArray(s[t].channels));
+    if (!hasResult) {
+      showToast('Model Lab', 'Search finished (no changes).', 'info', 5000);
+      return;
+    }
+    await showLabReview(s);
+  } catch (err) {
+    showToast('Lab Error', err.message || String(err), 'error', 6000);
+  } finally {
+    labSearchBtn.disabled = false;
+    labSearchBtn.textContent = 'Search';
+    if (labBacktestBtn) labBacktestBtn.disabled = false;
+    labCancelRunBtn.style.display = 'none';
+    labResetBtn.style.display = '';
+  }
+}
+
+// ---- Backtest: score the current feature setup for both targets as-is ----
+async function runLabBacktest() {
+  labBacktestBtn.disabled = true;
+  labBacktestBtn.textContent = '⏳ Backtesting…';
+  labSearchBtn.disabled = true;
+  labCancelRunBtn.style.display = '';
+  labLog.style.display = 'block';
+  labLog.textContent = '';
+  try {
+    const res = await window.electronAPI.labBacktest();
+    if (!res || !res.success) {
+      showToast('Lab Error', (res && res.error) || 'Backtest failed', 'error', 6000);
+      return;
+    }
+    const bt = res.backtest || {};
+    const lines = ['', '── Backtest result (current setup, walk-forward) ──'];
+    for (const target of ['direction', 'event']) {
+      const t = bt[target];
+      const title = (LAB_GROUP_INFO[target] || {}).title || target;
+      if (!t || !t.available) {
+        lines.push(`${title}: not available (no samples)`);
+        continue;
+      }
+      const m = t.metrics || {};
+      lines.push(
+        `${title}: AUROC ${labFmt(m.auroc)} · accuracy ${(m.accuracy * 100).toFixed(1)}%` +
+        ` · Brier ${labFmt(m.brier)} · ${Number(t.n_samples).toLocaleString()} samples` +
+        ` · ${t.n_channels} features (${t.preset} preset)`
+      );
+    }
+    labLog.textContent += lines.join('\n') + '\n';
+    labLog.scrollTop = labLog.scrollHeight;
+    const d = bt.direction && bt.direction.metrics ? bt.direction.metrics.auroc : null;
+    const e = bt.event && bt.event.metrics ? bt.event.metrics.auroc : null;
+    showToast('Model Lab',
+      `Backtest done — direction AUROC ${d != null ? labFmt(d) : 'n/a'}, event AUROC ${e != null ? labFmt(e) : 'n/a'}`,
+      'info', 6000);
+  } catch (err) {
+    showToast('Lab Error', err.message || String(err), 'error', 6000);
+  } finally {
+    labBacktestBtn.disabled = false;
+    labBacktestBtn.textContent = 'Backtest';
+    labSearchBtn.disabled = false;
+    labCancelRunBtn.style.display = 'none';
+  }
+}
+
+// ---- Local-LLM insights (optional layer over the deterministic summary) ----
+async function labFetchInsights(kind, payload, box) {
+  if (!box || !window.electronAPI.labInsights) return;
+  box.innerHTML = '<span class="lab-insights-label">AI insights</span>Analyzing — the first request may take a minute while the model loads…';
+  try {
+    const res = await window.electronAPI.labInsights(kind, payload);
+    if (!res || !res.success || !res.text) throw new Error((res && res.error) || 'unavailable');
+    box.innerHTML = `<span class="lab-insights-label">AI insights</span>${labEsc(res.text)}`;
+  } catch (_) {
+    box.innerHTML = ''; // model unavailable — the deterministic summary stands alone
+  }
+}
+
+// ---- Search review: show proposed feature sets, accept or decline ----
+async function showLabReview(search) {
+  labPendingSearch = search;
+  const saved = await labScreeningChannels();
+  let html = '';
+  const summaryLines = [];
+  const aiTargets = {};
+  for (const target of ['direction', 'event']) {
+    const t = search[target];
+    const info = LAB_GROUP_INFO[target];
+    const presetCh = (labMeta.presets[target] || {})[info.preset] || [];
+    const current = (Array.isArray(saved[target]) && saved[target].length >= 1 ? saved[target] : null) || presetCh;
+
+    // A target-only proposal (length 1) is legitimate — the search's honest
+    // verdict when no covariate earns its keep (e.g. event: 28→1, AUROC up).
+    if (!t || !Array.isArray(t.channels) || t.channels.length < 1) {
+      html += `<div class="lab-group"><details open class="lab-collapse">
+        <summary><span class="lab-chevron" aria-hidden="true"></span><b>${labEsc(info.title)}</b>
+          <span class="lab-group-meta">no proposal</span></summary>
+        <div class="lab-group-sub">${labEsc(info.blurb)}</div>
+      </details></div>`;
+      continue;
+    }
+
+    const newSet = new Set(t.channels);
+    const removed = current.filter(c => !newSet.has(c));
+    const added = t.channels.filter(c => !current.includes(c));
+    const meta = `${current.length} → ${t.n_channels} features` +
+      (t.auroc != null ? ` · AUROC ${labFmt(t.baseline_auroc)} → ${labFmt(t.auroc)}` : '');
+
+    let rows = '';
+    for (const ch of current) {
+      const isTarget = ch === current[0];
+      const gone = !newSet.has(ch);
+      const desc = (labMeta.descriptions && labMeta.descriptions[ch]) || '';
+      rows += `<div class="lab-feature${isTarget ? ' target' : ''}${gone ? ' removed' : ''}">
+        <span class="lab-feature-name">${labEsc(ch)}${isTarget ? '<em>target</em>' : ''}</span>
+        <span class="lab-feature-desc">${labEsc(desc)}</span>
+      </div>`;
+    }
+    for (const ch of added) {
+      const desc = (labMeta.descriptions && labMeta.descriptions[ch]) || '';
+      rows += `<div class="lab-feature added">
+        <span class="lab-feature-name">${labEsc(ch)}</span>
+        <span class="lab-feature-desc">${labEsc(desc)}</span>
+      </div>`;
+    }
+
+    const changes = [];
+    if (removed.length) changes.push(`${removed.length} removed`);
+    if (added.length) changes.push(`${added.length} added`);
+    const changeLabel = changes.length ? changes.join(', ') : 'no changes';
+    html += `<div class="lab-group"><details open class="lab-collapse">
+      <summary><span class="lab-chevron" aria-hidden="true"></span><b>${labEsc(info.title)}</b>
+        <span class="lab-group-meta">${labEsc(changeLabel)} · ${labEsc(meta)}</span></summary>
+      <div class="lab-group-sub">${labEsc(info.blurb)}</div>
+      <div class="lab-feature-list">${rows}</div>
+    </details></div>`;
+
+    // Deterministic one-liner: every number comes straight from the search.
+    const removedDetailed = (t.decisions || [])
+      .filter(d => !d.kept)
+      .map(d => `${d.channel} (${d.delta_auroc >= 0 ? '+' : ''}${Number(d.delta_auroc).toFixed(4)})`);
+    summaryLines.push(`${info.title}: ${current.length} → ${t.n_channels} features · ` +
+      `AUROC ${labFmt(t.baseline_auroc)} → ${labFmt(t.auroc)}` +
+      (removedDetailed.length ? ` — removed ${removedDetailed.join(', ')} (Δ AUROC when removed).` : ' — no removals.'));
+    aiTargets[target] = { ...t, title: info.title };
+  }
+  html += `<div class="lab-insights-block">
+    <div class="lab-summary">${summaryLines.map(labEsc).join('<br>')}</div>
+    <div class="lab-insights" id="lab-review-ai"></div>
+  </div>`;
+  labReviewGroups.innerHTML = html;
+  labReviewModal.style.display = 'flex';
+  const aiBox = document.getElementById('lab-review-ai');
+  if (aiBox) {
+    labFetchInsights('search', {
+      targets: aiTargets,
+      descriptions: (labMeta && labMeta.descriptions) || {},
+    }, aiBox);
+  }
+}
+
+if (labReviewAcceptBtn) labReviewAcceptBtn.addEventListener('click', async () => {
+  if (!labPendingSearch) return;
+  try {
+    const saved = await labScreeningChannels();
+    const stamp = new Date().toLocaleString();
+    const parts = [];
+    for (const target of ['direction', 'event']) {
+      const t = labPendingSearch[target];
+      if (t && Array.isArray(t.channels) && t.channels.length >= 1) {
+        saved[target] = t.channels;
+        saved[target + 'SavedAt'] = stamp;
+        saved[target + 'Auroc'] = t.auroc;
+        parts.push(`${target}: ${t.baseline_n_channels}→${t.n_channels} features` +
+          (t.auroc != null ? ` (AUROC ${labFmt(t.auroc)})` : ''));
+      }
+    }
+    await window.electronAPI.setSetting('screening.channels', saved);
+    labPendingSearch = null;
+    labReviewModal.style.display = 'none';
+    await renderLabGroups();
+    labRenderDataset();
+    showToast('Model Lab', parts.join(' · ') || 'Feature sets updated.', 'success', 7000);
+  } catch (err) {
+    showToast('Error', err.message || String(err), 'error', 5000);
+  }
+});
+
+if (labReviewDeclineBtn) labReviewDeclineBtn.addEventListener('click', () => {
+  labPendingSearch = null;
+  labReviewModal.style.display = 'none';
+  showToast('Model Lab', 'Kept the previous feature sets.', 'info', 4000);
+});
+
+if (btnLab) btnLab.addEventListener('click', openLabModal);
+if (labSearchBtn) labSearchBtn.addEventListener('click', runLabSearch);
+if (labBacktestBtn) labBacktestBtn.addEventListener('click', runLabBacktest);
+if (labCancelRunBtn) labCancelRunBtn.addEventListener('click', async () => {
+  await window.electronAPI.labCancel();
+});
+if (labResetBtn) labResetBtn.addEventListener('click', async () => {
+  try {
+    const saved = await labScreeningChannels();
+    for (const target of ['direction', 'event']) {
+      delete saved[target];
+      delete saved[target + 'SavedAt'];
+      delete saved[target + 'Auroc'];
+    }
+    await window.electronAPI.setSetting('screening.channels', saved);
+    await renderLabGroups();
+    showToast('Model Lab', 'Both feature groups reverted to production defaults.', 'info', 4000);
+  } catch (err) {
+    showToast('Error', err.message || String(err), 'error', 5000);
+  }
+});
+if (labCloseBtn) labCloseBtn.addEventListener('click', async () => {
+  labModal.style.display = 'none';
+  await window.electronAPI.hideModal();
+});
+if (labModal) labModal.addEventListener('click', async (e) => {
+  if (e.target === labModal) {
+    labModal.style.display = 'none';
+    await window.electronAPI.hideModal();
+  }
+});
+if (window.electronAPI.onLabLog) {
+  window.electronAPI.onLabLog((data) => {
+    if (labLog && data && data.line) {
+      labLog.textContent += data.line + '\n';
+      labLog.scrollTop = labLog.scrollHeight;
+    }
+  });
+}

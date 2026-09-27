@@ -3,6 +3,7 @@ import json
 import os
 import sys
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import duckdb
 import numpy as np
@@ -14,8 +15,10 @@ from adapta.options import (
     build_options_features,
     load_options_buckets,
     load_options_history,
+    load_options_strike_stats,
 )
 from adapta.utils import build_result, build_ticker_features
+from event_dataset import MIN_THRESHOLD_DAYS, per_ticker_threshold
 
 
 def load_stats(stats_path: str) -> dict:
@@ -52,6 +55,13 @@ def build_context_timesfm(df, context_length, target_date=None, opts_df=None, ac
     df = df.sort_values("date").reset_index(drop=True)
     if len(df) < context_length + 1:
         raise ValueError(f"Need {context_length+1} bars, got {len(df)}")
+    # Event days are RELATIVE to the ticker: its own top 8% of trading days.
+    # The threshold is the ticker's 95th-percentile event magnitude over all
+    # history available at forecast time (df is already truncated to the past).
+    threshold = per_ticker_threshold(df["event_magnitude"].to_numpy(dtype=float))
+    if threshold is None:
+        raise ValueError("insufficient history for a per-ticker event threshold "
+                         f"(needs {MIN_THRESHOLD_DAYS} trading days, got {len(df)})")
     window = df.iloc[-context_length:].copy().reset_index(drop=True)
     values = window[active_channels].to_numpy(dtype=np.float32).copy()
     # Center log_close / log_volume when present; channel sets without them
@@ -67,6 +77,7 @@ def build_context_timesfm(df, context_length, target_date=None, opts_df=None, ac
         "context_end": str(window["date"].iloc[-1]),
         "context_days": int(len(window)),
         "forecast_date": str(forecast_date),
+        "event_threshold": threshold,
     }
 
 def parse_date(s):
@@ -85,16 +96,18 @@ def main():
     parser = argparse.ArgumentParser(description="TimesFM 3.0 event forecasting")
     parser.add_argument("--db", default="articles.db")
     parser.add_argument("--model", default="google/timesfm-3.0-pytorch")
-    parser.add_argument("--dataset-stats", default="data/ttm-events/stats.json")
+    parser.add_argument("--dataset-stats", default="data/events/stats.json")
     parser.add_argument("--ticker")
     parser.add_argument("--tickers")
     parser.add_argument("--date")
     parser.add_argument("--device", default="auto")
     parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--channels", choices=["full2", "options_only"], default="full2",
+    parser.add_argument("--channels", default="full2",
                         help="Channel set fed to the model (channel 0 = target, rest = "
-                             "past_only_covariates). options_only drops the price/volume "
-                             "channels and skips log_close/log_volume centering.")
+                             "past_only_covariates). Either a preset name (full2, "
+                             "options_only) or a comma-separated channel list starting "
+                             "with log_event_magnitude — used by screening when the "
+                             "Model Lab promotes a validated feature set.")
     args = parser.parse_args()
 
     if args.tickers:
@@ -118,11 +131,14 @@ def main():
         print(json.dumps({"error": f"DB not found: {args.db}"}), file=sys.stderr)
         sys.exit(1)
 
-    stats = load_stats(args.dataset_stats)
-    event_threshold = float(stats["event_threshold"])
-    t_log = float(np.log1p(event_threshold))
+    stats = load_stats(args.dataset_stats) if Path(args.dataset_stats).exists() else {}
     context_length = stats.get("context_length", 36)
-    active_channels = {"full2": FULL2_CHANNELS, "options_only": OPTIONS_ONLY_CHANNELS}[args.channels]
+    active_channels = {"full2": FULL2_CHANNELS, "options_only": OPTIONS_ONLY_CHANNELS}.get(args.channels)
+    if active_channels is None:
+        active_channels = [c.strip() for c in args.channels.split(",") if c.strip()]
+        if not active_channels or active_channels[0] != "log_event_magnitude":
+            print(json.dumps({"error": "--channels must be a preset name or start with log_event_magnitude"}), file=sys.stderr)
+            sys.exit(1)
     device = resolve_device(args.device)
 
     from timesfm3 import ModelConfig
@@ -135,6 +151,7 @@ def main():
     try:
         opts_history = load_options_history(con)
         opts_buckets = load_options_buckets(con)
+        opts_strike = load_options_strike_stats(con)
         all_contexts, all_covariates, all_metas, all_ok_tickers, all_errors = [], [], [], [], []
         tickers_to_process = batch_tickers if batch_tickers else [single_ticker]
 
@@ -153,7 +170,9 @@ def main():
                         if not b.empty:
                             t_buckets = b
                     t_opts = build_options_features(
-                        opts_history[opts_history["ticker"] == ticker], t_buckets
+                        opts_history[opts_history["ticker"] == ticker], t_buckets,
+                        opts_strike[opts_strike["ticker"] == ticker]
+                        if not opts_strike.empty else None,
                     )
                     if not t_opts.empty:
                         ticker_opts = t_opts
@@ -173,7 +192,7 @@ def main():
                 all_errors.append({"ticker": ticker, "error": str(e)})
 
         if not all_contexts:
-            if all_errors: print(json.dumps({"errors": all_errors}), indent=2)
+            if all_errors: print(json.dumps({"errors": all_errors}, indent=2))
             return
 
         all_probs = np.zeros(len(all_ok_tickers))
@@ -190,12 +209,15 @@ def main():
                     use_symmetric_averaging=False,
                 )
             )
-            for j, out in enumerate(outputs):
-                i = start + j
-                q = np.asarray(out.quantiles, dtype=float)[0]
-                all_probs[i] = prob_above_threshold(q, quantile_levels, t_log)
+        for j, out in enumerate(outputs):
+            i = start + j
+            q = np.asarray(out.quantiles, dtype=float)[0]
+            t_log = float(np.log1p(all_metas[i]["event_threshold"]))
+            all_probs[i] = prob_above_threshold(q, quantile_levels, t_log)
 
-        results = [build_result(all_ok_tickers[i], all_probs[i], event_threshold, all_metas[i]) for i in range(len(all_ok_tickers))]
+        results = [build_result(all_ok_tickers[i], all_probs[i],
+                                all_metas[i]["event_threshold"], all_metas[i])
+                   for i in range(len(all_ok_tickers))]
 
         if not batch_tickers:
             if all_errors:

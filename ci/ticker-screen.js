@@ -16,6 +16,7 @@
 
 const OptionsAnalysisService = require('../src/services/optionsAnalysis');
 const IBOptionsProvider = require('../src/services/ibOptionsProvider');
+const MarketDataProvider = require('../src/services/marketDataProvider');
 
 /**
  * Simple linear regression: y = mx + b
@@ -319,6 +320,13 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
   // quotes — a paper/free MarketData plan is 15+ min behind.
   const freshnessSamples = [];
 
+  // Shared quote source for the Last (ext) column — independent of the
+  // per-ticker options block so a chain failure can't blank the price. Also
+  // passed to the options service so its strike-band price hits this cache.
+  const screenQuoteProvider = new MarketDataProvider();
+  const ibProvider = new IBOptionsProvider({ port: 4001 });
+  const optSvc = new OptionsAnalysisService(null, ibProvider, screenQuoteProvider);
+
   let cancelled = false;
   for (let i = 0; i < list.length; i++) {
     if (isCancelled && isCancelled()) {
@@ -473,27 +481,29 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
       // MarketData (IB Gateway remains an opt-in fallback via USE_IB_OPTIONS=1).
       let optionsStrikes = null;
       // Hoisted out of the options block so the screening row can show it even
-      // when the chain fetch below fails.
+      // when the chain fetch below fails. One quote per ticker feeds both the
+      // Last (ext) column and the chain strike band (seeded into the shared
+      // price cache), so the run spends a single quote credit per ticker.
       let currentPriceForEntry = null;
       let liveQuoteForEntry = null;
+      let liveQuotePrevClose = null;
+      try {
+        const q = await screenQuoteProvider.client.fetchQuote(ticker);
+        const px = q?.last ?? q?.mid ?? null;
+        if (typeof px === 'number' && px > 0) {
+          liveQuoteForEntry = px;
+          screenQuoteProvider.cachePrice(ticker, px);
+          if (typeof q.change === 'number') liveQuotePrevClose = px - q.change;
+        }
+      } catch (_) { /* column falls back to the chain quote / bar close */ }
       {
         try {
-          const ibProvider = new IBOptionsProvider({ port: 4001 });
-          const optSvc = new OptionsAnalysisService(null, ibProvider);
           const initialFetch = await optSvc.fetchOptionsChainWithSource(ticker);
           const initialChain = initialFetch?.chain;
           const initialSource = initialFetch?.source;
           const currentPrice = initialChain?.quote?.regularMarketPrice;
           if (typeof currentPrice === 'number' && currentPrice > 0) currentPriceForEntry = currentPrice;
 
-          // Live quote (includes extended hours — the chain's underlyingPrice is
-          // regular-session only). This is the same quote the provider already
-          // fetched for the strike band, so it is a cache hit, not an extra call.
-          // optSvc.marketData only exists if the MarketData path actually ran.
-          try {
-            const live = await optSvc.marketData?.getUnderlyingPrice(ticker);
-            if (typeof live === 'number' && live > 0) liveQuoteForEntry = live;
-          } catch (_) { /* fall back to the chain's underlyingPrice below */ }
           const expirationDates = initialChain?.expirationDates || [];
 
           // Single snapshot timestamp shared across all expirations for this ticker
@@ -619,19 +629,19 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
 
             if (results.length > 0) optionsStrikes = results;
           }
-
-          // Clean up IB connection if it was opened
-          ibProvider.disconnect();
         } catch (_) { /* options fetch failed — skip silently */ }
       }
 
       // Add to allTickers — with best hit data if any, otherwise just the ticker + R²
       const chartData = { dates: chartDates, closes: chartCloses, volumes: chartVolumes, events: chartEvents, optionsStrikes };
-      // Last regular-session close (from the daily bars) alongside the live quote.
-      // Prefer the stock quote (reflects pre/post-market); the chain's
-      // underlyingPrice is the regular-session fallback. The extended value
-      // never reaches the event/gap math, which is defined on RTH bars only.
-      const lastClose = chartCloses.length > 0 ? chartCloses[chartCloses.length - 1] : null;
+      // Last (ext) column: liveQuoteForEntry was fetched at the top of the
+      // options block (independent of chain success) and includes pre/post-
+      // market. The close baseline comes from the quote's `change` because
+      // MarketData's daily bars include the in-progress session, which would
+      // make the baseline drift with extended-hours prints.
+      const lastClose = liveQuotePrevClose != null
+        ? liveQuotePrevClose
+        : (chartCloses.length > 0 ? chartCloses[chartCloses.length - 1] : null);
       const latestPrice = typeof liveQuoteForEntry === 'number'
         ? liveQuoteForEntry
         : (typeof currentPriceForEntry === 'number' ? currentPriceForEntry : null);
@@ -658,6 +668,9 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
       if (onTickerDone) onTickerDone(entry);
     }
   }
+
+  // Clean up the shared IB connection if the fallback opened it
+  ibProvider.disconnect();
 
   const freshness = summarizeFreshness(freshnessSamples);
   if (freshness) {

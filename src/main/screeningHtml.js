@@ -2,6 +2,8 @@
 // Extracted from main.js — takes plain data arguments only.
 
 const { TAG_LABELS: EVENT_TAG_LABELS } = require('../services/eventTags');
+const { combineHistRecord } = require('./screeningStats');
+const { formatAge } = require('../../ci/ticker-screen');
 
 function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData = {}, preEventStats = {}, notes = {}, preEventByReturnBucket = null, preEventContrast = null, peLiveSlopeByTicker = {}, toDelete = [], freshness = null, suggestedTickers = []) {
   const suggestedSet = new Set(suggestedTickers);
@@ -368,6 +370,15 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     const eventProbStr = eventProb != null ? (eventProb * 100).toFixed(1) + '%' : '';
     const eventProbColor = eventProb == null ? '#888' : eventProb >= 0.6 ? 'rgba(245,101,101,0.9)' : eventProb >= 0.4 ? '#d4a657' : 'rgba(72,187,120,0.9)';
 
+    const dir = h.directionForecast || null;
+    const dirUp = dir && typeof dir.upProbability === 'number' ? dir.upProbability : null;
+    const dirStr = dirUp != null ? (dirUp * 100).toFixed(1) + '%' : '';
+    const dirColor = dirUp == null ? '#888' : dirUp >= 0.55 ? 'rgba(72,187,120,0.9)' : dirUp <= 0.45 ? 'rgba(245,101,101,0.9)' : '#d4a657';
+    const dirTitle = dirUp == null ? 'TimesFM direction forecast (not scored)'
+      : `TimesFM P(up) for tomorrow (${dir.forecastDate || ''}): ${dirStr}` +
+        (dir.medianReturnPct != null ? ` · median ${(dir.medianReturnPct > 0 ? '+' : '') + dir.medianReturnPct.toFixed(1)}%` : '') +
+        ` · next trading day`;
+
     // Last regular-session close vs the latest quote. Outside RTH the quote is the
     // pre/post-market print, so the delta between them is the extended-hours move.
     // Both are display-only: neither feeds the event/gap math.
@@ -393,7 +404,8 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
       <td data-v="${sec || 'zzz'}" style="font-size:0.82em; color:#888;">${sec || ''}</td>
       <td data-v="${tagsSortKey}" style="font-size:0.82em; max-width:240px;">${tagsCell}</td>
       <td data-v="${h.classification || 'zzz'}" style="color:${color}; font-weight:bold;">${label}</td>
-      <td data-v="${eventProb != null ? eventProb : -1}" style="text-align:right; color:${eventProbColor}; font-weight:600;" title="TTM-R3 next-day event probability">${eventProbStr}</td>
+      <td data-v="${eventProb != null ? eventProb : -1}" style="text-align:right; color:${eventProbColor}; font-weight:600;" title="TimesFM 3.0 next-day event probability">${eventProbStr}</td>
+      <td data-v="${dirUp != null ? dirUp : -1}" style="text-align:right; color:${dirColor}; font-weight:600;" title="${dirTitle}">${dirStr}</td>
       <td data-v="${latestPriceVal}" style="text-align:right; color:${extMoveColor};" title="${extTitle}">${latestPriceStr}</td>
       <td data-v="${mcap}" style="text-align:right;">${mcapStr}</td>
       <td data-v="${optDV}" style="text-align:right;">${optDVStr}</td>
@@ -406,7 +418,7 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
       <td data-v="${putSpreadVal}" style="text-align:right; color:rgba(245,101,101,0.7); font-size:0.88em;${leanBg('lvl','Put Spr',putSpreadRank)}">${putSpreadStr}</td>
     </tr>
     <tr class="chart-row" data-chart-for="${h.ticker}" style="display:none;">
-      <td colspan="16" style="padding:0; background:#1a1d23;">
+      <td colspan="17" style="padding:0; background:#1a1d23;">
         <div style="display:flex; gap:12px; align-items:stretch; margin:12px 20px 8px;">
           <div id="summary-${h.ticker}" style="flex:0 1 78ch; padding:14px 18px; background:#262a33; border-left:3px solid #4a5a8a; border-radius:6px; color:#cdd5e0; font-size:0.98em; line-height:1.65; max-height:200px; overflow-y:auto;"></div>
           <div style="flex:1 1 0; min-width:280px; height:200px; background:#262a33; border-radius:6px; padding:6px 10px;">
@@ -774,7 +786,8 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
   <th>Sector<span class="sort-arrow"></span></th>
   <th>Tags<span class="sort-arrow"></span></th>
   <th>Classification<span class="sort-arrow"></span></th>
-  <th style="text-align:right;" title="TTM-R3 next-day event probability">Event Prob<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="TimesFM 3.0 next-day event probability">Event Prob<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="TimesFM 3.0 probability of a positive return tomorrow, the next trading day (options-only covariates)">P(up→1d)<span class="sort-arrow"></span></th>
   <th style="text-align:right;" title="Latest quoted price, including pre-market and after-hours when the regular session is closed. % is the move vs the last regular close.">Last (ext)<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Mkt Cap<span class="sort-arrow"></span></th>
   <th style="text-align:right;">Opt $ Vol<span class="sort-arrow"></span></th>

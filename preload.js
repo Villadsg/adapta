@@ -49,6 +49,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAnalyzedTickers: () => ipcRenderer.invoke('get-analyzed-tickers'),
   forecastEventMagnitude: (ticker, date) => ipcRenderer.invoke('forecast-event-magnitude', ticker, date),
 
+  // Model lab (automatic feature search for the screening forecasts)
+  labMeta: () => ipcRenderer.invoke('lab-meta'),
+  labSearch: () => ipcRenderer.invoke('lab-search'),
+  labBacktest: () => ipcRenderer.invoke('lab-backtest'),
+  labCancel: () => ipcRenderer.invoke('lab-cancel'),
+  labStatus: () => ipcRenderer.invoke('lab-status'),
+  labDataset: () => ipcRenderer.invoke('lab-dataset'),
+  labInsights: (kind, payload) => ipcRenderer.invoke('lab-insights', kind, payload),
+  onLabLog: (callback) => ipcRenderer.on('lab-log', (event, data) => callback(data)),
+
   // Modal support (hide/show BrowserView)
   showModal: () => ipcRenderer.invoke('show-modal'),
   hideModal: () => ipcRenderer.invoke('hide-modal'),

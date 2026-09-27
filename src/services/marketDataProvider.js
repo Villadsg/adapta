@@ -67,6 +67,19 @@ class MarketDataProvider {
   }
 
   /**
+   * Seed the price cache from a quote fetched elsewhere (e.g. a caller that
+   * needed the full quote for its own purposes), so the next
+   * getUnderlyingPrice — a chain's strike band — doesn't spend another credit.
+   * @param {string} ticker
+   * @param {number} price
+   */
+  cachePrice(ticker, price) {
+    if (typeof price === 'number' && price > 0) {
+      this._priceCache.set(ticker, { at: Date.now(), price });
+    }
+  }
+
+  /**
    * Daily bars for a ticker, oldest first — drop-in for
    * PriceTrackingService.fetchHistoricalPrices (same {date, open, high, low,
    * close, volume} shape, accepting unix-second period1/period2).

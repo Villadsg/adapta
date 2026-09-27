@@ -359,24 +359,6 @@
 
     <div id="message" class="message"></div>
 
-    <!-- Watchlist Settings -->
-    <div class="section">
-      <h2>Watchlist Settings</h2>
-
-      <div class="form-group">
-        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
-          <input type="checkbox" id="watchlist-auto-harvest" style="width: 18px; height: 18px; cursor: pointer;" />
-          <span>Auto-harvest news for watched tickers</span>
-        </label>
-        <small>When enabled, checks for news 10 minutes after startup, then hourly. Requires restart to take effect.</small>
-      </div>
-
-      <div class="button-group">
-        <button id="btn-save-watchlist-settings" class="btn-primary">Save Settings</button>
-      </div>
-    </div>
-
-
     <div class="section">
       <h2>SQL Query Interface</h2>
 
@@ -540,33 +522,6 @@
       return div.innerHTML;
     }
 
-    // === Watchlist Settings ===
-    const watchlistAutoHarvest = document.getElementById('watchlist-auto-harvest');
-    const btnSaveWatchlistSettings = document.getElementById('btn-save-watchlist-settings');
-
-    // Load watchlist settings on page load
-    async function loadWatchlistSettings() {
-      try {
-        const autoHarvest = await window.electronAPI.getSetting('watchlist_auto_harvest', 'true');
-        watchlistAutoHarvest.checked = autoHarvest === 'true';
-      } catch (error) {
-        console.error('Error loading watchlist settings:', error);
-      }
-    }
-
-    // Save watchlist settings
-    btnSaveWatchlistSettings.addEventListener('click', async () => {
-      try {
-        const autoHarvest = watchlistAutoHarvest.checked ? 'true' : 'false';
-        await window.electronAPI.setSetting('watchlist_auto_harvest', autoHarvest);
-        showMessage('Watchlist settings saved. Restart the browser for changes to take effect.', 'success');
-      } catch (error) {
-        showMessage('Error saving settings: ' + error.message, 'error');
-      }
-    });
-
-    // Load settings on page load
-    loadWatchlistSettings();
   </script>
 </body>
 </html>

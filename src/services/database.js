@@ -2874,47 +2874,6 @@ class ArticleDatabase {
   }
 
   /**
-   * Add a ticker to watchlist
-   * @param {string} ticker - Stock ticker symbol
-   * @param {boolean} autoUpdate - Enable automatic updates
-   * @returns {Promise<Object>} Added ticker record
-   */
-  async addWatchedTicker(ticker, autoUpdate = true) {
-    const sql = `
-      INSERT INTO watched_tickers (ticker, auto_update)
-      VALUES ($1, $2)
-      ON CONFLICT (ticker) DO UPDATE SET auto_update = $2
-      RETURNING id, ticker, added_at, auto_update
-    `;
-
-    return new Promise((resolve, reject) => {
-      this.connection.all(sql, ticker.toUpperCase(), autoUpdate, (err, result) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        resolve(result[0]);
-      });
-    });
-  }
-
-  /**
-   * Remove a ticker from watchlist
-   * @param {string} ticker - Stock ticker symbol
-   * @returns {Promise<void>}
-   */
-  async removeWatchedTicker(ticker) {
-    const sql = 'DELETE FROM watched_tickers WHERE ticker = $1';
-
-    return new Promise((resolve, reject) => {
-      this.connection.run(sql, ticker.toUpperCase(), (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
-  }
-
-  /**
    * Get all watched tickers
    * @param {boolean} autoUpdateOnly - Only return tickers with auto_update enabled
    * @returns {Promise<Array>} Array of watched ticker records
@@ -2932,22 +2891,6 @@ class ArticleDatabase {
       this.connection.all(sql, (err, rows) => {
         if (err) reject(err);
         else resolve(rows || []);
-      });
-    });
-  }
-
-  /**
-   * Check if ticker is being watched
-   * @param {string} ticker - Stock ticker symbol
-   * @returns {Promise<boolean>} True if watched
-   */
-  async isTickerWatched(ticker) {
-    const sql = 'SELECT COUNT(*) as count FROM watched_tickers WHERE ticker = $1';
-
-    return new Promise((resolve, reject) => {
-      this.connection.all(sql, ticker.toUpperCase(), (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows[0]?.count > 0);
       });
     });
   }

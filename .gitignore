@@ -20,13 +20,15 @@ ci/weighted-iv-history.live-backup.json
 # from DuckDB, and the parquet writer had been leaving most files truncated.
 ci/screening-runs/
 
-# TTM training datasets — rebuilt in seconds by python/ttm_event_dataset.py
-data/ttm-events/
-data/ttm-events-full/
-data/ttm-events-full2/
-data/ttm-events-options_only/
-data/ttm-direction/*.jsonl
-data/ttm-direction/stats.json
+# Event-model datasets — regenerable from DuckDB by the python pipeline
+# scripts (event_dataset.py); only test_aligned.jsonl + stats.json are kept
+# on disk for the backtests. All large artifacts stay out of git.
+data/events/
+data/events-full/
+data/events-full2/
+data/events-options_only/
+data/lab/
+.zcode/
 
 # ML model checkpoints — large, regenerable from training
 python/models/
@@ -74,3 +76,6 @@ python/venv-*/
 # Bun
 bun.lockb
 bun-workers/node_modules/
+
+# Local LLM weights for the lab insights service
+models/

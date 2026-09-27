@@ -37,6 +37,7 @@
     <div class="action-controls">
       <button id="btn-screen" class="action-btn btn-analyze-events">🔍 Screen</button>
       <button id="btn-forecast-event" class="action-btn btn-forecast-event" title="TimesFM 3.0 next-day event probability" style="position: relative; z-index: 10;">🔮 Forecast Event</button>
+      <button id="btn-lab" class="action-btn" title="TimesFM 3.0 feature search: keep the screening input features minimal">🧪 Model Lab</button>
       <button id="btn-settings" class="action-btn btn-settings">⚙️ Settings</button>
     </div>
   </div>
@@ -121,6 +122,43 @@
       </div>
       <div class="modal-buttons">
         <button id="forecast-event-close" class="btn-modal btn-cancel">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Model Lab modal -->
+  <div id="lab-modal" class="modal" style="display: none;">
+    <div class="modal-content modal-content-wide lab-modal-content">
+      <h3>🧪 Model Lab</h3>
+      <p style="margin:4px 0 12px; color:#9aa5b4; font-size:0.86em;">
+        These are the input features the screening forecasts currently use — one group per model,
+        kept as small as possible without losing predictive power. Search re-evaluates both groups
+        by walk-forward backtesting (a few minutes) and updates the lists automatically.</p>
+
+      <div id="lab-groups" class="lab-groups"><div style="color:#6b7a8d;font-size:0.85em;">Loading current features…</div></div>
+
+      <div class="modal-buttons">
+        <button id="lab-close" class="btn-modal btn-cancel">Close</button>
+        <button id="lab-reset" class="btn-modal btn-cancel">Reset to defaults</button>
+        <button id="lab-cancel-run" class="btn-modal btn-cancel" style="display:none;">Cancel</button>
+        <button id="lab-backtest" class="btn-modal btn-cancel" title="Score the current feature setup as-is for both direction and event prediction (walk-forward backtest, a few minutes)">Backtest</button>
+        <button id="lab-search" class="btn-modal btn-primary">Search</button>
+      </div>
+      <pre id="lab-log" style="display:none; margin-top:10px; max-height:160px; overflow-y:auto; background:#12141a; color:#9aa5b4; font-size:0.78em; padding:8px 10px; border-radius:6px; white-space:pre-wrap;"></pre>
+    </div>
+  </div>
+
+  <!-- Model Lab search review modal (on top of the lab modal) -->
+  <div id="lab-review-modal" class="modal" style="display: none; z-index: 4000;">
+    <div class="modal-content modal-content-wide lab-modal-content">
+      <h3>🧪 Search results — review</h3>
+      <p style="margin:4px 0 12px; color:#9aa5b4; font-size:0.86em;">
+        The search proposes the feature sets below (removals struck through).
+        Accept to make them the new screening features; decline keeps the current sets.</p>
+      <div id="lab-review-groups" class="lab-groups"></div>
+      <div class="modal-buttons">
+        <button id="lab-review-decline" class="btn-modal btn-cancel">Decline</button>
+        <button id="lab-review-accept" class="btn-modal btn-primary">Accept</button>
       </div>
     </div>
   </div>
