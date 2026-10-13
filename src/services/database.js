@@ -2118,6 +2118,23 @@ class ArticleDatabase {
   }
 
   /**
+   * Clear options_daily_iv for a ticker subset — used by the in-app backfill,
+   * which re-derives only the tickers whose chains phase C just filled.
+   * @param {Array<string>} tickers
+   * @returns {Promise<void>}
+   */
+  async clearDailyIVForTickers(tickers) {
+    if (!tickers || tickers.length === 0) return;
+    const list = tickers.map(t => `'${String(t).toUpperCase().replace(/'/g, "''")}'`).join(',');
+    return new Promise((resolve, reject) => {
+      this.connection.run(
+        `DELETE FROM options_daily_iv WHERE ticker IN (${list})`,
+        (err) => { if (err) reject(err); else resolve(); }
+      );
+    });
+  }
+
+  /**
    * Bulk-insert derived per-day IV rows into options_daily_iv.
    * Rows are produced by ci/backfill-marketdata.js (BSM-implied IV computed
    * from the raw chain rows, then aggregated per day/expiration).

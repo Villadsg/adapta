@@ -42,6 +42,10 @@ const TTMEventAnalysisService = require('./src/services/ttmEventAnalysis');
 const TimesFMDirectionService = require('./src/services/timesfmDirection');
 const TimesFMLabService = require('./src/services/timesfmLab');
 const LabInsightsService = require('./src/services/labInsights');
+const { OptionsBackfillService } = require('./src/services/optionsBackfill');
+const { computeCoverage } = require('./ci/options-coverage');
+const { loadState: loadBackfillState } = require('./ci/backfill-marketdata');
+const { runImpliedThesis } = require('./src/services/impliedThesis');
 const { screenTickers, reviseTickers, formatAge } = require('./ci/ticker-screen');
 const { classifyTickerNews, tagTickerEvents } = require('./src/services/newsClassifier');
 const YahooFinance = require('yahoo-finance2').default;
@@ -63,6 +67,7 @@ let ttmEventService;
 let timesfmDirectionService;
 let timesfmLabService;
 let labInsightsService;
+let optionsBackfillService;
 
 
 // Performance optimization: debounce timers
@@ -755,13 +760,77 @@ ipcMain.handle('lab-status', async () => {
 // atmCallDV / atmPutDV + atmBandCallIV / atmBandPutIV for the band-based ATM.
 // Ticker screening handler — supports cancellation via 'cancel-screening' IPC
 let screeningCancelRequested = false;
+// True while a screening run is in the main process. The options backfill and
+// the screening both hammer the MarketData API and write to articles.db, so
+// they run mutually exclusive.
+let screeningActive = false;
 ipcMain.handle('cancel-screening', async () => {
   screeningCancelRequested = true;
   console.log('[Screen] Cancel requested');
   return { success: true };
 });
 
+// ── Options data backfill (phases C+D of ci/backfill-marketdata.js, in-process) ──
+// Coverage = per-ticker chain-data classification from ci/options-coverage.js:
+// stale means chain history exists but ends >14 days ago (the flow-modal gaps),
+// pending_backfill means little/no chain history yet.
+ipcMain.handle('backfill-coverage', async () => {
+  try {
+    if (!database) return { success: false, error: 'Database not ready yet' };
+    const report = await computeCoverage(database, loadBackfillState());
+    return {
+      success: true,
+      generated: report.generated,
+      covered: (report.details.covered || []).length,
+      coveredList: report.details.covered || [],
+      stale: report.details.stale || [],
+      pendingBackfill: report.details.pending_backfill || [],
+      confirmedMissing: (report.details.confirmed_missing || []).length,
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('backfill-start', async (event, options = {}) => {
+  try {
+    if (!optionsBackfillService) return { success: false, error: 'Backend not ready yet' };
+    const tickers = options.tickers == null ? null : [...new Set(
+      (Array.isArray(options.tickers) ? options.tickers : [])
+        .map(t => String(t).trim().toUpperCase())
+        .filter(Boolean)
+    )];
+    const creditCap = Number(options.creditCap) > 0 ? Number(options.creditCap) : null;
+    return await optionsBackfillService.start({ tickers, creditCap, isScreeningActive: () => screeningActive });
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('backfill-estimate', async () => {
+  try {
+    if (!optionsBackfillService) return { success: false, error: 'Backend not ready yet' };
+    return await optionsBackfillService.estimate();
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('backfill-cancel', async () => {
+  if (!optionsBackfillService) return { success: false, error: 'Backend not ready yet' };
+  return optionsBackfillService.cancel();
+});
+
+ipcMain.handle('backfill-status', async () => {
+  if (!optionsBackfillService) return { success: false, error: 'Backend not ready yet' };
+  return { success: true, ...optionsBackfillService.getStatus() };
+});
+
 ipcMain.handle('screen-tickers', async (event, options = {}) => {
+  if (optionsBackfillService && optionsBackfillService.isRunning()) {
+    return { success: false, error: 'An options backfill is running — wait for it to finish (or stop it) before screening' };
+  }
+  screeningActive = true;
   try {
     screeningCancelRequested = false;
     await backendReadyPromise;
@@ -1442,10 +1511,31 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       preEventByReturnBucket = { low: makeBucket(lo), high: makeBucket(hi) };
     }
 
+    // Implied Thesis: a local LLM reads each flagged company's business
+    // profile next to its OTM call flow and derives what the buyers appear
+    // to be betting on, then names the common thread across the cluster.
+    // Purely advisory text for the report — never gates the run itself.
+    let impliedThesis = null;
+    if (options.impliedThesis && !result.cancelled && labInsightsService) {
+      try {
+        console.log('[Screen] Deriving implied thesis from OTM call activity...');
+        const t0 = Date.now();
+        impliedThesis = await runImpliedThesis(result.allTickers, {
+          generate: (system, user, maxNewTokens) => labInsightsService.runPrompt(system, user, maxNewTokens),
+          ivHistory,
+        });
+        console.log(`[Screen] Implied thesis: ${impliedThesis.candidates.length} ticker(s), ` +
+          `${impliedThesis.thesis ? 'thesis derived' : 'no thesis'} in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+      } catch (thesisErr) {
+        console.error(`[Screen] Implied thesis failed: ${thesisErr.message}`);
+        impliedThesis = { ok: false, reason: thesisErr.message };
+      }
+    }
+
     // Generate HTML results page
     const currentNotes = loadNotes();
     const currentToDelete = loadToDelete();
-    const html = generateScreeningHTML(result.allTickers, tickers.length, config, ivHistoryForHTML, preEventStats, currentNotes, preEventByReturnBucket, preEventContrast, peLiveSlopeByTicker, currentToDelete, result.freshness, suggestedTickers);
+    const html = generateScreeningHTML(result.allTickers, tickers.length, config, ivHistoryForHTML, preEventStats, currentNotes, preEventByReturnBucket, preEventContrast, peLiveSlopeByTicker, currentToDelete, result.freshness, suggestedTickers, impliedThesis);
 
     // Save HTML for "Latest Run Results" (alias) and a timestamped snapshot in ci/screening-runs/
     const screenResultsPath = path.join(__dirname, 'ci', 'screening-results.html');
@@ -1478,6 +1568,8 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
   } catch (error) {
     console.error('Screening error:', error);
     return { success: false, error: error.message };
+  } finally {
+    screeningActive = false;
   }
 });
 
@@ -1762,6 +1854,10 @@ async function initBackend() {
   timesfmDirectionService = new TimesFMDirectionService();
   timesfmLabService = new TimesFMLabService();
   labInsightsService = new LabInsightsService();
+  optionsBackfillService = new OptionsBackfillService(database, (payload) => {
+    const win = mainWindow();
+    if (win && !win.isDestroyed()) win.webContents.send('backfill-progress', payload);
+  });
 
   priceTracker.setOptionsAnalyzer(optionsAnalyzer);
 

@@ -20,6 +20,14 @@ ci/weighted-iv-history.live-backup.json
 # from DuckDB, and the parquet writer had been leaving most files truncated.
 ci/screening-runs/
 
+# Generated per-run outputs — churn every screening/backfill and are rebuilt
+# locally; not worth tracking.
+ci/screening-results.html
+ci/event-log.json
+ci/backfill-state.json
+ci/options-coverage.json
+ci/revise-results.json
+
 # Event-model datasets — regenerable from DuckDB by the python pipeline
 # scripts (event_dataset.py); only test_aligned.jsonl + stats.json are kept
 # on disk for the backtests. All large artifacts stay out of git.

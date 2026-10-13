@@ -77,6 +77,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   toggleDelete: (ticker) => ipcRenderer.invoke('toggle-delete', ticker),
   onReviseProgress: (callback) => ipcRenderer.on('revise-progress', (event, data) => callback(data)),
 
+  // Options data backfill (phases C+D in-process)
+  backfillCoverage: () => ipcRenderer.invoke('backfill-coverage'),
+  backfillEstimate: () => ipcRenderer.invoke('backfill-estimate'),
+  backfillStart: (options) => ipcRenderer.invoke('backfill-start', options),
+  backfillCancel: () => ipcRenderer.invoke('backfill-cancel'),
+  backfillStatus: () => ipcRenderer.invoke('backfill-status'),
+  onBackfillProgress: (callback) => ipcRenderer.on('backfill-progress', (event, data) => callback(data)),
+
   // Get current state
   getCurrentUrl: () => ipcRenderer.invoke('get-current-url'),
 

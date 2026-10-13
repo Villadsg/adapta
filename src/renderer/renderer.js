@@ -520,6 +520,173 @@ if (screenTickerAddInput) screenTickerAddInput.addEventListener('keydown', (e) =
 
 let screeningActive = false;
 
+// ── Options data backfill (equivalent of `node ci/backfill-marketdata.js --phase=C`, in-process) ──
+const backfillModal = document.getElementById('backfill-modal');
+const backfillOpenBtn = document.getElementById('backfill-open');
+const backfillCoverageSummary = document.getElementById('backfill-coverage-summary');
+const backfillEstimate = document.getElementById('backfill-estimate');
+const backfillStartBtn = document.getElementById('backfill-start');
+const backfillCancelBtn = document.getElementById('backfill-cancel');
+let backfillCoverageData = null;
+// True when the backfill dialog was opened from the screening modal (which
+// already called showModal) — closing it must not hide the BrowserView then.
+let backfillFromScreening = false;
+
+function fmtCredits(v) {
+  if (v == null) return '?';
+  return v >= 1000 ? (v / 1000).toFixed(1) + 'K' : String(v);
+}
+
+async function refreshBackfillCoverage() {
+  if (!backfillCoverageSummary) return;
+  try {
+    const cov = await window.electronAPI.backfillCoverage();
+    if (!cov.success) {
+      backfillCoverageSummary.textContent = 'Options data: coverage unavailable (' + (cov.error || 'error') + ')';
+      return;
+    }
+    backfillCoverageData = cov;
+    const stale = cov.stale.length, pending = cov.pendingBackfill.length;
+    if (stale + pending === 0) {
+      backfillCoverageSummary.innerHTML = 'Options data: <span style="color:#7bc47f;">' + cov.covered
+        + ' covered</span> — up to date'
+        + (cov.confirmedMissing ? ' · ' + cov.confirmedMissing + ' tickers have no options' : '');
+    } else {
+      backfillCoverageSummary.innerHTML = 'Options data: ' + cov.covered + ' covered · <span style="color:#e8b04a;">'
+        + stale + ' stale</span> · <span style="color:#e8b04a;">' + pending + ' pending backfill</span>';
+    }
+  } catch (err) {
+    backfillCoverageSummary.textContent = 'Options data: coverage unavailable';
+  }
+}
+
+async function refreshBackfillEstimate() {
+  if (!backfillEstimate) return;
+  backfillEstimate.textContent = 'Estimating remaining work…';
+  try {
+    const est = await window.electronAPI.backfillEstimate();
+    if (!est.success) {
+      backfillEstimate.textContent = 'Estimate unavailable (' + (est.error || 'error') + ')';
+      return;
+    }
+    if (est.missingDays === 0) {
+      backfillEstimate.textContent = 'Nothing to fetch — options data is up to date for all '
+        + est.tickers + ' tickers.';
+    } else {
+      backfillEstimate.textContent = est.missingDays.toLocaleString() + ' ticker-days missing across '
+        + est.tickers + ' tickers — roughly ' + fmtCredits(est.creditsEstimate) + ' credits. '
+        + 'Already-stored days are skipped; the run resumes where the last one stopped.';
+    }
+  } catch (err) {
+    backfillEstimate.textContent = 'Estimate unavailable (' + err.message + ')';
+  }
+}
+
+async function openBackfillModal(fromScreening) {
+  backfillFromScreening = fromScreening;
+  if (!fromScreening) await window.electronAPI.showModal();
+  refreshBackfillEstimate();
+  backfillModal.style.display = 'flex';
+}
+
+async function closeBackfillModal() {
+  backfillModal.style.display = 'none';
+  if (!backfillFromScreening) await window.electronAPI.hideModal();
+}
+
+backfillOpenBtn?.addEventListener('click', () => openBackfillModal(true));
+backfillCancelBtn?.addEventListener('click', closeBackfillModal);
+backfillModal?.addEventListener('click', (e) => {
+  if (e.target === backfillModal) closeBackfillModal();
+});
+
+backfillStartBtn?.addEventListener('click', async () => {
+  await closeBackfillModal();
+
+  // Sticky progress toast with a Stop button (Rebuild-Ranking toast pattern)
+  const toast = document.createElement('div');
+  toast.className = 'toast toast-info toast-backfill-progress';
+  toast.innerHTML = `
+    <span class="toast-icon">⤓</span>
+    <div class="toast-content">
+      <div class="toast-title">Backfilling options data</div>
+      <div class="toast-message">Building task list…</div>
+    </div>
+    <button type="button" class="toast-action">■ Stop</button>
+  `;
+  toast.querySelector('.toast-action').addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    e.target.textContent = 'Stopping…';
+    try { await window.electronAPI.backfillCancel(); } catch (_) { /* already gone */ }
+  });
+  toastContainer.appendChild(toast);
+
+  try {
+    const result = await window.electronAPI.backfillStart({ tickers: null, creditCap: null });
+    toast.remove();
+    if (!result.success) {
+      showToast('Backfill Error', result.error, 'error');
+      return;
+    }
+    refreshBackfillCoverage();
+    if (result.cancelled) {
+      showToast('Backfill Stopped', 'Kept ' + result.daysFetched + ' fetched day(s) across '
+        + result.tickersFilled.length + ' ticker(s) — IV history re-derived', 'info', 8000);
+    } else if (result.creditCapped) {
+      showToast('Backfill Paused', 'Credit cap hit (' + fmtCredits(result.creditsUsed) + ' credits) after '
+        + result.daysFetched + ' day(s) — start it again later to continue', 'info', 10000);
+    } else {
+      showToast('Backfill Complete', result.daysFetched + ' ticker-days fetched across '
+        + result.tickersFilled.length + ' ticker(s), ' + fmtCredits(result.creditsUsed)
+        + ' credits — re-run the screening to fill the charts', 'success', 10000);
+    }
+  } catch (error) {
+    toast.remove();
+    showToast('Backfill Error', error.message, 'error');
+  }
+});
+
+window.electronAPI.onBackfillProgress?.((data) => {
+  const el = document.querySelector('.toast-backfill-progress .toast-message');
+  if (!el) return;
+  if (data.phase === 'starting') {
+    el.textContent = 'Building task list…';
+  } else if (data.phase === 'C') {
+    el.textContent = 'Phase C: ' + data.done + '/' + data.total + ' days — ' + (data.ticker || '')
+      + ' · ' + fmtCredits(data.creditsUsed) + ' credits';
+  } else if (data.phase === 'D') {
+    el.textContent = 'Phase D: re-deriving IV history (' + (data.done || 0) + '/' + data.total + ') — ' + (data.ticker || '');
+  } else if (data.phase === 'done') {
+    el.textContent = 'Finishing…';
+  }
+});
+
+// After a screening: if options coverage has gaps, offer a one-click backfill.
+async function maybeAskBackfill() {
+  try {
+    await refreshBackfillCoverage();
+    const cov = backfillCoverageData;
+    if (!cov) return;
+    const stale = cov.stale.length, pending = cov.pendingBackfill.length;
+    if (stale + pending === 0) return;
+    const toast = document.createElement('div');
+    toast.className = 'toast toast-info toast-backfill-ask';
+    toast.innerHTML = `
+      <span class="toast-icon">⤓</span>
+      <div class="toast-content">
+        <div class="toast-title">Options data gaps detected</div>
+        <div class="toast-message">${stale} stale · ${pending} pending backfill — OTM-flow charts will have empty stretches.</div>
+      </div>
+      <button type="button" class="toast-action toast-action-primary">Backfill now</button>
+      <button type="button" class="toast-action">Later</button>
+    `;
+    const [yesBtn, noBtn] = toast.querySelectorAll('.toast-action');
+    yesBtn.addEventListener('click', () => { toast.remove(); openBackfillModal(false); });
+    noBtn.addEventListener('click', () => toast.remove());
+    toastContainer.appendChild(toast);
+  } catch (_) { /* never block the screening-completion flow */ }
+}
+
 btnScreen.addEventListener('click', async () => {
   if (screeningActive) {
     // While a screening is running, the button acts as a Stop button.
@@ -540,6 +707,7 @@ btnScreen.addEventListener('click', async () => {
   screenPeriod.focus();
   populateScreeningRuns();
   refreshScreenTickersDisplay();
+  refreshBackfillCoverage();
 });
 
 screenCancel.addEventListener('click', async () => {
@@ -862,6 +1030,7 @@ screenRun.addEventListener('click', async () => {
     ? overrideRaw.split(/[,\s]+/).map(t => t.trim().toUpperCase()).filter(Boolean)
     : null;
   const fetchNews = document.getElementById('screen-fetch-news').checked;
+  const impliedThesis = document.getElementById('screen-implied-thesis').checked;
 
   screenModal.style.display = 'none';
   await window.electronAPI.hideModal();
@@ -874,7 +1043,7 @@ screenRun.addEventListener('click', async () => {
   screeningActive = true;
 
   try {
-    const result = await window.electronAPI.screenTickers({ period, lookbackDays, percentileThreshold, overrideTickers, fetchNews });
+    const result = await window.electronAPI.screenTickers({ period, lookbackDays, percentileThreshold, overrideTickers, fetchNews, impliedThesis });
 
     if (!result.success) {
       const isCancel = result.cancelled || /cancel/i.test(result.error || '');
@@ -888,6 +1057,7 @@ screenRun.addEventListener('click', async () => {
       showToast('Screening Complete', `Found ${result.hitCount} hit${result.hitCount !== 1 ? 's' : ''}`, 'success');
     }
     if (result.filePath) await createTab('file://' + result.filePath);
+    maybeAskBackfill();
   } catch (error) {
     console.error('Screening error:', error);
     showToast('Error', error.message, 'error');

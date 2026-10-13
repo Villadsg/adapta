@@ -71,10 +71,14 @@
               <label for="screen-override-tickers" style="font-size: 0.85em;">Override tickers <span style="color: #999;">(optional — comma-separated, bypasses saved list)</span></label>
               <input type="text" id="screen-override-tickers" placeholder="e.g. AAPL, TSLA, NVDA" style="width: 100%; margin-top: 4px;" />
             </div>
-            <div style="margin-top: 8px;">
+            <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
               <label class="toggle-pill" title="Slower — scrapes Finviz per ticker">
                 <input type="checkbox" id="screen-fetch-news" />
                 <span>Fetch news</span>
+              </label>
+              <label class="toggle-pill" title="Local LLM derives what OTM call buyers appear to be betting on, per ticker plus a cluster synthesis (adds a minute or so)">
+                <input type="checkbox" id="screen-implied-thesis" checked />
+                <span>Implied thesis</span>
               </label>
             </div>
           </div>
@@ -90,6 +94,10 @@
             <button id="screen-view-last" class="btn-modal btn-cancel" style="flex: 0 0 auto;">View Last</button>
           </div>
           <div style="font-size: 0.8em; color: #888; margin-top: 4px;">Re-ranks the screening universe (~910 US equities &gt; $2B cap, &gt; 2M avg volume, via Yahoo screener + curated list held to the same thresholds) on two independent criteria — growth (revenue/equity growth × leverage) and event-proneness (beta / 52-week range). Does not change your screening list — each saved-list run additionally draws 5 random tickers from the ranking's top 100 (marked "shuffle" in the results, with an Add button to keep them).</div>
+          <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; display: flex; align-items: center; gap: 10px;">
+            <div id="backfill-coverage-summary" style="flex: 1; font-size: 0.82em; color: #9aa5b4;">Options data: checking…</div>
+            <button id="backfill-open" class="btn-modal btn-cancel" style="flex: 0 0 auto;" title="Fetch missing historical option chains from MarketData.app and re-derive the per-day IV history">⤓ Backfill Data…</button>
+          </div>
         </div>
         <!-- Right column: ticker list -->
         <div id="screen-tickers-display" style="flex: 0 0 200px; min-width: 200px; display: none; border-left: 1px solid #2e333d; padding-left: 16px; display: flex; flex-direction: column;">
@@ -103,6 +111,23 @@
             <button id="screen-ticker-add-btn" class="btn-modal btn-cancel" style="flex: 0 0 auto; padding: 6px 14px;">Add</button>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Options data backfill modal -->
+  <div id="backfill-modal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 540px;">
+      <h2 style="margin-top: 0;">Backfill Options Data</h2>
+      <p style="font-size: 0.86em; color: #9aa5b4; margin-top: -6px; line-height: 1.5;">
+        Fetches all missing historical option chains from MarketData.app (every ticker), then re-derives the per-day IV history used by the screening table and the per-ticker OTM-flow modal. Already-stored days are skipped, so it picks up where the last run left off. Run it with the app open; no separate script needed.
+      </p>
+      <div class="modal-form">
+        <div id="backfill-estimate" style="font-size: 0.9em; color: #9aa5b4;">Estimating remaining work…</div>
+      </div>
+      <div class="modal-buttons">
+        <button id="backfill-cancel" class="btn-modal btn-cancel">Cancel</button>
+        <button id="backfill-start" class="btn-modal btn-primary">Confirm</button>
       </div>
     </div>
   </div>

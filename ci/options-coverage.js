@@ -20,6 +20,9 @@
  *   pending_backfill — everything else with no chains yet (usually tickers
  *                      that entered the universe after the last phase C run).
  *                      NOT optionless — just unfetched.
+ *   skipped          — benchmark + CHAIN_SKIP tickers phase C never asks about
+ *                      (no chains possible); excluded from pending_backfill so
+ *                      the UI banner only lists fixable gaps.
  *
  * Output: ci/options-coverage.json (summary + per-class ticker lists).
  *
@@ -82,12 +85,22 @@ async function computeCoverage(database, state) {
   const chainByTicker = new Map(chains.map(r => [r.ticker, r]));
 
   const covered = [], stale = [], pendingBackfill = [], confirmedMissing = [];
+  const skipped = [];
   const staleCutoff = daysAgoISO(STALE_DAYS);
+
+  // Phase C deliberately never requests chains for the benchmark and the
+  // CHAIN_SKIP OTC/foreign tickers. Listing them as "pending backfill" made
+  // the UI backfill banner show permanently unfixable gaps. Lazily required —
+  // backfill-marketdata only pulls this module in for --maintenance, so there
+  // is no require cycle.
+  const { BENCHMARK, CHAIN_SKIP } = require('./backfill-marketdata');
 
   for (const { ticker, bars } of universe) {
     const chain = chainByTicker.get(ticker);
     const noDataDays = noDataCount.get(ticker) || 0;
-    if (chain && chain.days > 0) {
+    if (ticker === BENCHMARK || CHAIN_SKIP.has(ticker)) {
+      skipped.push({ ticker, bars, reason: ticker === BENCHMARK ? 'benchmark' : 'chain-skip' });
+    } else if (chain && chain.days > 0) {
       if (chain.last_day < staleCutoff) {
         stale.push({ ticker, days: chain.days, last_day: chain.last_day });
       } else {
@@ -107,6 +120,7 @@ async function computeCoverage(database, state) {
     stale: stale.length,
     pending_backfill: pendingBackfill.length,
     confirmed_missing: confirmedMissing.length,
+    skipped: skipped.length,
     thresholds: {
       min_confirm_bars: MIN_CONFIRM_BARS,
       min_no_data_days: MIN_NO_DATA_DAYS,
@@ -114,7 +128,8 @@ async function computeCoverage(database, state) {
     },
     // Phase C skips these — the vendor already said no, repeatedly.
     skip_tickers: confirmedMissing.map(r => r.ticker),
-    details: { covered, stale, pending_backfill: pendingBackfill, confirmed_missing: confirmedMissing },
+    details: { covered, stale, pending_backfill: pendingBackfill,
+               confirmed_missing: confirmedMissing, skipped },
   };
   return report;
 }

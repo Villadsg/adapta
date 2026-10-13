@@ -123,11 +123,15 @@ async function loadBars(database, ticker, source) {
 
 // --- Phases ---
 
-async function phaseA(client, database, tickers, lookbackDays = LOOKBACK_DAYS) {
+async function phaseA(client, database, tickers, lookbackDays = LOOKBACK_DAYS, opts = {}) {
   console.log(`\n=== Phase A: daily candles (${Math.round(lookbackDays / 7)}w) → stock_prices (source=marketdata) ===`);
   const from = dateNDaysAgo(lookbackDays);
   const to = today();
-  const symbols = [BENCHMARK, ...tickers.filter(t => t !== BENCHMARK)];
+  // Gap-fill runs (in-app backfill) pass includeBenchmark:false — SPY candles
+  // already exist there and the point is to backfill the requested tickers.
+  const symbols = opts.includeBenchmark === false
+    ? tickers.filter(t => t !== BENCHMARK)
+    : [BENCHMARK, ...tickers.filter(t => t !== BENCHMARK)];
 
   let totalBars = 0;
   for (let i = 0; i < symbols.length; i++) {
@@ -144,9 +148,13 @@ async function phaseA(client, database, tickers, lookbackDays = LOOKBACK_DAYS) {
     } catch (err) {
       console.error(`  [A] ${sym}: FAILED — ${err.message}`);
     }
+    if (opts.onProgress) {
+      opts.onProgress({ ticker: sym, done: i + 1, total: symbols.length, bars: totalBars });
+    }
     await sleep(100);
   }
   console.log(`[A] Done. ${totalBars} bars, ~${client.creditsUsed} credits used so far.`);
+  return { totalBars };
 }
 
 async function phaseB(database, tickers) {
@@ -187,7 +195,7 @@ async function phaseB(database, tickers) {
   console.log(`[B] Done. ${totalEvents} events written.`);
 }
 
-async function phaseC(client, database, tickers, state, confirmedMissing = new Set()) {
+async function phaseC(client, database, tickers, state, confirmedMissing = new Set(), opts = {}) {
   console.log('\n=== Phase C: raw historical options chains → options_chain_history ===');
   const existing = await database.getExistingChainDays();
   const noData = new Set(state.noDataDays || []);
@@ -212,9 +220,13 @@ async function phaseC(client, database, tickers, state, confirmedMissing = new S
   let done = 0;
   let failed = 0;
   let totalRows = 0;
+  let cancelled = false;
+  let creditCapped = false;
+  const filledTickers = new Set();
 
   async function worker() {
     while (idx < tasks.length) {
+      if (opts.isCancelled?.()) { cancelled = true; idx = tasks.length; break; }
       const t = tasks[idx++];
       try {
         const { underlyingPrice, contracts } = await client.fetchHistoricalChain(t.ticker, t.date);
@@ -226,6 +238,7 @@ async function phaseC(client, database, tickers, state, confirmedMissing = new S
           }));
           await database.saveChainRows(rows);
           existing.add(t.key);
+          filledTickers.add(t.ticker);
           totalRows += rows.length;
         }
       } catch (err) {
@@ -233,6 +246,18 @@ async function phaseC(client, database, tickers, state, confirmedMissing = new S
         console.error(`  [C] ${t.ticker} ${t.date}: FAILED — ${err.message}`);
       }
       done++;
+      if (opts.onProgress) {
+        opts.onProgress({
+          ticker: t.ticker, date: t.date, done, total: tasks.length, failed,
+          rows: totalRows, creditsUsed: client.creditsUsed, creditsRemaining: client.creditsRemaining,
+        });
+      }
+      if (opts.creditCap && client.creditsUsed >= opts.creditCap) {
+        console.log(`  [C] credit cap reached (${client.creditsUsed} >= ${opts.creditCap}) — stopping; resume tomorrow`);
+        creditCapped = true;
+        idx = tasks.length;
+        break;
+      }
       if (done % 200 === 0) {
         state.noDataDays = [...noData];
         saveState(state);
@@ -246,6 +271,7 @@ async function phaseC(client, database, tickers, state, confirmedMissing = new S
   state.noDataDays = [...noData];
   saveState(state);
   console.log(`[C] Done. ${totalRows} contract rows, ${done} days, ${failed} failed, ~${client.creditsUsed} credits.`);
+  return { done, failed, totalRows, filledTickers: [...filledTickers], cancelled, creditCapped, totalTasks: tasks.length };
 }
 
 // --- Black-Scholes implied vol -------------------------------------------------
@@ -314,7 +340,10 @@ function impliedVol(side, price, S, K, T, r) {
  *   - deepOTM*  = % of OTM-set dollar volume in strikes >10% OTM
  *   - *_dv      = total dollar volume over the OTM sets
  */
-async function deriveDailyIVRows(database) {
+async function deriveDailyIVRows(database, opts = {}) {
+  // Optional subset: derive only these tickers (in-app backfill fills gaps for
+  // a few tickers at a time — no need to re-derive the whole universe).
+  const wanted = Array.isArray(opts.tickers) && opts.tickers.length > 0 ? new Set(opts.tickers) : null;
   const days = await dbAll(
     database,
     'SELECT DISTINCT ticker, date::TEXT AS d FROM options_chain_history ORDER BY ticker, date'
@@ -322,6 +351,7 @@ async function deriveDailyIVRows(database) {
   // Group by ticker so bars (for dailyReturn) load once per ticker
   const byTicker = new Map();
   for (const { ticker, d } of days) {
+    if (wanted && !wanted.has(ticker)) continue;
     const date = String(d).split(' ')[0];
     if (!byTicker.has(ticker)) byTicker.set(ticker, []);
     byTicker.get(ticker).push(date);
@@ -330,6 +360,7 @@ async function deriveDailyIVRows(database) {
   const dbRows = [];
   const history = {};
   let processed = 0;
+  let tickersDone = 0;
   for (const [ticker, tickerDays] of byTicker) {
     const bars = await loadBars(database, ticker, 'marketdata');
     const barIdx = new Map(bars.map((b, i) => [b.date, i]));
@@ -436,6 +467,8 @@ async function deriveDailyIVRows(database) {
         console.log(`  [D] derived ${processed}/${days.length} ticker-days`);
       }
     }
+    tickersDone++;
+    if (opts.onProgress) opts.onProgress({ ticker, current: tickersDone, total: byTicker.size });
   }
   return { dbRows, history };
 }
@@ -466,10 +499,15 @@ function buildDerivedExpRecord(e) {
   };
 }
 
-async function phaseD(database) {
+async function phaseD(database, opts = {}) {
   console.log('\n=== Phase D: derive options_daily_iv + iv_history_records (BSM) ===');
-  const { dbRows, history } = await deriveDailyIVRows(database);
-  await database.clearDailyIV();
+  // Subset mode: re-derive and replace only these tickers (in-app backfill).
+  // Without opts.tickers the behavior is the historical full-table rebuild.
+  const subset = Array.isArray(opts.tickers) && opts.tickers.length > 0 ? opts.tickers : null;
+  if (subset) console.log(`  [D] subset: ${subset.length} ticker${subset.length === 1 ? '' : 's'}`);
+  const { dbRows, history } = await deriveDailyIVRows(database, { tickers: subset, onProgress: opts.onProgress });
+  if (subset) await database.clearDailyIVForTickers(subset);
+  else await database.clearDailyIV();
   const written = await database.saveDailyIVRows(dbRows);
   console.log(`  [D] options_daily_iv: ${written} rows derived (BSM-implied IV)`);
 
@@ -556,7 +594,18 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error('Fatal error:', err);
-  process.exit(1);
-});
+// Phases and helpers are importable so the Electron app can run C+D in-process
+// (it already owns the articles.db writer lock; the CLI cannot run while the
+// app is open). The CLI entry point below is unchanged.
+module.exports = {
+  phaseA, phaseB, phaseC, phaseD, deriveDailyIVRows,
+  loadState, saveState, getBackfillTickers, loadBars,
+  BENCHMARK, CHAIN_SKIP, LOOKBACK_DAYS,
+};
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('Fatal error:', err);
+    process.exit(1);
+  });
+}

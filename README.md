@@ -21,6 +21,19 @@ Results display in an interactive table with expandable rows showing price chart
 
 Per-ticker options surface visualization for the nearest two expirations, showing dollar volume, dollar open interest, and IV smile on a per-strike basis. A third expiration is fetched and stored in history for term-structure backtesting but not displayed. Designed to reveal where money is flowing relative to how the market is pricing risk.
 
+### Implied Thesis
+
+Optional per-run layer (checkbox in the screening modal) in which the local LLM (Qwen 3.5 via llama.cpp — the same runtime as the Model Lab insights) derives what the cluster of out-of-the-money call buyers appears to be betting on, in **one combined pass**:
+
+| Stage | Detail |
+|-------|--------|
+| **Candidate selection** | Ranks tickers by OTM-call tilt — deep-OTM dollar share (%) + OTM-over-ATM call IV premium (pts) — requiring ≥ $250K nearest-expiration call dollar volume; top 8 kept |
+| **Relative metrics** | Price: today's move in σ of the ticker's own last ~100 daily returns, plus its volume-gap percentile · IV: weighted OTM put IV vs OTM call IV, each side's OTM-over-ATM spread and that spread's percentile within the ticker's own IV history (≥3 records; level ranks ≥10) · Dollar volume: OTM call $ vs OTM put $ (plain-OTM split) + deep-OTM share of call $ |
+| **Combined generation** | One prompt carries all candidates (business profile from Yahoo + the relative metrics) and must produce ONE collective thesis: the future outcome or shared theme that best explains the call-tilted positioning, plus what would invalidate it — or states plainly that no common outcome is plausible |
+| **Grounding** | Company facts come only from the provided profiles; anything beyond them is marked "likely"/"plausibly"; numbers come only from the run. Output is hypotheses to judge, not facts |
+
+When "Fetch news" is checked, up to 5 Finviz headlines per candidate ride along labeled as context hints only. Rendered as the "Implied Thesis" panel in the screening report (`src/services/impliedThesis.js`).
+
 ### Semantic Search
 
 Save and search articles by meaning using **google/embeddinggemma-300m** (768-dimensional vectors). Cosine similarity scoring with category filtering.
@@ -151,8 +164,7 @@ adapta/
 │   ├── config.json                  # Screening config (tickers, thresholds)
 │   ├── screening-results.html       # Latest screening output (generated)
 │   ├── screening-favorites.json     # Starred tickers (generated)
-│   ├── weighted-iv-history.json     # Historical weighted IV per ticker, 3 expirations (generated)
-│   └── event-log.json              # Classified event time-series for backtesting (generated)
+│   └── event-log.json               # Classified event time-series for backtesting (generated)
 ├── src/
 │   ├── renderer/
 │   │   ├── index.html               # Main UI with screening modal
@@ -161,8 +173,10 @@ adapta/
 │   └── services/
 │       ├── optionsAnalysis.js        # Options metrics, IV analysis, event anticipation
 │       ├── stockAnalysis.js          # Price data, regression, fundamentals, HV
+│       ├── impliedThesis.js          # Implied Thesis: OTM call flow → LLM-derived hypotheses
+│       ├── optionsBackfill.js        # In-app options chain backfill (phases C+D)
 │       ├── database.js              # DuckDB operations
-│       └── chunking.js              # Text chunking for semantic search
+│       └── newsScraper.js           # Finviz headline scraping (optional)
 ```
 
 ## Data Sources
