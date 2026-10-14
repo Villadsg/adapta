@@ -99,10 +99,19 @@ function dbAll(database, sql, ...params) {
   });
 }
 
+function excludedTickers() {
+  try {
+    return new Set((config.excludeTickers || []).map(t => String(t).trim().toUpperCase()));
+  } catch (_) {
+    return new Set();
+  }
+}
+
 async function getBackfillTickers(database, override) {
   if (override) return override;
   const rows = await dbAll(database, 'SELECT DISTINCT ticker FROM stock_prices ORDER BY ticker');
-  return rows.map(r => r.ticker);
+  const excluded = excludedTickers();
+  return rows.map(r => r.ticker).filter(t => !excluded.has(t));
 }
 
 async function loadBars(database, ticker, source) {
@@ -214,22 +223,29 @@ async function phaseC(client, database, tickers, state, confirmedMissing = new S
   console.log(`  [C] ${tasks.length} ticker-days to fetch (${existing.size} already in DB, ${noData.size} known no-data)`);
 
   // Worker pool — API latency dominates, so modest concurrency cuts wall time a lot.
-  // Retries/backoff in the client handle any 429s.
+  // Retries/backoff in the client handle any 429s. A run of consecutive 429s
+  // means the daily credit budget is gone (every further fetch just burns
+  // 5 retry attempts), so bail out instead of churning through the queue.
   const CONCURRENCY = 6;
+  const MAX_CONSECUTIVE_429 = 5;
   let idx = 0;
   let done = 0;
   let failed = 0;
   let totalRows = 0;
   let cancelled = false;
   let creditCapped = false;
+  let quotaExhausted = false;
+  let consecutive429 = 0;
   const filledTickers = new Set();
 
   async function worker() {
     while (idx < tasks.length) {
       if (opts.isCancelled?.()) { cancelled = true; idx = tasks.length; break; }
+      if (quotaExhausted) { idx = tasks.length; break; }
       const t = tasks[idx++];
       try {
         const { underlyingPrice, contracts } = await client.fetchHistoricalChain(t.ticker, t.date);
+        consecutive429 = 0;
         if (contracts.length === 0) {
           noData.add(t.key);
         } else {
@@ -244,12 +260,22 @@ async function phaseC(client, database, tickers, state, confirmedMissing = new S
       } catch (err) {
         failed++;
         console.error(`  [C] ${t.ticker} ${t.date}: FAILED — ${err.message}`);
+        if (/MarketData 429 /.test(err.message)) {
+          consecutive429++;
+          if (consecutive429 >= MAX_CONSECUTIVE_429) {
+            quotaExhausted = true;
+            console.log(`  [C] ${consecutive429} consecutive 429s — MarketData daily credits are gone; stopping; resume when credits reset`);
+            idx = tasks.length;
+            break;
+          }
+        }
       }
       done++;
       if (opts.onProgress) {
         opts.onProgress({
           ticker: t.ticker, date: t.date, done, total: tasks.length, failed,
           rows: totalRows, creditsUsed: client.creditsUsed, creditsRemaining: client.creditsRemaining,
+          quotaExhausted,
         });
       }
       if (opts.creditCap && client.creditsUsed >= opts.creditCap) {
@@ -271,7 +297,7 @@ async function phaseC(client, database, tickers, state, confirmedMissing = new S
   state.noDataDays = [...noData];
   saveState(state);
   console.log(`[C] Done. ${totalRows} contract rows, ${done} days, ${failed} failed, ~${client.creditsUsed} credits.`);
-  return { done, failed, totalRows, filledTickers: [...filledTickers], cancelled, creditCapped, totalTasks: tasks.length };
+  return { done, failed, totalRows, filledTickers: [...filledTickers], cancelled, creditCapped, quotaExhausted, totalTasks: tasks.length };
 }
 
 // --- Black-Scholes implied vol -------------------------------------------------
@@ -599,7 +625,7 @@ async function main() {
 // app is open). The CLI entry point below is unchanged.
 module.exports = {
   phaseA, phaseB, phaseC, phaseD, deriveDailyIVRows,
-  loadState, saveState, getBackfillTickers, loadBars,
+  loadState, saveState, getBackfillTickers, loadBars, excludedTickers,
   BENCHMARK, CHAIN_SKIP, LOOKBACK_DAYS,
 };
 

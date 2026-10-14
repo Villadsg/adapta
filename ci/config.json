@@ -23,7 +23,8 @@
     "VOYG",
     "DELL",
     "AMD",
-    "INTC"
+    "INTC",
+    "IBRX"
   ],
   "screenDays": 100,
   "screenLookbackDays": 5,
@@ -39,10 +40,18 @@
     "SMCI"
   ],
   "lastShuffleDraw": [
-    "DNOW",
-    "RKT",
-    "CBRS",
-    "CRWV",
-    "DJT"
+    "AUR",
+    "PONY",
+    "TSHA",
+    "NVDA",
+    "ARX"
+  ],
+  "excludeTickers": [
+    "ATAI",
+    "CRNX",
+    "INTL",
+    "KXIAY",
+    "PSLV",
+    "STUB"
   ]
 }

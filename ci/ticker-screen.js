@@ -271,6 +271,7 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
     screenMaxTickers = 0,
     benchmark = 'SPY',
     isCancelled = null,
+    excludeTickers = [],
   } = config;
 
   if (!tickers.length) {
@@ -282,7 +283,15 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
   const run = archiver ? archiver.startRun({ trigger: 'manual', config }) : null;
   if (run) console.log(`[Screen] Archive run id: ${run.runId}`);
 
-  const list = screenMaxTickers > 0 ? tickers.slice(0, screenMaxTickers) : tickers;
+  // The screener's in-memory suggestions re-add anything matching the live
+  // screen query — config.excludeTickers is the permanent opt-out for tickers
+  // that were deliberately deleted (delisted / vendor has no options data).
+  const excluded = new Set(excludeTickers.map(t => String(t).trim().toUpperCase()));
+  const kept = tickers.filter(t => !excluded.has(String(t).trim().toUpperCase()));
+  const dropped = tickers.length - kept.length;
+  if (dropped > 0) console.log(`[Screen] Excluded ${dropped} ticker(s) via config.excludeTickers`);
+
+  const list = screenMaxTickers > 0 ? kept.slice(0, screenMaxTickers) : kept;
   console.log(`[Screen] Screening ${list.length} tickers (${screenDays}d window, ${screenLookbackDays}d lookback, p${screenPercentileThreshold})`);
 
   // Fetch benchmark (SPY) data once for residual computation

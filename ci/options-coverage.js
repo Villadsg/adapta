@@ -93,12 +93,15 @@ async function computeCoverage(database, state) {
   // the UI backfill banner show permanently unfixable gaps. Lazily required —
   // backfill-marketdata only pulls this module in for --maintenance, so there
   // is no require cycle.
-  const { BENCHMARK, CHAIN_SKIP } = require('./backfill-marketdata');
+  const { BENCHMARK, CHAIN_SKIP, excludedTickers } = require('./backfill-marketdata');
+  const userExcluded = excludedTickers();
 
   for (const { ticker, bars } of universe) {
     const chain = chainByTicker.get(ticker);
     const noDataDays = noDataCount.get(ticker) || 0;
-    if (ticker === BENCHMARK || CHAIN_SKIP.has(ticker)) {
+    if (userExcluded.has(ticker)) {
+      skipped.push({ ticker, bars, reason: 'excluded' });
+    } else if (ticker === BENCHMARK || CHAIN_SKIP.has(ticker)) {
       skipped.push({ ticker, bars, reason: ticker === BENCHMARK ? 'benchmark' : 'chain-skip' });
     } else if (chain && chain.days > 0) {
       if (chain.last_day < staleCutoff) {
