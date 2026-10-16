@@ -101,7 +101,8 @@ class OptionsBackfillService {
   /**
    * Count the ticker-days phase C would actually fetch right now: bar-days
    * with no stored chain, minus known no-data days and vendor-confirmed
-   * options-less tickers. Same filters as phase C's task list.
+   * options-less tickers. Same filters as phase C's task list — including the
+   * already-stored (ticker, date) skip, which is what keeps this honest.
    */
   async estimate() {
     const state = loadState();
@@ -111,19 +112,25 @@ class OptionsBackfillService {
     const dbProxy = Object.create(this.database);
     dbProxy.connection = conn;
     try {
+      const existing = await dbProxy.getExistingChainDays();
       const tickers = (await getBackfillTickers(dbProxy, null)).filter(
         (t) => t !== BENCHMARK && !CHAIN_SKIP.has(t) && !confirmedMissing.has(t)
       );
-      let missingDays = 0;
+      const missing = new Map(); // ticker -> day count
       for (const ticker of tickers) {
         const bars = await loadBars(dbProxy, ticker, 'marketdata');
         for (const b of bars) {
-          if (!noData.has(`${ticker}|${b.date}`)) missingDays++;
+          const key = `${ticker}|${b.date}`;
+          if (!existing.has(key) && !noData.has(key)) {
+            missing.set(ticker, (missing.get(ticker) || 0) + 1);
+          }
         }
       }
+      let missingDays = 0;
+      for (const n of missing.values()) missingDays += n;
       return {
         success: true,
-        tickers: tickers.length,
+        tickers: missing.size,
         missingDays,
         creditsEstimate: Math.round(missingDays * CREDITS_PER_TICKER_DAY),
       };
@@ -203,17 +210,19 @@ class OptionsBackfillService {
         onProgress: (info) => this._emit({ phase: 'C', ...info }),
       });
 
-      // Derive IV history for whatever C actually filled — even after a cancel
-      // or credit-cap stop, the fetched days are only visible to the UI after
-      // phase D runs. Nothing filled → nothing to derive.
+      // Phase D: ALWAYS a full-universe rebuild, not just this run's
+      // filledTickers. Chains fetched by an earlier interrupted/capped run
+      // are skipped by phase C's already-stored check, so a subset derive
+      // would leave them underived forever — exactly the SMCI hole bug:
+      // complete backfill, empty IV records for the backfilled window.
+      // The full rebuild costs ~a minute; correctness wins.
       let derivedTickers = 0;
-      if (c.filledTickers.length > 0) {
-        this._emit({ phase: 'D', ticker: null, done: 0, total: c.filledTickers.length }, true);
-        await phaseD(dbProxy, {
-          tickers: c.filledTickers,
+      if (c.done > 0 || c.totalTasks === 0) {
+        this._emit({ phase: 'D', ticker: null, done: 0, total: 0 }, true);
+        const d = await phaseD(dbProxy, {
           onProgress: (info) => this._emit({ phase: 'D', done: info.current, total: info.total, ticker: info.ticker }),
         });
-        derivedTickers = c.filledTickers.length;
+        derivedTickers = d.derivedTickers || d.tickers || 0;
       }
 
       const summary = {
@@ -221,6 +230,7 @@ class OptionsBackfillService {
         finishedAt: new Date().toISOString(),
         cancelled: c.cancelled,
         creditCapped: c.creditCapped,
+        quotaExhausted: c.quotaExhausted,
         requestedTickers: scope.length,
         candlesBars: a.totalBars,
         daysFetched: c.done,

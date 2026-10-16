@@ -566,6 +566,7 @@ async function phaseD(database, opts = {}) {
   await database.clearIVHistoryForTickers(replacedTickers);
   await database.saveIVHistoryRecords(history);
   console.log(`[D] Done. ${replaced} derived records written to iv_history_records; ${replacedTickers.length} tickers fully replaced.`);
+  return { records: replaced, derivedTickers: replacedTickers.length };
 }
 
 async function main() {
