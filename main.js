@@ -45,15 +45,15 @@ const LabInsightsService = require('./src/services/labInsights');
 const { OptionsBackfillService } = require('./src/services/optionsBackfill');
 const { computeCoverage } = require('./ci/options-coverage');
 const { loadState: loadBackfillState } = require('./ci/backfill-marketdata');
-const { runImpliedThesis } = require('./src/services/impliedThesis');
 const { screenTickers, reviseTickers, formatAge } = require('./ci/ticker-screen');
-const { classifyTickerNews, tagTickerEvents } = require('./src/services/newsClassifier');
+const { classifyAndTagNews } = require('./src/services/newsClassifier');
 const YahooFinance = require('yahoo-finance2').default;
 
 // Extracted main-process modules
 const { fetchFinvizNews, extractArticleViaBrowser } = require('./src/main/articleFetch');
 const { createWindow, createTab, switchTab, closeTab, getActiveBrowserView, updateBrowserViewBounds, getWindow } = require('./src/main/tabs');
 const { combineHistRecord, peWelch, peStandardize, peLogisticFit, peSigmoidScore, peAUC, peCVAUC } = require('./src/main/screeningStats');
+const { computeOptionsClusters } = require('./src/main/optionsClusters');
 const { generateScreeningHTML } = require('./src/main/screeningHtml');
 
 const mainWindow = () => getWindow();
@@ -842,50 +842,48 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
     if (options.period) config.screenDays = Math.ceil(options.period * 1.4);
     if (options.lookbackDays) config.screenLookbackDays = options.lookbackDays;
     if (options.percentileThreshold) config.screenPercentileThreshold = options.percentileThreshold;
+    // Options-cluster count for the report: a number 2–8 bakes in a manual
+    // choice (e.g. after exploring k interactively in a previous report);
+    // anything else falls back to the auto-scaled k.
+    if (options.clusterK !== undefined) config.clusterK = options.clusterK;
 
     // Override tickers if provided (bypass saved list)
     if (options.overrideTickers && options.overrideTickers.length > 0) {
       config.screenTickers = options.overrideTickers;
     }
 
-    // Shuffle draw: on saved-list runs, add 5 random tickers from the top 100
-    // of the latest rebuild's full ranking (shuffled, excluding the current list
-    // and the previous run's draw so draws rotate). The draw is persisted to
-    // config.lastShuffleDraw so the next run can exclude it.
-    // The tickers are only suggested for this run — they are NOT saved into
-    // screenTickers; the results page offers an "Add" button per suggestion.
+    // Yahoo supplies fundamentals only (sector/industry/market cap/summary).
+    // Prices and options chains come from MarketData.app.
+    const createYF = () => new YahooFinance({ suppressNotices: ['yahooSurvey'] });
+
+    // Similar-ticker suggestion: on saved-list runs, add 1 ticker chosen by
+    // embedding similarity between the current list's company descriptions and
+    // candidates from the latest rebuild's full ranking (excluding the current
+    // list, fixed/excluded tickers, and recent suggestions). The pick is
+    // persisted to config.lastSuggested so the next run rotates; it joins this
+    // run in-memory only and stays out of screenTickers unless the user clicks
+    // "Add" on the results page.
     let suggestedTickers = [];
+    const suggestedMeta = {};
     const isSavedListRun = !options.overrideTickers || options.overrideTickers.length === 0;
     if (isSavedListRun) {
       try {
-        const resultsPath = path.join(__dirname, 'ci', 'revise-results.json');
-        if (fs.existsSync(resultsPath)) {
-          const rev = JSON.parse(fs.readFileSync(resultsPath, 'utf-8'));
-          const top100 = (rev.fullRanking || rev.ranking || []).slice(0, 100);
-          const current = new Set(config.screenTickers || []);
-          const lastDraw = new Set(config.lastShuffleDraw || []);
-          const pool = top100.filter(t => !current.has(t) && !lastDraw.has(t));
-          // Fisher-Yates shuffle, take 5
-          for (let i = pool.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [pool[i], pool[j]] = [pool[j], pool[i]];
-          }
-          suggestedTickers = pool.slice(0, 5);
-          if (suggestedTickers.length > 0) {
-            // Persist only the draw (so the next run excludes it) — the drawn
-            // tickers join this run in-memory but stay out of screenTickers
-            // unless the user clicks "Add" on the results page. Re-read the
-            // file so per-run option merges above (screenDays etc.) and any
-            // concurrent "Add" writes are not persisted/lost here.
-            const diskConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-            diskConfig.lastShuffleDraw = suggestedTickers;
-            fs.writeFileSync(configPath, JSON.stringify(diskConfig, null, 2) + '\n', 'utf-8');
-            config.screenTickers = [...(config.screenTickers || []), ...suggestedTickers];
-            console.log(`[Screen] Drew ${suggestedTickers.length} shuffle tickers (rebuild top 100): ${suggestedTickers.join(', ')}`);
-          }
+        const { suggestSimilarTicker } = require('./ci/tickerSuggest');
+        const pick = await suggestSimilarTicker({ currentTickers: config.screenTickers || [], config, createYF });
+        if (pick) {
+          suggestedTickers = [pick.ticker];
+          suggestedMeta[pick.ticker] = pick;
+          // Re-read the file so per-run option merges above (screenDays etc.)
+          // and any concurrent "Add" writes are not persisted/lost here.
+          const diskConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+          diskConfig.lastSuggested = [...(diskConfig.lastSuggested || []), pick.ticker].slice(-5);
+          delete diskConfig.lastShuffleDraw;
+          fs.writeFileSync(configPath, JSON.stringify(diskConfig, null, 2) + '\n', 'utf-8');
+          config.screenTickers = [...(config.screenTickers || []), pick.ticker];
+          console.log(`[Screen] Suggested similar ticker: ${pick.ticker} (similarity ${(pick.similarity * 100).toFixed(1)}%)`);
         }
       } catch (suggErr) {
-        console.error(`[Screen] Suggested-ticker sampling failed (non-fatal): ${suggErr.message}`);
+        console.error(`[Screen] Similar-ticker suggestion failed (non-fatal): ${suggErr.message}`);
       }
     }
 
@@ -893,10 +891,6 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
     console.log(`\nRunning ticker screening on ${tickers.length} tickers...`);
 
     config.isCancelled = () => screeningCancelRequested;
-
-    // Yahoo supplies fundamentals only (sector/industry/market cap/summary).
-    // Prices and options chains come from MarketData.app.
-    const createYF = () => new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 
     // Collect entries to fetch news for; fetched in parallel after screening completes
     const newsFetchEntries = [];
@@ -918,7 +912,7 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
     }
 
     // Sort allTickers: fixed (saved-list) and chosen (override) tickers first,
-    // shuffle-drawn suggestions last. Within each group: hits first (by
+    // the similar-ticker suggestion last. Within each group: hits first (by
     // percentile desc), then non-hits alphabetically.
     const suggestedSet = new Set(suggestedTickers);
     result.allTickers.sort((a, b) => {
@@ -932,17 +926,13 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       return (a.ticker || '').localeCompare(b.ticker || '');
     });
 
-    // Classify headlines from title text only (no article extraction)
+    // Classify headlines from title text only (no article extraction).
+    // Single pass: categories + event tags share one headline embedding round.
     if (options.fetchNews) {
       try {
-        await classifyTickerNews(result.allTickers);
+        await classifyAndTagNews(result.allTickers);
       } catch (err) {
-        console.error('[Screen] News classification failed:', err.message);
-      }
-      try {
-        await tagTickerEvents(result.allTickers);
-      } catch (err) {
-        console.error('[Screen] Event tagging failed:', err.message);
+        console.error('[Screen] News classification/tagging failed:', err.message);
       }
 
       // Patch tags into run.json (archiver wrote it before classification ran).
@@ -982,12 +972,11 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
     if (eventChannels) console.log(`[Screen] Event forecast using lab feature set (${eventChannels.length} channels)`);
     if (directionChannels) console.log(`[Screen] Direction forecast using lab feature set (${directionChannels.length} channels)`);
 
-    // Enrich every screened ticker with its next-day TTM event probability.
-    // All tickers go through ONE batched forward pass (GPU when available), so
-    // the model weights and Python startup are paid once for the whole run —
-    // this is what makes it affordable for full runs,
-    // not just a handful of custom tickers.
-    if (ttmEventService) {
+    // Enrich every screened ticker with model forecasts. Both services spawn
+    // their own Python process against a private temp copy of the DB, so they
+    // run concurrently — each pays its own model load, and the slower one
+    // defines the wall time instead of their sum.
+    {
       const tickerMap = new Map();
       for (const entry of result.allTickers) {
         if (entry.ticker && !entry.skipped && !entry.error) {
@@ -997,51 +986,43 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       const toForecast = [...tickerMap.keys()];
 
       if (toForecast.length > 0) {
-        console.log(`[Screen] Running batched TTM event forecast for ${toForecast.length} ticker(s)...`);
         const t0 = Date.now();
-        try {
-          const probs = await ttmEventService.forecastProbabilities(toForecast, null, eventChannels);
-          for (const [ticker, prob] of probs) {
-            const entry = tickerMap.get(ticker);
-            if (entry) entry.eventProbability = prob;
-          }
-          console.log(`[Screen] TTM forecast: ${probs.size}/${toForecast.length} scored in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-        } catch (err) {
-          console.error(`[Screen] TTM batch forecast failed: ${err.message}`);
+        // Next-day TTM event probability: ONE batched forward pass (GPU when
+        // available), so model weights and Python startup are paid once for
+        // the whole run — what makes it affordable for full runs.
+        console.log(`[Screen] Running batched TTM event + TimesFM direction forecasts for ${toForecast.length} ticker(s)...`);
+        const [probs, recs] = await Promise.all([
+          ttmEventService
+            ? ttmEventService.forecastProbabilities(toForecast, null, eventChannels).catch((err) => {
+                console.error(`[Screen] TTM batch forecast failed: ${err.message}`);
+                return new Map();
+              })
+            : Promise.resolve(new Map()),
+          timesfmDirectionService
+            ? timesfmDirectionService.forecastRecords(toForecast, null, directionChannels).catch((err) => {
+                console.error(`[Screen] Direction batch forecast failed: ${err.message}`);
+                return new Map();
+              })
+            : Promise.resolve(new Map()),
+        ]);
+        for (const [ticker, prob] of probs) {
+          const entry = tickerMap.get(ticker);
+          if (entry) entry.eventProbability = prob;
         }
-      }
-    }
-
-    // Direction forecast: probability of a positive return on the next
-    // trading day (options-only covariates).
-    if (timesfmDirectionService) {
-      const tickerMap = new Map();
-      for (const entry of result.allTickers) {
-        if (entry.ticker && !entry.skipped && !entry.error) {
-          tickerMap.set(entry.ticker, entry);
+        console.log(`[Screen] TTM forecast: ${probs.size}/${toForecast.length} scored in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+        // Direction forecast: probability of a positive return on the next
+        // trading day (options-only covariates).
+        for (const [ticker, rec] of recs) {
+          const entry = tickerMap.get(ticker);
+          if (entry) entry.directionForecast = {
+            upProbability: rec.up_probability,
+            downProbability: rec.down_probability,
+            medianReturnPct: rec.median_return_pct,
+            horizonTradingDays: rec.horizon_trading_days,
+            forecastDate: rec.forecast_date,
+          };
         }
-      }
-      const toForecast = [...tickerMap.keys()];
-
-      if (toForecast.length > 0) {
-        console.log(`[Screen] Running batched TimesFM direction forecast for ${toForecast.length} ticker(s)...`);
-        const t0 = Date.now();
-        try {
-          const recs = await timesfmDirectionService.forecastRecords(toForecast, null, directionChannels);
-          for (const [ticker, rec] of recs) {
-            const entry = tickerMap.get(ticker);
-            if (entry) entry.directionForecast = {
-              upProbability: rec.up_probability,
-              downProbability: rec.down_probability,
-              medianReturnPct: rec.median_return_pct,
-              horizonTradingDays: rec.horizon_trading_days,
-              forecastDate: rec.forecast_date,
-            };
-          }
-          console.log(`[Screen] Direction forecast: ${recs.size}/${toForecast.length} scored in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-        } catch (err) {
-          console.error(`[Screen] Direction batch forecast failed: ${err.message}`);
-        }
+        console.log(`[Screen] Direction forecast: ${recs.size}/${toForecast.length} scored in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
       }
     }
 
@@ -1126,6 +1107,48 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       console.log(`[Screen] IV history: ${savedIV} record(s) saved to iv_history_records`);
     } catch (err) {
       console.error(`[Screen] Failed to save IV history: ${err.message}`);
+    }
+
+    // Delta-shape clustering: groups tickers whose options posture (IV smile +
+    // DV distribution across moneyness buckets) moved the same unusual way vs
+    // their own 60-day baseline. Clusters are defined ONLY by tickers on the
+    // screening list — clusters must describe the current data being screened,
+    // never shaped by outside tickers. Staleness is handled inside
+    // computeOptionsClusters (maxAgeDays): a screened ticker whose last record
+    // is not current is dropped, not clustered. If too few tickers are
+    // eligible, clustering is skipped. Failure must never break the run.
+    let clusterResult = null;
+    try {
+      const clusterUniverse = (config.screenTickers || [])
+        .map(t => String(t).trim().toUpperCase()).filter(Boolean);
+      const wanted = new Set(clusterUniverse);
+      const clusterHistory = {};
+      let missing = [];
+      for (const t of Object.keys(ivHistory)) {
+        if (wanted.has(t)) clusterHistory[t] = ivHistory[t];
+      }
+      for (const t of clusterUniverse) if (!clusterHistory[t]) missing.push(t);
+      const universeLabel = clusterUniverse.length > 0
+        ? `screening list (${Object.keys(clusterHistory).length} with options history${missing.length ? `, ${missing.length} without: ${missing.join(', ')}` : ''})`
+        : 'no screening list';
+      const clusterFrom = new Date(Date.now() - 400 * 86400000).toISOString().slice(0, 10);
+      const spotMap = await database.getCloseMapForTickers(Object.keys(clusterHistory), clusterFrom);
+      // Scale k down for small universes: 5 clusters over ~10 tickers would
+      // mostly yield singletons. Roughly one cluster per 4 tickers, min 2. A
+      // manual config.clusterK (2–8) overrides the auto scaling.
+      const nEligible = Object.keys(clusterHistory).length;
+      const manualK = Number.isInteger(config.clusterK) && config.clusterK >= 2 && config.clusterK <= 8 ? config.clusterK : null;
+      const kForRun = manualK || Math.max(2, Math.min(5, Math.floor(nEligible / 4)));
+      clusterResult = computeOptionsClusters(clusterHistory, spotMap, { k: kForRun, kSource: manualK ? 'manual' : 'auto' });
+      if (clusterResult.meta.ok) {
+        const m = clusterResult.meta;
+        m.universe = universeLabel;
+        console.log(`[Screen] Options clusters (${universeLabel}): k=${m.k} (${m.kSource || 'auto'}) silhouette=${m.silhouette}${m.weak ? ' (weak)' : ''} over ${m.n} tickers: ${clusterResult.clusters.map(c => `${c.id}=${c.size}(σ${c.avgMove})`).join(' ')}`);
+      } else {
+        console.log(`[Screen] Options clusters skipped: ${clusterResult.meta.reason}`);
+      }
+    } catch (clusterErr) {
+      console.error(`[Screen] Options clustering failed: ${clusterErr.message}`);
     }
 
     // Append classified events to the persistent event log for backtesting.
@@ -1511,35 +1534,40 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
       preEventByReturnBucket = { low: makeBucket(lo), high: makeBucket(hi) };
     }
 
-    // Implied Thesis: a local LLM reads each flagged company's business
-    // profile next to its OTM call flow and derives what the buyers appear
-    // to be betting on, then names the common thread across the cluster.
-    // Purely advisory text for the report — never gates the run itself.
-    let impliedThesis = null;
-    if (options.impliedThesis && !result.cancelled && labInsightsService) {
-      try {
-        console.log('[Screen] Deriving implied thesis from OTM call activity...');
-        const t0 = Date.now();
-        impliedThesis = await runImpliedThesis(result.allTickers, {
-          generate: (system, user, maxNewTokens) => labInsightsService.runPrompt(system, user, maxNewTokens),
-          ivHistory,
-        });
-        console.log(`[Screen] Implied thesis: ${impliedThesis.candidates.length} ticker(s), ` +
-          `${impliedThesis.thesis ? 'thesis derived' : 'no thesis'} in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-      } catch (thesisErr) {
-        console.error(`[Screen] Implied thesis failed: ${thesisErr.message}`);
-        impliedThesis = { ok: false, reason: thesisErr.message };
-      }
-    }
-
     // Generate HTML results page
     const currentNotes = loadNotes();
     const currentToDelete = loadToDelete();
-    const html = generateScreeningHTML(result.allTickers, tickers.length, config, ivHistoryForHTML, preEventStats, currentNotes, preEventByReturnBucket, preEventContrast, peLiveSlopeByTicker, currentToDelete, result.freshness, suggestedTickers, impliedThesis);
+
+    // Upcoming events (next earnings date) per ticker, scraped via the
+    // Electron Chromium network stack; failures degrade to an empty panel.
+    let eventsByTicker = {};
+    try {
+      const { fetchUpcomingEvents } = require('./src/services/upcomingEvents');
+      eventsByTicker = await fetchUpcomingEvents(result.allTickers.map(h => h.ticker));
+    } catch (eventsErr) {
+      console.warn('[Screen] Upcoming events fetch failed:', eventsErr.message);
+    }
+
+      // Companion "cluster investigation" page: same run's shape data, own URL
+      // space for interactive re-clustering (pick k, apply, inspect). Written
+      // next to each report variant so the report's button can link relatively.
+      let clusterPageHtml = null;
+      try {
+        if (clusterResult && clusterResult.client) {
+          const { generateClusterInvestigationHTML } = require('./src/main/clusterInvestigationHtml');
+          clusterPageHtml = generateClusterInvestigationHTML(clusterResult);
+        }
+      } catch (clusterPageErr) {
+        console.error(`[Screen] Cluster investigation page failed: ${clusterPageErr.message}`);
+      }
+      const htmlFor = (clusterPageName) => generateScreeningHTML(result.allTickers, tickers.length, config, ivHistoryForHTML, preEventStats, currentNotes, preEventByReturnBucket, preEventContrast, peLiveSlopeByTicker, currentToDelete, result.freshness, suggestedTickers, eventsByTicker, clusterResult, suggestedMeta, clusterPageName);
 
     // Save HTML for "Latest Run Results" (alias) and a timestamped snapshot in ci/screening-runs/
     const screenResultsPath = path.join(__dirname, 'ci', 'screening-results.html');
-    fs.writeFileSync(screenResultsPath, html, 'utf-8');
+    fs.writeFileSync(screenResultsPath, htmlFor(clusterPageHtml ? 'screening-results-clusters.html' : null), 'utf-8');
+    if (clusterPageHtml) {
+      fs.writeFileSync(path.join(__dirname, 'ci', 'screening-results-clusters.html'), clusterPageHtml, 'utf-8');
+    }
 
     const runsDir = path.join(__dirname, 'ci', 'screening-runs');
     fs.mkdirSync(runsDir, { recursive: true });
@@ -1547,16 +1575,21 @@ ipcMain.handle('screen-tickers', async (event, options = {}) => {
     // (run-<runId>.html / run-<runId>.run.json).
     const ts = result.runId || new Date().toISOString().replace(/[:.]/g, '-');
     const snapshotPath = path.join(runsDir, `run-${ts}.html`);
-    fs.writeFileSync(snapshotPath, html, 'utf-8');
+    fs.writeFileSync(snapshotPath, htmlFor(clusterPageHtml ? `run-${ts}-clusters.html` : null), 'utf-8');
+    if (clusterPageHtml) {
+      fs.writeFileSync(path.join(runsDir, `run-${ts}-clusters.html`), clusterPageHtml, 'utf-8');
+    }
 
-    // Prune to 6 most recent snapshots
+    // Prune to 6 most recent snapshots (each run's report + its cluster page)
     try {
       const entries = fs.readdirSync(runsDir)
-        .filter((f) => f.startsWith('run-') && f.endsWith('.html'))
+        .filter((f) => f.startsWith('run-') && f.endsWith('.html') && !f.endsWith('-clusters.html'))
         .map((f) => ({ f, mtime: fs.statSync(path.join(runsDir, f)).mtimeMs }))
         .sort((a, b) => b.mtime - a.mtime);
       for (const old of entries.slice(6)) {
         fs.unlinkSync(path.join(runsDir, old.f));
+        const clusterSidecar = path.join(runsDir, old.f.replace(/\.html$/, '-clusters.html'));
+        if (fs.existsSync(clusterSidecar)) fs.unlinkSync(clusterSidecar);
       }
     } catch (pruneErr) {
       console.warn('[Screen] Failed to prune old run snapshots:', pruneErr.message);
@@ -1589,9 +1622,9 @@ ipcMain.handle('revise-tickers', async (event) => {
     const result = await reviseTickers(createYF, onProgress);
 
     // The rebuild only refreshes the ranking (ci/revise-results.json), which
-    // serves as the pool for the per-run shuffle draw. It does NOT touch
-    // config.json — the screening list is managed by the user (plus explicit
-    // "Add" clicks from shuffled-in suggestions).
+    // serves as the candidate pool for the per-run similar-ticker suggestion.
+    // It does NOT touch config.json — the screening list is managed by the
+    // user (plus explicit "Add" clicks from suggested tickers).
     const resultsPath = path.join(__dirname, 'ci', 'revise-results.json');
     const fullResults = {
       timestamp: new Date().toISOString(),
@@ -1644,7 +1677,7 @@ ipcMain.handle('save-screen-list', async (event, { tickers } = {}) => {
 });
 
 // Permanently add a single ticker to the screening list (used by the "Add"
-// button next to shuffled-in suggestions on the results page).
+// button next to the suggested ticker on the results page).
 ipcMain.handle('add-screen-ticker', async (event, ticker) => {
   try {
     const fs = require('fs');
@@ -1664,6 +1697,9 @@ ipcMain.handle('add-screen-ticker', async (event, ticker) => {
     return { success: false, error: error.message };
   }
 });
+
+// Get / save the manual cluster universe — removed: the options clustering
+// now always runs on the screening list (config.screenTickers).
 
 // Load last rebuild results from disk
 ipcMain.handle('load-revise-results', async () => {
@@ -1717,7 +1753,7 @@ ipcMain.handle('list-screening-runs', async () => {
       return { success: true, runs: [] };
     }
     const runs = fs.readdirSync(runsDir)
-      .filter((f) => f.startsWith('run-') && f.endsWith('.html'))
+      .filter((f) => f.startsWith('run-') && f.endsWith('.html') && !f.endsWith('-clusters.html'))
       .map((f) => {
         const full = path.join(runsDir, f);
         const mtime = fs.statSync(full).mtimeMs;

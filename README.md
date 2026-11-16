@@ -174,7 +174,7 @@ adapta/
 │       ├── optionsAnalysis.js        # Options metrics, IV analysis, event anticipation
 │       ├── stockAnalysis.js          # Price data, regression, fundamentals, HV
 │       ├── impliedThesis.js          # Implied Thesis: OTM call flow → LLM-derived hypotheses
-│       ├── optionsBackfill.js        # In-app options chain backfill (phases C+D)
+│       ├── optionsBackfill.js        # In-app options data backfill (phases A+C+D)
 │       ├── database.js              # DuckDB operations
 │       └── newsScraper.js           # Finviz headline scraping (optional)
 ```

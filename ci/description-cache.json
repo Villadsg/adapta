@@ -1,0 +1,868 @@
+{
+  "MSTR": {
+    "summary": "Prior to 2025, we primarily relied on proceeds from sales of class A common stock and senior convertible notes to purchase bitcoin. [...] by declines in product license revenue and related product support revenue of $48.5 million in the aggregate. Deferred revenue and advance payments represent amounts received or due from our customers before we transfer our software or services to the customer. The portions of multi-year contracts that will be invoiced in the future are not presented on the Consolidated Balance Sheets in “Accounts receivable, net” and “Deferred revenue and advance payments” and instead are included in the remaining performance obligation disclosure below. We did not sell any of our digital assets during the years ended December 31, 2025 and 2024. Cost of Revenues • Cost of Revenues. Cost of revenues increased by $19.9 million for the year ended December 31, 2025, as compared to the same period in the prior year, primarily due to a $32.5 million increase in subscription services cost of revenues driven by higher cloud service fees and related infrastructure costs associated with customer environments hosted in our cloud environment, as well as a $1.9 million increase in billable subcontractor expenses. Sales and marketing expenses consist of personnel costs, commissions, and costs related to office facilities, travel, advertising, public relations programs, and promotional events, such as trade shows, seminars, and technical conferences. Interest Expense, Net Interest expense, net, primarily relates to the contractual interest expense and amortization of issuance costs related to our long-term debt arrangements, as offset by interest income earned on interest-bearing cash equivalents held in our USD Reserve. Other income, net of $3.5 million in 2024 was comprised primarily of foreign currency transaction net gains.",
+    "sector": "Technology",
+    "industry": "Finance Services",
+    "marketCap": 47246696448,
+    "marketCapAt": "2026-11-14T22:15:52.303Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T22:15:52.303Z"
+  },
+  "PLTR": {
+    "summary": "In 2023, we began deploying our newest offering, AIP, which is designed for customers across the commercial and government sectors, enabling them to derive value from recent breakthroughs in AI via the combination of our existing software platforms with generative AI models, including LLMs. Sales and Marketing Our approach to sales and marketing is built around discussions with existing and prospective customers in order to understand the principal challenges our customers face and identify ways in which our software platforms can provide long-term value and results. The high installation costs, high failure risks, complexity of data environments, and the long sales cycles associated with these opportunities raise the barriers to entry for competition. Palantir Cloud Our Palantir Cloud subscriptions grant customers the right to access the software functionality in a hosted environment controlled by Palantir and are sold together with stand-ready O&M services, as further described below. O&M services include critical updates and support and maintenance services required to operate the software and, as such, are necessary for the software to maintain its intended utility over the contractual term. Revenue is generally recognized over the contract term on a ratable basis. Sales and marketing costs primarily include salaries, stock-based compensation expense, variable compensation, including commissions, and benefits for our sales force and personnel involved in sales 72 Table of Contents functions, executing on pilots, and customer growth activities; as well as third-party cloud hosting services for our pilots, and marketing and sales event-related costs. Interest Income Interest income consists primarily of interest income earned on our cash, cash equivalents, U.S. Treasury securities, and restricted cash balances. Net Income Attributable to Noncontrolling Interests Net income attributable to noncontrolling interests represents the share of income that is not attributable to the Company. Segments We have two operating segments, commercial and government, which were determined based on the manner in which the chief operating decision maker, who is our Chief Executive Officer, manages our operations for purposes of allocating resources and evaluating performance.",
+    "sector": "Technology",
+    "industry": "Services-Prepackaged Software",
+    "marketCap": 404771504128,
+    "marketCapAt": "2026-11-14T22:15:52.359Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T22:15:52.359Z",
+    "wikiTitle": "Palantir"
+  },
+  "SNDK": {
+    "summary": "Separation from Western Digital Corporation Prior to February 21, 2025, we were wholly owned by Western Digital Corporation (“WDC”). General Sandisk is a leading global semiconductor memory company with more than 30 years of innovation in NAND flash technology. We are a vertically integrated solutions provider with ownership of chip-level design and IP, front and back-end manufacturing, as well as systems engineering and design. The Consumer end market is highlighted by our broad range of retail and other end-user products, which capitalize on the strength of our product brand recognition and vast presence around the world.",
+    "sector": "Technology",
+    "industry": "Computer Storage Devices",
+    "marketCap": 125927505920,
+    "marketCapAt": "2026-11-14T22:15:52.361Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T22:15:52.361Z",
+    "wikiTitle": "Sandisk"
+  },
+  "NBIS": {
+    "summary": "Nebius Group N.V., a technology company, engages in building full-stack infrastructure to service the global AI industry in the United States, the United Kingdom, and internationally. The company also provides TripleTen, an edtech platform for re-skilling individuals for careers in technolgy; and Avride, which develops autonomous driving technology for self-driving cars and delivery robotics. It has a strategic alliance with NVIDIA Corporation to support the expansion of the company's AI cloud infrastructure. The company was formerly known as Yandex N.V.",
+    "sector": "Communication Services",
+    "industry": "Internet Content & Information",
+    "marketCap": 33941528576,
+    "marketCapAt": "2026-11-14T22:15:52.362Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T22:15:52.362Z",
+    "wikiTitle": "Nebius_Group"
+  },
+  "INTC": {
+    "summary": "Intel Corporation designs, develops, manufactures, markets, sells, and services computing and related end products and services in the United States, Ireland, Israel, and internationally. It operates through three segments: CCG, DCAI, and Intel Foundry. The company sells its products through sales organizations, distributors, resellers, retailers, and OEM partners. Intel was the world's third-largest semiconductor chip manufacturer by revenue in 2024 and has been included in the Fortune 500 list of the largest United States corporations by revenue since 2007.",
+    "sector": "Technology",
+    "industry": "Semiconductors",
+    "marketCap": 317092888576,
+    "marketCapAt": "2026-11-14T22:15:52.364Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo",
+      "wiki"
+    ],
+    "fetchedAt": "2026-11-14T22:15:52.364Z",
+    "wikiTitle": "Intel"
+  },
+  "BE": {
+    "summary": "Our revenue is derived primarily from product sales of our Energy Server systems, with additional recurring revenue from long-term operations and maintenance agreements that support availability and performance over the contract life. This increase was driven by a $446.1 million increase in product revenue, a $81.8 million increase in installation revenue, a $14.8 million increase in service revenue, and a $7.5 million increase in electricity revenue. Electricity Revenue Electricity revenue includes both revenue from contracts with customers and revenue from contracts that contain leases. It sells its products through direct and indirect sales channels to utilities, data centers, retail, healthcare, education, telecom, manufacturing, and other industries.",
+    "sector": "Industrials",
+    "industry": "Electrical Industrial Apparatus",
+    "marketCap": 56763133952,
+    "marketCapAt": "2026-11-14T22:15:52.366Z",
+    "source": "edgar",
+    "sources": [
+      "edgar",
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T22:15:52.366Z",
+    "wikiTitle": "Bloom_Energy"
+  },
+  "DELL": {
+    "summary": "Dell Technologies Inc. designs, develops, manufactures, markets, sells, and supports various comprehensive and integrated solutions, products, and services in the Americas, Europe, the Middle East, Asia, and internationally. The company operates through Infrastructure Solutions Group (ISG) and Client Solutions Group (CSG) segments. The CSG segment provides notebooks, desktops, and workstations and branded peripherals that include displays, docking stations, keyboards, mice, webcam and audio devices, and third-party software and peripherals; and configuration, and extended warranties services. The company is involved in originating, collecting, and servicing customer financing arrangements and offers payment and consumption solutions and services, such utility, subscription, as-a-service, leases, and loans, as well as fixed-term leases and loans. Dell Technologies ranked 44th on the 2025 Fortune 500 rankings of the largest United States corporations based on its 2024 revenue; its products include personal computers, servers, monitors, computer software, computer security and network security, as well as information security services.",
+    "sector": "Technology",
+    "industry": "Computer Hardware",
+    "marketCap": 219056553984,
+    "marketCapAt": "2026-11-14T22:15:52.367Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo",
+      "wiki"
+    ],
+    "fetchedAt": "2026-11-14T22:15:52.367Z",
+    "wikiTitle": "Dell_Technologies"
+  },
+  "CRWV": {
+    "summary": "We primarily finance our infrastructure development through asset-level debt supported by take-or-pay customer contracts, supplemented by corporate-level equity and debt financing. Customers generally access our platform through multi-year committed contracts, under which they purchase a specified amount of capacity on a take-or-pay basis over the contract term. However, we anticipate that cost of revenue may fluctuate as a percentage of revenue in the future due to the timing of when data centers go live, including due to any delays in the availability of data centers that we lease or own, and when we achieve economies of scale and operational efficiencies. Other Income, Net Other income, net consists of gains (losses) on strategic investments and other non-operating gains and losses, interest and investment income, foreign currency exchange gains (losses), and gains (losses) on extinguishment of debt.",
+    "sector": "Technology",
+    "industry": "Services-Prepackaged Software",
+    "marketCap": 29546958848,
+    "marketCapAt": "2026-11-14T22:15:52.368Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T22:15:52.368Z"
+  },
+  "LITE": {
+    "summary": "General Overview Lumentum Holdings Inc. (“we,” “us,” “our”, “Lumentum” or the “Company”) is a global leader in optical and photonic technologies and an industry-leading provider of optical and photonic products based on revenue and market share. We operate in one reportable segment as a single, integrated enterprise. 2 Table of Contents We have a global footprint that enables us to address global market opportunities for our products with employees engaged in research and development (“R&D”), administration, manufacturing, support and sales and marketing activities in various locations worldwide. These acquisitions have enhanced our product portfolio, broadened our revenue mix and strengthened our position to meet the evolving needs of our customers. The remaining approximately 22% of Components net revenue growth was primarily due to an increase in shipment volume of data transport products, encompassing line subsystems solutions for long-haul terrestrial networks and charge pump products used in undersea network installations. During our fiscal years 2026, 2025 and 2024, net revenue from a single end customer which represented 10% or greater of total net revenue is summarized as follows: Years Ended June 27, 2026 June 28, 2025 June 29, 2024 Customer A 26.6 % 15.4 % 18.9 % Customer B 15.0 % 16.0 % 11.4 % 50 Revenue by Region We operate in three geographic regions: Americas, Asia-Pacific, and EMEA (Europe, Middle East, and Africa). For example, certain customers may request shipment of our product to a contract manufacturer in one country, which may differ from the location of their end customers. Gross Margin Gross margin in fiscal year 2026 increased to 41.7% from 28.0% in fiscal year 2025, primarily driven by higher revenue from our laser chip, laser assembly, and data transport products. Gain on Sale of Facility In fiscal year 2025, we completed the sale of our assets in an entity in Shenzhen, China and received net proceeds of $47.8 million, which was net of cash of $17.6 million and direct selling costs of $1.1 million. The net assets sold consisted primarily of building, building improvements and land rights as of December 17, 2024 with a net carrying value of $12.9 million, and were used for manufacturing and research and development activities. We paid $4.4 million of withholding taxes on this sale transaction, which is recorded as part of the income tax provision for the year ended June 28, 2025.",
+    "sector": "Technology",
+    "industry": "Communications Equipment, NEC",
+    "marketCap": 54104432640,
+    "marketCapAt": "2026-11-14T22:15:56.721Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T22:15:56.721Z"
+  },
+  "SMCI": {
+    "summary": "Our sales and marketing activities operate through a combination of our direct sales force and indirect sales channel partners. General and Administrative General and administrative expenses consist primarily of general corporate costs, including personnel expenses such as salaries, benefits, stock-based compensation and incentive bonuses, and related expenses for our general and administrative personnel, financial reporting, corporate governance and compliance, outside legal, audit, tax fees, insurance, and credit losses on accounts receivable. Our effective tax rate differs from the statutory rate primarily due to research and development tax credits, certain non-deductible expenses, tax benefits from foreign derived intangible income, and stock-based compensation. The $17,091.1 million or 77.8% year-over-year increase in net sales of server and storage systems was primarily due to strong demand and increased billing for Hyper Servers, GPU & Super Racks of $15,261.5 million or 83.4% compared to prior year, including liquid-cooled and air-cooled servers that are generally more complex and of higher value, primarily related to our GB200, and GB300 systems. Gross margin decreased to 10.8% in the fiscal year 2026, from 11.1% in the fiscal year 2025, primarily due to our strategy to offer competitive pricing to gain market share, change in product and customer mix, and higher manufacturing related expenses. Super Micro Computer, Inc., together with its subsidiaries, develops and sells server and storage solutions based on modular and open-standard architecture in the United States, Asia, Europe, and internationally.",
+    "sector": "Technology",
+    "industry": "Electronic Computers",
+    "marketCap": 16895997952,
+    "marketCapAt": "2026-11-16T14:45:51.040Z",
+    "source": "edgar",
+    "sources": [
+      "edgar",
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-16T14:45:51.040Z",
+    "wikiTitle": "Supermicro"
+  },
+  "LSCC": {
+    "summary": "Overview Lattice Semiconductor Corporation and its subsidiaries (“Lattice,” the “Company,” “we,” “us,” or “our”) develop technologies that we monetize through differentiated programmable logic semiconductor products, silicon-enabling products, system solutions, design services, and technology licenses. We also provide Intellectual Property (\"IP\") licensing and services to these end markets. In addition, the company offers Glance, an edge AI application software that allows users to control the AI and computer vision experiences for various edge applications, including client computing, industrial, and automotive applications; and sells video connectivity application specific standard products.",
+    "sector": "Technology",
+    "industry": "Semiconductors & Related Devices",
+    "marketCap": 15979057152,
+    "marketCapAt": "2026-11-14T22:16:56.981Z",
+    "source": "edgar",
+    "sources": [
+      "edgar",
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T22:16:56.981Z",
+    "wikiTitle": "Lattice_Semiconductor"
+  },
+  "SKHY": {
+    "summary": "SK hynix Inc. through its subsidiaries, engages in research, develops, manufactures, distributes, and sells semiconductor devices in Korea, China, rest of Asia, the United States, Europe, and internationally. It offers DRAM, such as server memory, graphics memory, mobile memory, PC memory, consumer memory; NAND flash memory; SSD; and MCP products.",
+    "sector": "Technology",
+    "industry": "Semiconductors",
+    "marketCap": 929347862528,
+    "marketCapAt": "2026-11-14T22:16:04.654Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T22:16:04.654Z"
+  },
+  "SPCX": {
+    "summary": "Space Exploration Technologies Corp. provides satellite-based broadband services in the United States, Ireland, Canada, and internationally. It operates through three operating segments: Space, Connectivity, and AI. The Space segment designs, manufactures, and launches reusable rockets to provide access to space.",
+    "sector": "Industrials",
+    "industry": "Aerospace & Defense",
+    "marketCap": 1889261846528,
+    "marketCapAt": "2026-11-14T22:16:56.983Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T22:16:56.983Z",
+    "wikiTitle": "SpaceX"
+  },
+  "STX": {
+    "summary": "Seagate Technology Holdings plc engages in providing data storage solutions in Singapore, the United States, the Netherlands, and internationally. It offers its products for Healthcare, Media & Entertainment, Surveillance & Security, and telecommunication industry. The company sells its products primarily to original equipment manufacturers, distributors, and retailers. The company was founded in 1978 and is based in Singapore.",
+    "sector": "Technology",
+    "industry": "Computer Hardware",
+    "marketCap": 121274826752,
+    "marketCapAt": "2026-11-14T22:16:56.984Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T22:16:56.984Z",
+    "wikiTitle": "Seagate_Technology"
+  },
+  "CRWD": {
+    "summary": "[...] result, in increased contraction, due to elongated subscription terms, and decreased upsell dollar values. Annual Recurring Revenue ( “ ARR ” ) ARR is calculated as the annualized value of our customer subscription contracts as of the measurement date, assuming any contract that expires during the next 12 months is renewed on its existing terms. The following table sets forth our ARR as of the dates presented (dollars in thousands): As of January 31, 2026 2025 Annual recurring revenue $ 5,252,751 $ 4,241,838 Year-over-year growth 24 % 23 % ARR increased 24% year-over-year and grew to $5.3 billion as of January 31, 2026, of which $1.0 billion was net new ARR added during fiscal 2026. Our dollar-based net retention rate reflects customer renewals, expansion, contraction, and churn, and excludes revenue from our incident response and proactive services. Subscription revenue primarily consists of subscription fees for our Falcon platform and additional cloud modules that are supported by our cloud-based platform. We generally invoice our subscription customers at the beginning of the subscription term, or in some instances, such as in multi-year arrangements, in installments. Professional services are available through hourly rate and fixed fee contracts, one-time and ongoing engagements, and retainer-based agreements. The level and timing of investment in these areas could affect our cost of revenue in the future. Professional services cost of revenue consists primarily of employee-related costs, such as salaries and bonuses, stock-based compensation expense, consulting expense, and an allocated portion of facilities and administrative costs. Operating Expenses Our operating expenses consist of sales and marketing, research and development, and general administrative expenses.",
+    "sector": "Technology",
+    "industry": "Services-Prepackaged Software",
+    "marketCap": 232033878016,
+    "marketCapAt": "2026-11-14T22:16:13.839Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T22:16:13.839Z",
+    "wikiTitle": "CrowdStrike"
+  },
+  "ALAB": {
+    "summary": "Our distributors are primarily focused on fulfillment and logistical purposes, rather than selling, marketing, or providing technical support for our products. For example, in 2 Table of Contents 2025, our top three end customers represented an aggregate of approximately 86% of our revenue. Key Components of Results of Operations Revenue The vast majority of our revenue consists of product sales with an immaterial portion derived from engineering services. For product sales, we transact with customers primarily pursuant to standard purchase orders for delivery of products and generally do not allow customers to cancel or change purchase orders within limited notice periods. Revenue is also recognized net of any taxes collected, which are subsequently remitted to governmental authorities. We capitalize the costs of production equipment, which includes mask cost with alternative future use, and amortize these costs on a straight-line basis over the useful lives of the production equipment and include them in cost of revenue. Gross Profit and Gross Margin Gross profit represents revenue less cost of revenue. Research and Development Research and development expenses consist of personnel-related costs including salaries, non-cash stock-based compensation expense, employee benefits, bonuses, pre-production engineering mask costs, software license and cloud 41 Table of Contents hosting services costs, prototype costs, packaging and test costs, professional services fees, and allocated shared expenses. Interest Income Interest income primarily consists of interest income earned on our short-term investments included in cash and cash equivalents and marketable securities. The increase was primarily due to an increase in overall unit shipments driven by higher demand for our Aries, Scorpio, and Taurus products, as well as higher overall average selling prices resulting from an increased mix of hardware modules and Scorpio products .",
+    "sector": "Technology",
+    "industry": "Semiconductors & Related Devices",
+    "marketCap": 38771908608,
+    "marketCapAt": "2026-11-16T00:34:24.257Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T22:16:56.986Z",
+    "wikiTitle": "Astera_Labs"
+  },
+  "IREN": {
+    "summary": "This data center ownership model gives us direct control over site selection, design, procurement, construction, commissioning and ongoing operations. We believe that this control allows our business to benefit from more sustainable cash flows and operational flexibility relative to operators that rely upon third-party colocation services or short-term land leases, each of which may be subject to, among other things, termination rights, profit sharing arrangements and/or potential changes to contractual terms, such as pricing. Together these enable organizations to improve utilization, support metering and monetization, and build differentiated AI Cloud Services. (4) Other one-off income includes insurance proceeds relating to the theft of mining hardware in transit during the year ended June 30, 2025. (6) Net income (loss) margin is calculated as Net income (loss) divided by Revenue. The increase was primarily due to an increase in AI Cloud Services customers and contracts, as a result of continued capacity expansion. Cost of revenue - AI Cloud Services (exclusive of depreciation and amortization) Cost of revenue - AI Cloud Services consists of electricity charges, employee benefits, and other direct expenses incurred in generating AI Cloud Services.",
+    "sector": "Financial Services",
+    "industry": "Finance Services",
+    "marketCap": 7710573568,
+    "marketCapAt": "2026-11-14T22:16:56.986Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T22:16:56.986Z",
+    "wikiTitle": "IREN"
+  },
+  "CBRS": {
+    "summary": "Cerebras Systems Inc. operates as an artificial intelligence infrastructure company. The company's pioneering wafer-scale engine, a chip encompassing a silicon wafer, designed to enable higher performance and speeds than GPUs for the computational demands of inference, Generative AI, and other AI applications. Its customers include hyperscalers, foundation model labs, AI-native and digital-native businesses, enterprises, and leaders of Sovereign AI initiatives. The company has operations in the United States, Europe, the Middle East, Africa, and internationally.",
+    "sector": "Technology",
+    "industry": "Semiconductors",
+    "marketCap": 26419324928,
+    "marketCapAt": "2026-11-14T22:16:56.987Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T22:16:56.987Z",
+    "wikiTitle": "Cerebras_Systems"
+  },
+  "SHOP": {
+    "summary": "Over time, historical merchant cohorts (the group of merchants that join the platform in a given year) have increased their sales, adopted additional merchant solutions, upgraded their subscription plans and purchased additional apps. Subscription Solutions We generate subscription solutions revenues primarily through the sale of subscriptions to our platform, including variable platform fees, as well as through the sale of subscriptions to our Point of Sale Pro (\"POS Pro\") offering, the sale of apps, the registration of domain names and the sale of themes. GMV is the total dollar value of orders facilitated through our platform including certain apps and channels for which a revenue-sharing arrangement is in place in the period, net of refunds, and inclusive of shipping and handling, duty and value-added taxes. Our subscription plans typically have a one-month term, although merchants can elect to make an annual or multi-year commitment. Seasonality Our business is affected by seasonality due to holiday demand, which historically has resulted in higher GMV and revenue during our fourth quarter, which ends on December 31. To support and enhance talent growth and development, we created “~Mastery”, Shopify's craft-first talent system, to reward those who show up better to work every day on the continuous journey to improve their craft. During the year ended December 31, 2025, our total revenue was $11.6 billion, an increase of 30% versus the year ended December 31, 2024. The revenue from these agreements is recognized over time on a ratable basis over the contractual term and therefore we have deferred revenue on our balance sheet. MRR allows us to average our various pricing plans and billing periods into a single, consistent number that we can track over time.",
+    "sector": "Technology",
+    "industry": "Services-Prepackaged Software",
+    "marketCap": 189234511872,
+    "marketCapAt": "2026-11-14T22:16:15.839Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T22:16:15.839Z"
+  },
+  "CRCL": {
+    "summary": "67 Key Components of Revenue and Expenses Revenue and reserve income Reserve income We earn interest and dividends on assets held in reserve accounts, which include cash balances held at banks, and the Circle Reserve Fund, as applicable. Subscription and services consists of customer agreements where recurring revenue is generated from integration and maintenance services, fund management, time-based access, and user-based licensing. This includes fees associated with the redemption of Circle Digital Assets, blockchain rewards revenue, and use of our platform infrastructure in facilitating digital asset transactions. Other is primarily generated from fees associated with certain non-recurring services and discontinued legacy products. The Collaboration Agreement is accounted for as an executory contract and reflected in distribution and transaction costs in our Consolidated Statements of Operations. Operating expenses Compensation expenses Compensation expenses are primarily driven by employee compensation, including salaries and wages, stock-based compensation, bonuses, post-retirement benefits, commissions, and severance payments. Depreciation and amortization expenses Depreciation and amortization expenses are incurred from the amortization of internally developed software, and from the amortization of intangible assets acquired in business combinations and asset acquisitions such as the technology platform, customer relationships, brand names, and licenses. Marketing expenses Marketing expenses are incurred to drive additional customers to our platform, capitalize on cross-sell opportunities from our customer base, and build awareness of our products and brand with the objective of growing our customer base. Year Ended December 31, (in thousands, except percentages) 2025 2024 $ Change % Change Revenue and",
+    "sector": "",
+    "industry": "FINANCE SERVICES",
+    "marketCap": 0,
+    "marketCapAt": "2026-11-14T22:16:15.839Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T22:16:15.839Z"
+  },
+  "PANW": {
+    "summary": "REVENUE Our revenue consists of product revenue and subscription and support revenue. Year Ended July 31, Year Ended July 31, 2026 2025 Change 2025 2024 Change Amount Amount Amount % Amount Amount Amount % (dollars in millions) Product $ 2,280 $ 1,802 $ 478 27 % $ 1,802 $ 1,603 $ 199 12 % Product revenue increased for fiscal 2026 compared to fiscal 2025 driven by increased revenue from software licenses, including from our CyberArk acquisition, and increased demand for our new generation of hardware products. Our cost of product revenue also includes personnel costs, which consist of salaries, benefits, bonuses, share-based compensation, and travel associated with our operations organization, inventory excess and obsolete charges, shipping and tariff costs, amortization of intangible assets, product testing costs, and shared costs. It sells its products and services through its channel partners, as well as directly to enterprises, service providers, and government entities operating in various industries, including education, energy, financial services, government entities, healthcare, Internet and media, manufacturing, public sector, and telecommunications.",
+    "sector": "Technology",
+    "industry": "COMPUTER PERIPHERAL EQUIPMENT, NEC",
+    "marketCap": 259804430336,
+    "marketCapAt": "2026-11-16T14:46:16.798Z",
+    "source": "edgar",
+    "sources": [
+      "edgar",
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T22:16:16.663Z",
+    "wikiTitle": "Palo_Alto_Networks"
+  },
+  "ARM": {
+    "summary": "Arm Holdings plc researches, develops, licenses, and markets central processing unit (CPU) intellectual property (IP), graphics processing unit IP, systems IP, compute subsystems (CSS), and associated software, tools and related services. The company serves semiconductor companies, original equipment manufacturers (OEMs), cloud service providers (CSPs), and organizations developing chips for end markets such as smartphones, consumer electronics, industrial IoT, embedded systems, cloud data centers, networking, automotive, and robotics. It provides its products and services in the United States, China, Japan, Taiwan, Korea, and internationally. The company was founded in 1990 and is based in Cambridge, United Kingdom.",
+    "sector": "Technology",
+    "industry": "Semiconductors",
+    "marketCap": 203867095040,
+    "marketCapAt": "2026-11-14T22:16:16.664Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T22:16:16.664Z"
+  },
+  "RDDT": {
+    "summary": "Every post and comment on Reddit, regardless of the author, starts with one upvote, and must earn its visibility through community members upvoting it and boosting it to the subreddit’s front page. [...] ther (income) expense, net consists primarily of realized gains and losses on sales of marketable securities, foreign currency transaction gains and losses, and other income and expense that are not indicative of our core operating performance. We recognize revenue only after transferring control of promised goods or services to customers, which occurs when a user clicks on an ad contracted on a cost per click (“CPC”) basis, views an ad contracted on a cost per thousand impressions (“CPM”) basis, views a video ad contracted on a cost per view (“CPV”) basis, or on a fixed fee basis, based upon ad delivery over the service period, which is typically less than 30 days in duration. In our content licensing arrangements, we provide customers with the right to access content from our platform over the contractual period. Revenue from other products sold directly to users, including Reddit Premium and Reddit Gold, was not material for the periods presented. Cost of Revenue Cost of revenue consists primarily of payments to third parties for the cost of hosting and supporting our mobile applications and website. The following table sets forth our consolidated statements of operations data expressed as a percentage of revenue for the periods indicated: Year end",
+    "sector": "Communication Services",
+    "industry": "Services-Computer Processing & Data Preparation",
+    "marketCap": 19010076672,
+    "marketCapAt": "2026-11-14T22:16:16.992Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T22:16:16.992Z"
+  },
+  "QCOM": {
+    "summary": "We derive revenues principally from sales of integrated circuit products (also known as integrated circuit platforms, chips, chipsets or modules) and licensing of our intellectual property, including patents and other rights. We are organized on the basis of products and services and have three reportable segments. QTL grants licenses or otherwise provides rights to use portions of our intellectual property portfolio, which includes certain patent rights essential to and/or useful in the manufacture and sale of certain wireless products. The QCT segment develops and supplies integrated circuits and system software with connectivity and computing technologies for use in mobile devices; automotive systems for connectivity, digital cockpit, and ADAS/AD; and IoT, including personal AI and compute devices and industrial, networking, and robotics products.",
+    "sector": "Technology",
+    "industry": "Radio & Tv Broadcasting & Communications Equipment",
+    "marketCap": 184312643584,
+    "marketCapAt": "2026-11-16T14:45:51.007Z",
+    "source": "edgar",
+    "sources": [
+      "edgar",
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-16T14:45:51.007Z",
+    "wikiTitle": "Qualcomm"
+  },
+  "ADI": {
+    "summary": "Results of Operations Overview Fiscal Year 2025 2024 $ Change % Change Revenue $ 11,019,707 $ 9,427,157 $ 1,592,550 17 % Gross margin % 61.5 % 57.1 % Net income $ 2,267,342 $ 1,635,273 $ 632,069 39 % Net income as a % of revenue 20.6 % 17.3 % Diluted EPS $ 4.56 $ 3.28 $ 1.28 39 % Revenue Trends by End Market The following table summarizes revenue by end market. The categorization of revenue by end market is determined using a variety of data points including the technical characteristics of the product, the “sold to” customer information, the “ship to” customer information and the end customer product or application into which our product will be incorporated. We sell our products globally through a direct sales force, third-party distributors, independent sales representatives and via our website. R&D expenses as a percentage of revenue will fluctuate from year-to-year depending on the amount of revenue and the success of new product development efforts, which we view as critical to our future growth. For fiscal 2025 and fiscal 2024 our pretax income was primarily generated in Ireland at a tax rate of 12.5%.",
+    "sector": "Technology",
+    "industry": "Semiconductors & Related Devices",
+    "marketCap": 192842514432,
+    "marketCapAt": "2026-11-14T22:16:16.996Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T22:16:16.996Z"
+  },
+  "AVGO": {
+    "summary": "Broadcom Inc. designs, develops, and supplies various semiconductor devices and infrastructure software solutions internationally.",
+    "sector": "Technology",
+    "industry": "Semiconductors",
+    "marketCap": 1656497373184,
+    "marketCapAt": "2026-11-14T22:16:17.493Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T22:16:17.493Z"
+  },
+  "NTRA": {
+    "summary": "Natera, Inc., a diagnostics company, engages in the development and commercialization of molecular testing services worldwide. It offers Signatera, a personalized ctDNA blood test for MRD assessment, early recurrence monitoring, and evaluation of treatment response in patients previously diagnosed with cancer; Latitude, a blood-based MRD test for colorectal cancer; Altera, a tissue based comprehensive genomic profiling test; and Empower, a hereditary cancer screening test. The company serves independent laboratories, national and regional reference laboratories, medical centers and physician practices for its screening tests, research laboratories, and pharmaceutical companies through its direct sales force and laboratory distribution partners, as well as Constellation licensees under its cloud-based distribution model. It has a partnership agreement with BGI Genomics Co., Ltd. to develop, manufacture, and commercialize NGS-based genetic testing assays for clinical and commercial use.",
+    "sector": "Healthcare",
+    "industry": "Diagnostics & Research",
+    "marketCap": 46269493248,
+    "marketCapAt": "2026-11-14T22:16:21.781Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T22:16:21.781Z",
+    "wikiTitle": "Natera"
+  },
+  "MARA": {
+    "summary": "MARA Holdings, Inc. operates as an energy and digital infrastructure company in North America, the Middle East, Europe, and Latin America. The company leverages Bitcoin Mining and Artificial Intelligence compute to monetize excess energy and underutilized power, optimize power management across operations and support AI inference applications. Founded in 2010, the company initially operated as a patent holding company before pivoting in the late 2010s to focus on blockchain infrastructure and digital assets.",
+    "sector": "Financial Services",
+    "industry": "Capital Markets",
+    "marketCap": 2707970560,
+    "marketCapAt": "2026-11-14T22:16:25.483Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo",
+      "wiki"
+    ],
+    "fetchedAt": "2026-11-14T22:16:25.483Z",
+    "wikiTitle": "MARA_Holdings"
+  },
+  "MDB": {
+    "summary": "MongoDB, Inc., together with its subsidiaries, provides general purpose database platform worldwide. It offers professional services comprising consulting and training.",
+    "sector": "Technology",
+    "industry": "Software - Infrastructure",
+    "marketCap": 26921930752,
+    "marketCapAt": "2026-11-14T22:16:26.741Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T22:16:26.741Z"
+  },
+  "APP": {
+    "summary": "It operates through two segments, Advertising and Apps. Founded in 2012, the company helps developers market, monetize, analyze and publish their apps through its mobile advertising, marketing, and analytics platforms, SSP MAX; DSP AppDiscovery; and SparkLabs creative studio.",
+    "sector": "Communication Services",
+    "industry": "Advertising Agencies",
+    "marketCap": 135543824384,
+    "marketCapAt": "2026-11-14T22:16:29.455Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo",
+      "wiki"
+    ],
+    "fetchedAt": "2026-11-14T22:16:29.455Z",
+    "wikiTitle": "AppLovin"
+  },
+  "FICO": {
+    "summary": "It operates through two segments, Scores and Software. This segment also offers FICO Platform, a modular software offering designed to support advanced analytic and decision use cases, as well as stand-alone analytic and decisioning software that can be configured by customers to address a wide range of business use cases. It markets its products and services primarily through its direct sales organization and indirect channels, as well as online.",
+    "sector": "Technology",
+    "industry": "Software - Application",
+    "marketCap": 15398330368,
+    "marketCapAt": "2026-11-14T22:16:35.899Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T22:16:35.899Z",
+    "wikiTitle": "FICO"
+  },
+  "RKLB": {
+    "summary": "Rocket Lab Corporation, a space company, provides launch services and space systems solutions in the United States, Canada, Japan, and internationally. It also designs, manufactures, and sells Electron, an orbital small launch vehicle for small spacecraft launch services, as well as develops Neutron launch vehicles for large constellation deployments, interplanetary missions, and potentially for human spaceflight. Rocket Lab Corporation was formerly known as Rocket Lab USA, Inc. and changed its name to Rocket Lab Corporation in August 2021. The company was founded in 2006 and is headquartered in Long Beach, California.",
+    "sector": "Industrials",
+    "industry": "Aerospace & Defense",
+    "marketCap": 41407975424,
+    "marketCapAt": "2026-11-14T22:16:35.901Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T22:16:35.901Z"
+  },
+  "AAOI": {
+    "summary": "We are primarily focused on the higher-performance segments within all four of our target markets, which increasingly demand faster connectivity and innovation. Sales of headend, node and distribution equipment, including amplifiers, have contributed significantly to our revenue in recent years as a result of our ability to meet the needs of CATV equipment vendors who have continued to outsource both the design and manufacturing of this equipment. In 2025, 2024 and 2023 , our revenue was $455.7 million, $249.4 million and $217.6 million and our gross margin was 30.0%, 24.8% and 27.1%, respectively. Revenue is recognized when obligations under the terms of a contract with our customer are satisfied; generally this occurs with the transfer of control of products or services. A majority of our annual sales are denominated in U.S. dollars, but some sales from our Taiwan location and China-based subsidiary are denominated in NT dollars and RMB, respectively. In 2026, we expect to expand our manufacturing operations in the U.S. and Taiwan, with these two locations contributing more meaningfully to total revenue than in prior years. Cost of goods sold and gross margin Our cost of goods sold is impacted by variances arising from changes in yields and production volume, as well as increases or decreases in the cost of raw materials used in production. Operating expenses Our operating expenses consist of research and development, sales and marketing, and general and administrative expenses. We expect research and development expense to increase on a dollar basis, but will likely decrease as a percentage of our revenue to the extent that revenue increases over time. Because we sell to a limited number of well-established customers, we employ a limited number of sales professionals who are able to cover large markets. We compensate our sales staff through base salary and commissions, with base salary being the largest component of overall compensation. We expect rising costs including increased audit and legal fees, costs to comply with rules and regulations applicable to companies listed on a national stock exchange, as well as investor relations expense and higher insurance premiums. Consequently, our effective tax rate is impacted by the geographic distribution of our earnings or losses and the tax laws and regulations in each geographical region.",
+    "sector": "Technology",
+    "industry": "Semiconductors & Related Devices",
+    "marketCap": 4528551936,
+    "marketCapAt": "2026-11-14T23:32:55.153Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T23:32:55.153Z"
+  },
+  "OXY": {
+    "summary": "Our midstream and marketing segment ensures flow assurance and optimizes the value of oil and gas operations. Additionally, Oxy Low Carbon Ventures, a subsidiary within the midstream and marketing segment, focuses on advancing innovative decarbonization technologies and solutions—including direct air capture, carbon sequestration and lithium development to advance the Company’s growth opportunities while reducing overall emissions and delivering the energy and products the world needs. RECENT DEVELOPMENTS In October 2025, the Company announced entry into a purchase and sale agreement with Berkshire Hathaway to sell all of the issued and outstanding equity interests in OxyChem in an all-cash transaction for $9.7 billion, subject to post closing adjustments. The sale was completed on January 2, 2026, resulting in an estimated gain of $3.2 billion, net of taxes subject to post-closing adjustments. ■ Beginning October 1, 2025, in accordance with ASC 360, PP&E, depreciation and amortization were no longer recorded for the chemical segment’s PP&E and right of use lease assets. The compensation and benefits program recognizes and rewards strong Company and individual performance with competitive base salaries, as well as an annual bonus program, recognition awards, long-term performance incentives and advancement opportunities for eligible individuals. [...] assets and other, net - domestic (b) $ (99) $ (585) $ 142 Legal reserves and other (c) $ (105) $ (54) $ 26 Asset impairments and related items - domestic (d) $ (6) $ (334) $ (209) Gain on sales of assets and other, net - international $ 30 $ — $ 25 (a) Results included significant items affecting comparability discussed in the footnotes below. EXPENSE ITEMS millions 2025 2024 2023 Oil and gas operating expense $ 4,681 $ 4,738 $ 4,677 Transportation and gathering expense $ 1,660 $ 1,608 $ 1,481 Purchased commodities and midstream cost of sales $ 176 $ 431 $ 2,116 Selling, general and administrative $ 986 $ 960 $ 987 Oth",
+    "sector": "Energy",
+    "industry": "Crude Petroleum & Natural Gas",
+    "marketCap": 58743816192,
+    "marketCapAt": "2026-11-14T23:32:55.205Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T23:32:55.205Z",
+    "wikiTitle": "Occidental_Petroleum"
+  },
+  "LLY": {
+    "summary": "We discover, develop, manufacture, and market products in a single business segment—human pharmaceutical products. In 2025, 2024, and 2023, three wholesale distributors in the U.S.—McKesson Corporation, Cencora, Inc., and Cardinal Health, Inc.—each accounted for a significant percentage of our consolidated revenue. No other customer accounted for more than 10 percent of our consolidated revenue in any of these years. For additional information, see Item 8, \"Financial Statements and Supplementary Data—Note 2: Revenue.\" 7 In certain jurisdictions, we utilize LillyDirect, our direct-to-patient digital health care platform, to provide delivery of select Lilly medicines dispensed by third-party pharmacies to patients. The objective of this risk management program is to limit the impact on earnings of fluctuations in interest and currency exchange rates. Based on our overall interest rate exposure at December 31, 2025 and 2024, including derivatives and other interest rate risk-sensitive instruments, a hypothetical 10 percent change in interest rates applied to the fair value of the instruments as of December 31, 2025 and 2024, respectively, would not have a material impact on earnings, cash flows, or fair values of interest rate risk-sensitive instruments over a one-year period. We acquire and collaborate on potential products still in development and enter into research and development arrangements with third parties that often require milestone and royalty payments to the third-party contingent upon the occurrence of certain future events linked to the success of the asset in development. We view these payments as positive because they signify that the product is successfully moving through development and is now generating or is more likely to generate cash flows from sales of products. APPLICATION OF CRITICAL ACCOUNTING ESTIMATES In preparing our financial statements in accordance with accounting principles generally accepted in the U.S., we must often make estimates and assumptions that affect the reported amounts of assets, liabilities, revenues, expenses, and related disclosures. Since there is a timing lag between the product sale and the settlement of accruals related to these programs, our net product revenue may incorporate revisions of accruals for several periods.",
+    "sector": "Healthcare",
+    "industry": "Pharmaceutical Preparations",
+    "marketCap": 1285790498816,
+    "marketCapAt": "2026-11-14T23:32:55.206Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T23:32:55.206Z",
+    "wikiTitle": "Eli_Lilly_and_Company"
+  },
+  "BSP": {
+    "summary": "Bending Spoons S.p.A., through its subsidiaries, acquires and transforms digital businesses in the United States, the United Kingdom, Germany, Poland, Canada, Japan, Australia, France, Brazil, Italy, and internationally. The company designs and develops software and platforms that support acquisitions, transformations, and ongoing optimizations. The company was founded in 2013 and is based in Milan, Italy. On July 1, 2026, the company became public via an initial public offering on the Nasdaq in the United States.",
+    "sector": "Technology",
+    "industry": "Software - Application",
+    "marketCap": 26978844672,
+    "marketCapAt": "2026-11-14T23:32:55.207Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo",
+      "wiki"
+    ],
+    "fetchedAt": "2026-11-14T23:32:55.207Z",
+    "wikiTitle": "Bending_Spoons"
+  },
+  "ASTS": {
+    "summary": "We currently have partnerships with over 50 MNOs with nearly 3 billion subscribers globally. To this end, we have entered into agreements with the United States (“U.S.”) government either directly or through prime contractors to perform certain tasks. We have also generated revenue from the sale of gateway equipment, software and related services to MNOs. According to Groupe Speciale Mobile Association (“GSMA”), as of December 31, 2025, approximately 5.8 billion mobile subscribers are constantly moving in and out of coverage, approximately 2 3.4 billion people have no Cellular Broadband coverage and approximately 300.0 million people have no connectivity or mobile cellular coverage. [...] fees, accounting, and public relations. Interest Expense Interest expense consists of cash interest payments and amortization of debt issuance costs associated with our debt arrangements and amortization of the Sound Point Credit Facility commitment fee. Other (Expense) Income, Net Other (expense) income, net primarily consists of non-operating expense and income, including induced conversion expense related to the repurchase of the 2032 4.25% Convertible Notes and foreign exchange gains or losses. 46 Results of Operations We report our results of operations under one operating segment. Services Revenues Services revenues of $26.5 million during the year ended December 31, 2025 were mainly attributable to the completion of performance obligations under agreements with the U.S. Government either directly as a prime contractor or indirectly through prime contractors.",
+    "sector": "Technology",
+    "industry": "Communications Services, NEC",
+    "marketCap": 12717574144,
+    "marketCapAt": "2026-11-14T23:32:55.209Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T23:32:55.209Z",
+    "wikiTitle": "AST_SpaceMobile"
+  },
+  "MNDY": {
+    "summary": "monday.com Ltd., together with its subsidiaries, develops software applications in the United States, Europe, the Middle East, Africa, the United Kingdom, and internationally. The company provides Work Operating System (Work OS), a cloud-based visual work OS that consists of modular building blocks used and assembled to create software applications and work management tools. The company serves organizations, educational or government institution, and distinct business unit of an organization.",
+    "sector": "Technology",
+    "industry": "Software - Application",
+    "marketCap": 3297381376,
+    "marketCapAt": "2026-11-14T23:32:55.211Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T23:32:55.211Z"
+  },
+  "DDOG": {
+    "summary": "In particular, we intend to continue to expend significant funds to further develop our platform, including by introducing new products and functionality, and to expand our inside and field sales teams and customer success team to drive new customer adoption, expand use cases and integrations, and support international expansion. 15 We have funded our operations since inception primarily through equity and debt financings and sales of our products. See also \"Risks Related to Our Outstanding Notes.\" Strategic and Operational Risks Our business depends on our existing customers purchasing additional subscriptions and products from us and renewing their subscriptions. The terms of our subscription agreements are primarily monthly or annual, with some quarterly, semiannual and multi-year. Revenue, as determined based on the billing address of our customers, from regions outside of North America was approximately 29% of our total revenue for each of the years ended December 31, 2025 and 2024. Beyond North America, we now have sales presence internationally, primarily in Amsterdam, Dublin, London, Paris, Seoul, Singapore, Sydney, and Tokyo. Components of Results of Operations Revenue We generate revenue from the sale of subscriptions to customers using our cloud-based platform. Gross Profit and Gross Margin Gross profit represents revenue less cost of revenue. Operating Expenses 49 Our operating expenses consist of research and development, sales and marketing, and general and administrative expenses. Other Income (Loss), Net Other income (loss), net consists of interest income, primarily due to income earned on money market funds included in cash and cash equivalents and on marketable securities, partially offset by in",
+    "sector": "Technology",
+    "industry": "Services-Prepackaged Software",
+    "marketCap": 63249240064,
+    "marketCapAt": "2026-11-16T15:19:01.733Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T23:32:55.212Z",
+    "wikiTitle": "Datadog"
+  },
+  "MPWR": {
+    "summary": "These factors include longer product life cycles, numerous market segments, technology that is difficult to replicate, relative complexity of design and process technologies, importance of experienced design engineers, lower capital requirements and diversity of end markets. Our third-party distributors are subject to distribution agreements with us, which allow the distributors to sell our products to end customers and other resellers. No other direct customers accounted for more than 10% of our full-year, total revenue in any of the periods presented. Because our worldwide sales are primarily billed and payable in U.S. dollars, the reporting of our sales is not subject to fluctuating currency exchange rates. If excess inventory exists, it may be necessary for us to sell it at a substantial discount, take a significant write-down or dispose of it altogether, any of which would negatively affect our profit margins. The increase in revenue was primarily due to increases in shipment volume. Revenue from the enterprise data market decreased $14.4 million, or 2.0%, from the same period in 2024. 36 Table of Contents Cost of Revenue and Gross Margin Cost of revenue primarily consists of costs incurred to manufacture, assemble and test our products, as well as warranty costs, inventory-related and other overhead costs, and stock-based compensation expenses. Year Ended December 31, 2025 2024 2023 (In thousands, except percentages) Cost of revenue $ 1,250,718 $ 986,230 $ 799,953 As a percentage of revenue 44.8 % 44.7 % 43.9 % Gross profit $ 1,539,741 $ 1,220,870 $ 1,021,119 Gross margin 55.2 % 55.3 % 56.1 % Cost of revenue was $1,250.7 million, or 44.8% of revenue, for the year ended December 31, 2025, and $986.2 million, or 44.7% of revenue, for the year ended December 31, 2024. Selling, General and Administrative ( “ SG&A ” ) SG&A expenses primarily include cash-based compensation and benefits, stock-based compensation and deferred compensation for sales, marketing and administrative personnel, travel expenses, facilities costs, third-party service fees and legal expenses. The effective tax rate was lower than the federal statutory rate of 21% primarily due to income generated by our subsidiaries in lower tax jurisdictions and research tax credits.",
+    "sector": "Technology",
+    "industry": "Semiconductors & Related Devices",
+    "marketCap": 67813855232,
+    "marketCapAt": "2026-11-14T23:32:55.212Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T23:32:55.212Z",
+    "wikiTitle": "Monolithic_Power_Systems"
+  },
+  "JPM": {
+    "summary": "Overview JPMorgan Chase & Co. (“JPMorganChase” or the “Firm”, NYSE: JPM), a financial holding company incorporated under Delaware law in 1968, is a leading financial services firm based in the United States of America (“U.S.”), with operations worldwide. JPMorganChase had $4.4 trillion in assets and $362.4 billion in stockholders’ equity as of December 31, 2025. The Firm is a leader in investment banking, financial services for consumers and small businesses, commercial banking, financial transaction processing and asset management. and are based in the United Kingdom (“U.K.”) and Germany, respectively.",
+    "sector": "Financial Services",
+    "industry": "National Commercial Banks",
+    "marketCap": 919345496064,
+    "marketCapAt": "2026-11-14T23:32:57.670Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T23:32:57.670Z",
+    "wikiTitle": "JPMorgan_Chase"
+  },
+  "PBF": {
+    "summary": "PBF Energy Inc., through its subsidiaries, engages in the refining and supplying of petroleum products. It sells its products in the Northeast, Midwest, Gulf Coast, and West Coast of the United States, as well as in other regions of the United States, Canada, Mexico, and internationally. The company is also involved in the provision of various rail, truck, and marine terminaling services; and pipeline transportation and storage services. The company owns and operated 6 refineries throughout the United States, located in Chalmette, Louisiana; Toledo, Ohio; Paulsboro, New Jersey; the Delaware City Refinery in Delaware City; Torrance, California; Martinez, California.",
+    "sector": "Energy",
+    "industry": "Oil & Gas Refining & Marketing",
+    "marketCap": 8449305600,
+    "marketCapAt": "2026-11-14T23:32:57.672Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo",
+      "wiki"
+    ],
+    "fetchedAt": "2026-11-14T23:32:57.672Z",
+    "wikiTitle": "PBF_Energy"
+  },
+  "WULF": {
+    "summary": "TeraWulf Inc., together with its subsidiaries, owns, develops, operates digital infrastructure in the United States. It also develops and operates bitcoin mining facilities for bitcoin mining and high-performance computing workloads, leveraging clean, cost-effective, and reliable energy. The company was founded in 2021 and is headquartered in Easton, Maryland.",
+    "sector": "Financial Services",
+    "industry": "Capital Markets",
+    "marketCap": 6329202688,
+    "marketCapAt": "2026-11-14T23:33:01.679Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T23:33:01.679Z"
+  },
+  "FSLR": {
+    "summary": "First Solar, Inc., a solar technology company, provides photovoltaic (PV) solar energy solutions in the United States, France, India, Chile, and internationally. The company manufactures and sells PV solar modules with thin film semiconductor technology that provides conventional crystalline silicon PV solar modules. The company serves system developers, independent power producers, utilities, commercial and industrial companies, large corporate energy buyers, and other system owners and operators. The company was formerly known as First Solar Holdings, Inc. and changed its name to First Solar, Inc. in 2006.",
+    "sector": "Technology",
+    "industry": "Solar",
+    "marketCap": 18421194752,
+    "marketCapAt": "2026-11-14T23:33:05.804Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T23:33:05.804Z",
+    "wikiTitle": "First_Solar"
+  },
+  "FPS": {
+    "summary": "Forgent Power Solutions, Inc. engages in the design and manufacture of electrical distribution equipment used in data centers, the power grid, and energy-intensive industrial facilities. The company's products include dry type transformers, liquid filled transformers, switchgear, switchboards, panelboards, remote power panels, generator connection cabinets, tap boxes, automatic transfer switches, gear ehouses, power skids, power distribution units, and ups ehouses. It also provides maintenance, testing, repair, modernization, start-up and commissioning and aftermarket retrofit services. The company was founded in 2023 and is based in Dayton, Minnesota.",
+    "sector": "Industrials",
+    "industry": "Electrical Equipment & Parts",
+    "marketCap": 6733967360,
+    "marketCapAt": "2026-11-14T23:33:06.731Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T23:33:06.731Z"
+  },
+  "CRDO": {
+    "summary": "Credo Technology Group Holding Ltd provides various high-speed connectivity solutions for optical and electrical Ethernet and PCIe applications in the United States, Taiwan, Mainland China, Hong Kong, and other international markets. It also provides intellectual property (IP) solutions, including SerDes IP licensing. The company offers was founded in 2008 and is headquartered in Grand Cayman, the Cayman Islands.",
+    "sector": "Technology",
+    "industry": "Semiconductors",
+    "marketCap": 24717555712,
+    "marketCapAt": "2026-11-14T23:33:08.904Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T23:33:08.904Z"
+  },
+  "HUT": {
+    "summary": "As of December 31, 2025, our Power layer comprised 1,020 megawatts (“MW”) of energy capacity under management across 15 sites in the United States and Canada, spanning energy assets we own, lease, or operate on behalf of third parties. A fourth segment, Other, captures revenue from activities that are not core to our platform or do not meet the criteria for segment-level reporting. Our goal is to generate predictable, contracted cash flows supported by strong credit profiles, medium-to-long-term duration, and economic terms designed to deliver attractive returns on and of invested capital. For ASIC-based Bitcoin mining, we provide hosting services to third-party customers through fixed-fee or profit-sharing arrangements, often with reimbursement for pass-through costs such as electricity. Revenue is generated through consumption-based arrangements under which customers commit to baseline levels of compute, storage, network, or power usage, with additional usage billed based on actual consumption. Equipment Sales and Repairs We may sell mining equipment when profitable opportunities arise (e.g., if market prices exceed our procurement cost). (2) Non-recurring transactions for the twelve months ended December 31, 2025 represent approximately $8.7 million of American Bitcoin-related transaction costs, $1.1 million of Far North transaction costs, and $0.4 million in restructuring costs, offset by a $17.6 million sales tax refund. This $33.4 million decrease was primarily driven by a $40.8 million decrease in Managed Services revenue due to the $13.5 million in contract termination fees received from MARA Holdings in the prior year period , as well as the termination of the managed services agreement with Ionic in December 2024. This decrease was partially offset by a $7.4 million increase in electricity sales through the Far North JV due to growth in electricity demand during 2025. We also generate intercompany revenue under the CSA between us and American Bitcoin, which is eliminated upon consolidation. 64 Table of Contents Compute Compute revenue was $202.3 million and $80.7 million for the twelve months ended December 31, 2025 and 2024, respectively, representing an increase of $121.6 million year over year. This increase was primarily driven by (i) a $115.4 million increase in ASIC Compute revenue, largely attributable to an increase in the average revenue per Bitcoin mined from $60,436 to $103,647 and an increase in Bitcoin mined from 1,184 to 1,803.",
+    "sector": "Financial Services",
+    "industry": "FINANCE SERVICES",
+    "marketCap": 6910561792,
+    "marketCapAt": "2026-11-14T23:33:44.971Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T23:33:44.971Z"
+  },
+  "BMNR": {
+    "summary": "Our results of operations are driven primarily by changes in the fair value of our ETH holdings, staking revenue from our own ETH and revenue from staking services provided to third parties through MAVAN, the U.S. dollar value of which fluctuates with ETH prices. During the fiscal year ended August 31, 2026, we sold 395,136,273 1 Table of Contents shares of common stock under the ATM Program for aggregate gross proceeds of $13,201 million and net proceeds of $12,941 million. Our staked ETH generates recurring ETH-denominated rewards at a gross annual percentage rate of approximately 2.5% to 4.0%. All of the consulting revenue in 2026 was derived from the Company's consulting agreement with KULR Technology Group, Inc., under which the Company is obligated to provide various operational, maintenance and consulting services from May 16, 2025 to May 15, 2026. Cost of Sales Major components of cost of sales include rent to house mining and hosting equipment, electricity, depreciation, and supplies. These increases were partially offset by the absence of a non-recurring warrant expense recognized during fiscal 2025, as well as lower bank and custody fees during fiscal 2026. There were no open derivative contracts as of August 31, 2026.",
+    "sector": "Financial Services",
+    "industry": "Finance Services",
+    "marketCap": 11013008384,
+    "marketCapAt": "2026-11-14T23:33:10.648Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T23:33:10.648Z"
+  },
+  "CVNA": {
+    "summary": "Carvana Co., together with its subsidiaries, operates an e-commerce platform for buying and selling used cars.",
+    "sector": "Consumer Cyclical",
+    "industry": "Auto & Truck Dealerships",
+    "marketCap": 107969396736,
+    "marketCapAt": "2026-11-14T23:33:10.790Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T23:33:10.790Z"
+  },
+  "AIR.PA": {
+    "summary": "Airbus SE, together with its subsidiaries, engages in the design, manufacture, and delivery of aeronautics and aerospace products, services, and solutions worldwide. This segment also offers civil and defence space systems for telecommunications, earth observations, navigation, and science and orbital systems; and services around data processing from platforms, secure communication, and cyber security. The company was incorporated in 1998 and is headquartered in Leiden, the Netherlands.",
+    "sector": "Industrials",
+    "industry": "Aerospace & Defense",
+    "marketCap": 163076014080,
+    "marketCapAt": "2026-11-14T23:33:12.374Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T23:33:12.374Z"
+  },
+  "IONQ": {
+    "summary": "IonQ, Inc. develops quantum computing systems in the United States, Switzerland, and Internationally. The company also makes access to its quantum computers through cloud platforms, such as Amazon Web Services (AWS), Braket, Microsoft's Azure Quantum, and Google's Cloud Marketplace, as well as through its cloud service. In addition, it provides semiconductor manufacturing services. The company has a collaboration agreement with University of Chicago.",
+    "sector": "Technology",
+    "industry": "Computer Hardware",
+    "marketCap": 13420418048,
+    "marketCapAt": "2026-11-14T23:33:14.263Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T23:33:14.263Z"
+  },
+  "ANET": {
+    "summary": "Arista Networks, Inc. engages in the development, marketing, and sale of data-driven, client to cloud networking solutions for AI, data center, campus, and routing environments in the Americas, Europe, the Middle East, Africa, and the Asia-Pacific. Its cloud networking solutions consist of Extensible Operating System (EOS), a publish-subscribe state-sharing networking operating system offered in combination with a set of network applications. It also provides post contract customer support services, such as technical support, hardware repair and replacement parts beyond standard warranty, bug fixes, patches, and upgrade services. It markets and sells its products through distributors, system integrators, value-added resellers, and original equipment manufacturer partners, as well as through its direct sales force.",
+    "sector": "Technology",
+    "industry": "Computer Hardware",
+    "marketCap": 249256640512,
+    "marketCapAt": "2026-11-14T23:33:14.752Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T23:33:14.752Z"
+  },
+  "ASML.AS": {
+    "summary": "provides lithography solutions for the development, production, marketing, sales, upgrading, and servicing of advanced semiconductor equipment systems. It operates in Japan, South Korea, Singapore, Taiwan, China, rest of Asia, the Netherlands, rest of Europe, the Middle East, Africa, and the United States. The company was formerly known as ASM Lithography Holding N.V. was founded in 1984 and is headquartered in Veldhoven, the Netherlands.",
+    "sector": "Technology",
+    "industry": "Semiconductor Equipment & Materials",
+    "marketCap": 515997270016,
+    "marketCapAt": "2026-11-14T23:33:14.754Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T23:33:14.754Z"
+  },
+  "VLO": {
+    "summary": "Valero Energy Corporation manufactures, markets, and sells petroleum-based and low-carbon liquid transportation fuels and petrochemical products in the United States, Canada, the United Kingdom, Ireland, Latin America, Mexico, Peru, and internationally. It operates through three segments: Refining, Renewable Diesel, and Ethanol.",
+    "sector": "Energy",
+    "industry": "Oil & Gas Refining & Marketing",
+    "marketCap": 105928663040,
+    "marketCapAt": "2026-11-14T23:33:15.645Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T23:33:15.645Z"
+  },
+  "NVDA": {
+    "summary": "Our Businesses We report our business results in two segments. The Graphics segment includes GeForce GPUs for gaming and PCs, and Quadro/NVIDIA RTX GPUs for enterprise workstation graphics. [...] programs, which involve rebates and marketing development funds, or MDFs, as a reduction in revenue and accrue for such programs based on the amount we expect to be claimed by customers. Contracts with Multiple Performance Obligations Our contracts may contain more than one performance obligation. Except for License and Development Arrangements, NVIDIA products and services function on a standalone basis and do not require a significant amount of integration or interdependency. In most cases, we can establish standalone selling price based on directly observable prices of products or services sold separately in comparable circumstances to similar customers. 39 Table of Contents The following table sets forth, for the periods indicated, certain items in our Consolidated Statements of Income expressed as a percentage of revenue. Revenue from Data Center networking grew 142% driven by the introduction and continued ramp of NVLink compute fabric for GB200 and GB300 systems and the growth of Ethernet and InfiniBand platforms. Direct Customers – For fiscal year 2026, sales to one direct customer represented 22% of total revenue and sales to another direct customer represented 14% of total revenue, all of which were primarily attributable to the Compute & Networking segment. Indirect Customers – Indirect customer revenue is an estimation based upon multiple factors including customer purchase order information, product specifications, internal sales data, and other sources. Gross Profit and Gross Margin Gross profit consists of total net revenue less cost of revenue. Cost of revenue consists of the cost of semiconductors, including wafer fabrication, assembly, testing and packaging, board and device costs, manufacturing support costs, including labor and overhead associated with such purchases, final test yield fallout, inventory and warranty provisions, memory and component costs, tariffs, and shipping costs. Sales of previously reserved inventory and settlements of excess inventory purchase obligations resulted in a provision release of $1.5 billion and $689 million for fiscal years 2026 and 2025, respectively. 41 Table of Contents The increases in sales, general and administrative expenses for fiscal year 2026 were primarily driven by compensation and benefits expense, including stock-based compensation, reflecting employee growth and compensation increases.",
+    "sector": "Technology",
+    "industry": "Semiconductors & Related Devices",
+    "marketCap": 4012989743104,
+    "marketCapAt": "2026-11-13T04:55:08.415Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-09T21:17:21.963Z",
+    "wikiTitle": "Nvidia"
+  },
+  "SOFI": {
+    "summary": "Refer to “ Our Reportable Segments—Financial Services Segment ” and “ Our Reportable Segments—Lending Segment ” for more information. During the year, the Loan Platform Business generated $575.9 million in loan platform fees, driven by $11.0 billion of personal loans originated on behalf of third parties, as well as referrals. We plan to continue to pursue opportunities to increase fee-based revenue. Lending segment net interest income represents the difference between interest income earned on our loans and an FTP charge for the segment’s use of funds to originate loans, which can fluctuate based on changes in interest rates, funding curves, the composition of our balance sheet and the availability of capital. Many of our Technology Platform segment contracts are multi-year contracts. Pricing structures under these contracts are typically volume-based, or a combination of activity and volume-based, and payment terms are predominantly monthly in arrears. Referral fees are paid to us by third-party partners that offer services to end users who do not use one of our product offerings, but who were referred to the partners through our platform. • Interchange fees : We earn interchange fees from our SoFi-branded debit cards and credit cards. We adjust total net revenue to exclude these items, as they are non-cash charges that are not realized during the period or not indicative of our core operating performance, and therefore positive or negative changes do not impact the cash available to fund our operations. 97 SoFi Technologies, Inc. TABLE OF CONTENTS Total Net Revenue and Adjusted Net Revenue In Thousands The following table reconciles adjusted net revenue to total net revenue, the most directly comparable GAAP measure: Year Ended December 31, ($ in thousands) 2025 2024 2023 Total net revenue (GAAP) $ 3,613,354 $ 2,674,859 $ 2,122,789 Servicing rights – change in valuation inputs or assumptions (1) (22,013) (6,280) (34,700) Residual interests c",
+    "sector": "Financial Services",
+    "industry": "FINANCE SERVICES",
+    "marketCap": 20012699648,
+    "marketCapAt": "2026-11-14T23:33:16.643Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T23:33:16.643Z"
+  },
+  "AVAV": {
+    "summary": "​ Overview ​ We are a defense technology provider delivering integrated capabilities across air, land, sea, space, and cyber. In addition, we believe that some of the innovative potential products, services and technologies in our R&D pipeline will emerge as new growth platforms in the future, creating additional market opportunities. Effective May 1, 2025 in connection with our acquisition of BlueHalo Financing Topco, LLC (“BlueHalo”), we operate our business in two reportable segments: (1) Autonomous Systems (“AxS”) and (2) Space, Cyber and Directed Energy (“SCDE”). ​ Autonomous Systems ​ Uncrewed Aircraft Systems (“UAS\").",
+    "sector": "Industrials",
+    "industry": "Aircraft",
+    "marketCap": 5972448768,
+    "marketCapAt": "2026-11-15T21:14:10.708Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-10T17:02:45.193Z",
+    "wikiTitle": "AeroVironment"
+  },
+  "AXSM": {
+    "summary": "Subsequent to our IPO, we financed our operations primarily through proceeds from sales of our common stock to equity investors and debt borrowings. Our ability to become profitable depends on our ability to generate revenue. Additionally, in the fourth quarter of 2024, we recorded a milestone revenue of $0.5 million related to an achievement of a regulatory milestone in China for SUNOSI from SK. In the first quarter of 2023, we recorded license revenue of $65.7 million related to the Pharmanovia License Agreement (as defined below). Cost of revenue Cost of revenue includes direct costs of formulating, manufacturing, and packaging drug product, overhead costs consisting of labor, customs, stock-based compensation, shipping, outside inventory management, royalty expense, and other miscellaneous operating costs. Selling, general and administrative expenses Selling, general and administrative expenses consist of salaries and related costs for personnel in executive, commercial, finance, and operational functions, including stock-based compensation and travel expenses. The royalty payments due to Jazz are a high single-digit royalty on our U.S. net sales of SUNOSI in the current indication and a mid single-digit royalty on our U.S. net sales of SUNOSI for future indications.",
+    "sector": "Healthcare",
+    "industry": "Pharmaceutical Preparations",
+    "marketCap": 7452891648,
+    "marketCapAt": "2026-11-15T21:14:11.431Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-10T17:03:22.202Z"
+  },
+  "NVO": {
+    "summary": "Novo Nordisk A/S, together with its subsidiaries, engages in the research and development, manufacture, and distribution of pharmaceutical products. It operates through two segments, Obesity and Diabetes Care, and Rare Disease. The company also provides NovoPen 6 and NovoPen Echo Plus, smart insulin pens; Dose Check, an insulin dose guidance application; growth hormone pens and injection needles; and Wegovy pill an oral glucagon-like peptide-1 (GLP-1) receptor agonist therapy for weight management. The company has a collaboration with Anthropic accelerate the development of new medicines and advance AI-driven software development.",
+    "sector": "Healthcare",
+    "industry": "Drug Manufacturers - General",
+    "marketCap": 183519838208,
+    "marketCapAt": "2026-11-15T21:14:14.278Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-10T17:03:39.837Z",
+    "wikiTitle": "Novo_(company)"
+  },
+  "GMAB": {
+    "summary": "Genmab A/S, a biotechnology company, develops antibody-based products and product candidates for the treatment of cancer and other diseases in Denmark. The company markets EPKINLY and TEPKINLY for adult patients with relapsed or refractory (R/R) diffuse large b-cell lymphoma (DLBCL), large B-cell lymphoma, and follicular lymphoma (FL); and Tivdak for adult patients with recurrent/metastatic cervical cancer with disease progression on or after chemotherapy. The company has a collaboration agreement with AbbVie Inc., Pfizer Inc., BioNTech SE, Johnson & Johnson, Medarex, Inc., Bristol Myers Squibb Corporation, Lundbeck A/S, Amgen Inc., Novo Nordisk A/S, and argenx.",
+    "sector": "Healthcare",
+    "industry": "Biotechnology",
+    "marketCap": 31674415104,
+    "marketCapAt": "2026-11-15T21:14:17.414Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-13T22:59:57.648Z"
+  },
+  "TER": {
+    "summary": "In 2025, our Semiconductor Test segment achieved considerable growth driven by robust demand from Artificial Intelligence (“AI”) applications in networking and with vertically integrated producer (“VIP”) compute solutions. Memory test revenue remained stable despite a smaller overall market, supported by share gains in high bandwidth memory (“HBM”) and DRAM final test applications. Looking ahead to 2026, we expect AI related customer demand to continue to represent the bulk of our revenues in the first quarter. 2 Table of Contents Our corporate strategy is to profitably grow revenue and market share through the introduction of differentiated products targeting expanding markets and customer needs. 28 Table of Contents In 2025 and 2024, our five largest direct customers in aggregate accounted for 44% and 36% of our consolidated revenues, respectively. The breakout of product and service gross profit was as follows: 2025 2024 2024-2025 Dollar / Point Change (in millions) Product gross profit $ 1,524.2 $ 1,334.0 $ 190.2 Percent of product revenues 57.3 % 58.1 % (0.8 ) Service gross profit $ 333.2 $ 314.9 $ 18.3 Percent of service revenues 62.9 % 60.0 % 2.9 Product revenues gross profit percentage decreased by 0.8 points primarily due to product mix. During the year ended December 31, 2025, we recorded an inventory provision of $25.8 million included in cost of revenues, primarily due to downward revisions to previously forecasted demand levels for certain products.",
+    "sector": "Technology",
+    "industry": "Instruments For Meas & Testing of  Electricity & Elec Signals",
+    "marketCap": 38960930816,
+    "marketCapAt": "2026-11-14T23:33:20.416Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T23:33:20.416Z"
+  },
+  "TSM": {
+    "summary": "Taiwan Semiconductor Manufacturing Company Limited, together with its subsidiaries, manufactures, packages, tests, and sells integrated circuits and other semiconductor devices in Taiwan, China, Europe, the Middle East, Africa, Japan, the United States, and internationally. The company also involved in providing customer and engineering support services; manufacturing of masks; investment in technology start-up companies; research, designing, developing, manufacturing, packaging, testing, and sale of color filters; and investment activities.",
+    "sector": "Technology",
+    "industry": "Semiconductors",
+    "marketCap": 2068002373632,
+    "marketCapAt": "2026-11-14T23:33:20.666Z",
+    "source": "yahoo",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T23:33:20.666Z"
+  },
+  "AMD": {
+    "summary": "Advanced Micro Devices, Inc. operates as a semiconductor company internationally. It operates in three segments: Data Center, Client and Gaming, and Embedded. The company was incorporated in 1969 and is headquartered in Santa Clara, California.",
+    "sector": "Technology",
+    "industry": "Semiconductors & Related Devices",
+    "marketCap": 875905024000,
+    "marketCapAt": "2026-11-14T23:33:20.668Z",
+    "source": "edgar",
+    "sources": [
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T23:33:20.668Z"
+  },
+  "MU": {
+    "summary": "The benefits of LPDDR memory are being realized by many market segments, including mobile, PC, automotive, and data center. Total reported NAND revenue was $31.79 billion in 2026, $8.50 billion in 2025, and $7.23 billion in 2024. These agreements provide customers with contracted supply assurance and greater pricing visibility, and provide us with greater visibility and improved stability in our business performance. • Sales of DRAM products increased 252% primarily due to an approximate 180% increase in average selling prices and a mid-20% range increase in bit shipments. Margins improved primarily due to increases in average selling prices and also benefited from favorable mix and manufacturing cost reductions due to continued strong execution. Our consolidated gross margin for 2024 reflected $987 million of benefit due to lower costs from the sale of inventories written down to their net realizable value in 2023. Operating Income (Loss) by Business Unit For the year ended 2026 2025 2024 CMBU $ 31,225 72 % $ 6,129 45 % $ 244 6 % CDBU 29,539 79 % 2,180 30 % 255 5 % MCBU 29,208 80 % 1,981 17 % (1) — % AEBU 11,217 71 % 557 12 % 432 9 % All other 2 8 % (1) (8) % 18 49 % $ 101,191 $ 10,846 $ 948 Percentages reflect operating income (loss) as a percentage of revenue for each business unit. The company sells its products under the Micron brand name and private labels through its own direct sales force, sales or representative offices, as well as through distributors, retailers, and independent sales representatives.",
+    "sector": "Technology",
+    "industry": "Semiconductors & Related Devices",
+    "marketCap": 880597991424,
+    "marketCapAt": "2026-11-14T23:33:22.810Z",
+    "source": "edgar",
+    "sources": [
+      "edgar",
+      "yahoo"
+    ],
+    "fetchedAt": "2026-11-14T23:33:22.810Z"
+  },
+  "NOW": {
+    "summary": "Subscription revenues are primarily comprised of fees that give customers access to the ordered subscription service for both self-hosted offerings and cloud-based subscription offerings, and related standard and enhanced support and updates, if any, to the subscription service during the subscription term. Our contracts are generally non- cancellable during the subscription term, though a customer can terminate for breach if we materially fail to perform. We also sell services through managed service providers and resale partners. Revenues from our direct sales organization represented 78% of our total revenues for each of the years ended December 31, 2025 and 2024 and 79% of our total revenues for the year ended December 31, 2023. Cost of professional services and other revenues consists primarily of personnel-related costs directly associated with our professional services and training departments, including salaries, benefits, bonuses and stock-based compensation, the costs of contracted third-party partners, travel expenses and allocated overhead. Sales and marketing expenses also include the amortization of commissions paid to our sales employees, including related payroll taxes and fringe benefits.",
+    "sector": "Technology",
+    "industry": "Services-Prepackaged Software",
+    "marketCap": 103397294080,
+    "marketCapAt": "2026-11-16T14:45:51.040Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-16T14:45:51.040Z",
+    "wikiTitle": "ServiceNow"
+  },
+  "AAPL": {
+    "summary": "Company Background The Company designs, manufactures and markets smartphones, personal computers, tablets, wearables and accessories, and sells a variety of related services. AppleCare The Company offers a portfolio of fee-based service and support products under the AppleCare ® brand. Segments The Company manages its business primarily on a geographic basis. The Company sells its products and resells third-party products in most of its major markets directly to customers through its retail and online stores and its direct sales force. During 2026, the Company’s net sales through its indirect distribution channels accounted for approximately 60% of total net sales. Greater China Greater China net sales increased during 2026 compared to 2025 primarily due to higher net sales of iPhone and Mac.",
+    "sector": "Technology",
+    "industry": "Electronic Computers",
+    "marketCap": 5177380175872,
+    "marketCapAt": "2026-11-14T23:33:22.812Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T23:33:22.812Z",
+    "wikiTitle": "Apple_Inc."
+  },
+  "RIOT": {
+    "summary": "The AMD Lease has an initial term of ten years and provides for expansion options for up to an additional 75 MW of critical IT load capacity, and a right of first refusal of up to an additional 100 MW. The current block reward is 3.125 bitcoin plus transaction fees per block (subject to periodic halving, as discussed below). ​ During the year ended December 31, 2023, we entered into a long-term master purchase and sales agreement, dated as of June 23, 2023, as amended (the “Master Agreement”), with MicroBT Electronics Technology Co., LTD, through its manufacturing affiliate, SuperAcme Technology (Hong Kong) Limited (collectively, “MicroBT”) to secure the long-term supply of state-of-the-art immersion miners from MicroBT, all of which are being manufactured in the United States.",
+    "sector": "Financial Services",
+    "industry": "Finance Services",
+    "marketCap": 6573223424,
+    "marketCapAt": "2026-11-14T23:33:25.109Z",
+    "source": "edgar",
+    "sources": [
+      "edgar"
+    ],
+    "fetchedAt": "2026-11-14T23:33:25.109Z"
+  },
+  "SNOW": {
+    "summary": "SNOW sells a cloud computing platform that combines data and artificial intelligence. Customers pay for access to the platform, which allows them to manage and analyze data stored in the cloud. They can also use Snowpark for Java and Scala to develop applications using the platform's data. Snowpark Container Services are used in various product categories, including AI and applications. SNOW offers both subscription plans and on-demand arrangements, with recurring payments for ongoing service. The company's pricing strategy varies depending on usage level and contract terms. Revenue from on-demand arrangements typically relates to customers with lower usage levels or overage consumption beyond a contracted usage amount. Overall, SNOW generates revenue from product sales, subscriptions, and professional services.",
+    "sector": "Technology",
+    "industry": "Services-Prepackaged Software",
+    "marketCap": 98798116864,
+    "marketCapAt": "2026-11-16T15:27:51.013Z",
+    "source": "edgar",
+    "sources": [
+      "edgar",
+      "yahoo",
+      "wiki"
+    ],
+    "condensed": true,
+    "fetchedAt": "2026-11-16T15:27:51.013Z",
+    "wikiTitle": "Intrawest"
+  }
+}

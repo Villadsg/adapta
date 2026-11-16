@@ -87,3 +87,6 @@ bun-workers/node_modules/
 
 # Local LLM weights for the lab insights service
 models/
+
+# Generated anchor embedding cache (keyed by model, rebuilt automatically)
+ci/embedding-anchor-cache.json

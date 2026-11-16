@@ -5,7 +5,7 @@ const { TAG_LABELS: EVENT_TAG_LABELS } = require('../services/eventTags');
 const { combineHistRecord } = require('./screeningStats');
 const { formatAge } = require('../../ci/ticker-screen');
 
-function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData = {}, preEventStats = {}, notes = {}, preEventByReturnBucket = null, preEventContrast = null, peLiveSlopeByTicker = {}, toDelete = [], freshness = null, suggestedTickers = []) {
+function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData = {}, preEventStats = {}, notes = {}, preEventByReturnBucket = null, preEventContrast = null, peLiveSlopeByTicker = {}, toDelete = [], freshness = null, suggestedTickers = [], eventsByTicker = {}, clusterResult = null, suggestedMeta = {}, clusterPageName = null) {
   const suggestedSet = new Set(suggestedTickers);
   const classColors = {
     surprising_positive: '#4caf50',
@@ -20,6 +20,99 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     negative_anticipated: 'Anticipated -',
     surprising_negative: 'Surprising -',
   };
+
+  // ── Options delta-shape clustering (optionsClusters.js) ──
+  // byTicker: {ticker: {cluster, strength}}; clusters carry the signature text.
+  const clusterMeta = clusterResult && clusterResult.meta && clusterResult.meta.ok ? clusterResult.meta : null;
+  const clusterByTicker = (clusterResult && clusterResult.byTicker) || {};
+  const clusterById = {};
+  if (clusterResult && Array.isArray(clusterResult.clusters)) {
+    for (const c of clusterResult.clusters) clusterById[c.id] = c;
+  }
+  const CLUSTER_COLORS = ['#5b9bd5', '#c79bd5', '#5bbd9a', '#d5a15b', '#d57b9b', '#8fce6f', '#5bd0d5', '#b5a8e0'];
+  const clusterColor = (id) => {
+    const n = parseInt(String(id).replace(/^C/, ''), 10);
+    return Number.isFinite(n) ? CLUSTER_COLORS[(n - 1) % CLUSTER_COLORS.length] : '#999';
+  };
+  // Client payload presence gates the "Cluster investigation" companion page
+  // (clusterInvestigationHtml.js), which embeds this data for in-page re-clustering.
+  const clusterClient = clusterResult && clusterResult.client ? true : null;
+  // Cluster-level prominence drives the chip's background tint: the stronger a
+  // cluster's average move (σ), the more saturated its chips, so significant
+  // groups pop out of the table at a glance while near-quiet clusters stay pale.
+  const clusterMoveMax = Math.max(1e-9, ...Object.values(clusterById).map(c => c.avgMove || 0));
+  const clusterTint = (id) => {
+    const c = clusterById[id];
+    if (!c) return '#1e2433';
+    const alpha = Math.round((0.10 + 0.50 * Math.min(1, (c.avgMove || 0) / clusterMoveMax)) * 255);
+    return clusterColor(id) + alpha.toString(16).padStart(2, '0');
+  };
+  const escapeAttr = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const clusterChipHtml = (id, strength, move) => {
+    const c = clusterById[id];
+    const tip = c
+      ? `${id} — n=${c.size} tickers · cluster avg move σ=${c.avgMove} · separation sil=${c.avgStrength.toFixed(2)} · ${c.signature}${move != null ? ` · this ticker: move σ=${move.toFixed(1)}` : ''}`
+      : id;
+    const sizeTag = c ? `<sup style="font-size:0.7em; line-height:0;">${c.size}</sup>` : '';
+    return `<span class="cluster-chip" data-cluster="${id}" title="${escapeAttr(tip)}" style="display:inline-block; margin:1px 2px; padding:1px 6px; background:${clusterTint(id)}; color:${clusterColor(id)}; border:1px solid ${clusterColor(id)}; border-radius:8px; font-size:0.74em; font-weight:600; cursor:pointer; white-space:nowrap;">${id}${sizeTag}${move != null ? ' ·σ' + move.toFixed(1) : ''}${strength != null ? ' ·' + strength.toFixed(2) : ''}</span>`;
+  };
+  // Shape-map scatter: top-2 PCs of the normalized delta shapes. Built before
+  // the panel template below so it can be dropped in as a block.
+  const clusterPlotSvg = (() => {
+    const plot = clusterResult && clusterResult.plot;
+    if (!clusterMeta || !plot || !Array.isArray(plot.points) || plot.points.length < 2) return '';
+    const W = 520, H = 520, PAD = 40;
+    const xs = plot.points.map(p => p.x), ys = plot.points.map(p => p.y);
+    let x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    if (x1 - x0 < 1e-9) { x0 -= 1; x1 += 1; }
+    if (y1 - y0 < 1e-9) { y0 -= 1; y1 += 1; }
+    const sx = (v) => PAD + (v - x0) / (x1 - x0) * (W - 2 * PAD);
+    const sy = (v) => H - PAD - (v - y0) / (y1 - y0) * (H - 2 * PAD);
+    const maxMove = Math.max(1e-9, ...plot.points.map(p => p.move || 0));
+    const dotR = (p) => 3 + 7 * Math.min(1, (p.move || 0) / maxMove);
+    // Pre-cluster view: dots start uncolored; the inline script colors them by
+    // cluster once the user picks k and applies. Every ticker is labeled — this
+    // plot doubles as the "see the screened tickers" overview before clustering.
+    const dots = plot.points.map(p => {
+      const tip = `${p.ticker} — move σ=${p.move} (uncolored: pre-cluster view)`;
+      const cx = sx(p.x).toFixed(1), cy = sy(p.y).toFixed(1), rr = dotR(p).toFixed(1);
+      return `<g><circle class="cluster-dot" data-ticker="${p.ticker}" cx="${cx}" cy="${cy}" r="${rr}" fill="#93a1b3" fill-opacity="0.72" stroke="#93a1b3" stroke-width="1" style="cursor:pointer;"><title>${escapeAttr(tip)}</title></circle><text x="${(+cx + +rr + 3).toFixed(1)}" y="${(+cy + 3).toFixed(1)}" font-size="9.5" fill="#9aa5b4" style="pointer-events:none;">${p.ticker}</text></g>`;
+    }).join('');
+    const ve = plot.varExplained || [];
+    return `<div style="margin-top:10px; border-top:1px solid #eee; padding-top:8px;">
+  <button id="cluster-plot-toggle" type="button" style="padding:2px 10px; border:1px solid #3a4a6a; background:#1e2433; color:#8fa8d0; border-radius:4px; cursor:pointer; font-size:0.85em;">▸ Show shape map (PC1/PC2)</button>
+  <div id="cluster-plot-wrap" style="display:none; margin-top:8px;">
+  <div style="color:#9aa5b4; font-size:0.8em; margin-bottom:4px;">Shape map — top-2 principal components of today's delta shapes (nearby dots = similar-shaped moves, distance ≈ cosine; only ~PC1+PC2 variance is shown, so distant dots are suggestive, nearby dots are meaningful). Dot size = move strength σ. Starts uncolored (pre-cluster view); press Cluster to color by cluster — then click a dot to filter the table by its cluster.</div>
+  <svg viewBox="0 0 ${W} ${H}" style="width:100%; max-width:560px; height:auto; display:block; margin:0 auto; background:#12141a; border:1px solid #2a3040; border-radius:8px;">
+    <line x1="${PAD}" y1="${H - PAD}" x2="${W - PAD}" y2="${H - PAD}" stroke="#2e333d"/>
+    <line x1="${PAD}" y1="${PAD}" x2="${PAD}" y2="${H - PAD}" stroke="#2e333d"/>
+    <text x="${W - PAD}" y="${H - 12}" text-anchor="end" font-size="10" fill="#9aa5b4">PC1 ${ve[0] != null ? (ve[0] * 100).toFixed(0) + '%' : ''}</text>
+    <text x="${PAD + 4}" y="16" font-size="10" fill="#9aa5b4">PC2 ${ve[1] != null ? (ve[1] * 100).toFixed(0) + '%' : ''}</text>
+    ${dots}
+  </svg></div></div>`;
+  })();
+
+  const clusterPanelHtml = !clusterMeta ? '' : `
+<div id="cluster-panel" style="margin-bottom:14px; padding:12px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.95em;">
+  <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px; flex-wrap:wrap;">
+    <div style="color:#666; font-weight:600;">Options Delta-Shape Clusters
+      <span style="color:#999; font-weight:normal; font-size:0.85em; margin-left:8px;">(k=${clusterMeta.k}${clusterMeta.kSource === 'manual' ? ' manual' : ' auto'} · silhouette ${clusterMeta.silhouette}${clusterMeta.weak ? ' · <b style="color:#ef6c00;">weak structure today</b>' : ''} · ${clusterMeta.n} tickers clustered vs their own 60-day baseline${clusterMeta.universe ? ` · ${escapeAttr(clusterMeta.universe)}` : ''}${clusterMeta.excludedStale || clusterMeta.excludedShort ? ` · ${clusterMeta.excludedStale} stale, ${clusterMeta.excludedShort} short-history excluded` : ''})</span>
+    </div>
+    ${clusterClient && clusterPageName ? `
+    <button type="button" onclick="window.open('${escapeAttr(clusterPageName)}', '_blank')" style="padding:2px 12px; border:1px solid #3a4a6a; background:#1e2433; color:#8fa8d0; border-radius:4px; cursor:pointer; font-size:0.85em;">Cluster investigation…</button>` : ''}
+  </div>
+  <div style="color:#999; font-size:0.82em; margin-bottom:6px;">Table chips below use this run's k${clusterClient && clusterPageName ? ' — open the cluster investigation to explore other k on the same data' : ''}.</div>
+  <div style="display:flex; flex-direction:column; gap:6px;">
+    ${clusterResult.clusters.map(c => `
+    <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;">
+      ${clusterChipHtml(c.id, null, c.avgMove)}
+      <span style="color:#888; font-size:0.82em; white-space:nowrap;">n=${c.size} · σ ${c.avgMove != null ? c.avgMove.toFixed(1) : '?'} · sil ${c.avgStrength.toFixed(2)}</span>
+      <span style="color:#444; font-size:0.85em; flex:1 1 280px;">${escapeAttr(c.signature)}</span>
+      <span style="color:#999; font-size:0.8em; max-width:640px;">${c.members.slice(0, 12).join(' ')}${c.members.length > 12 ? ` +${c.members.length - 12} more` : ''}</span>
+    </div>`).join('')}
+  </div>
+  ${clusterPlotSvg}
+</div>`;
 
   const hitCount = allTickers.filter(h => h.classification).length;
   const deleteSet = new Set(toDelete);
@@ -79,6 +172,7 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
   // Build chart data JSON and summary map for each ticker
   const chartDataMap = {};
   const summaryMap = {};
+  const summarySourceMap = {}; // ticker -> 'edgar' | 'yahoo' | 'wiki'
   const newsMap = {};
   const tickerIVs = {}; // { ticker: { callIV, putIV, atmCallIV, atmPutIV, ivSpreadCall, ivSpreadPut } } — DV-weighted across expirations
   const tickerOptDV = {}; // { ticker: totalDollarVol } — sum of call+put dollar vol across all expirations
@@ -94,7 +188,10 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
         if (combined && combined.totalDV > 0) tickerOptDV[h.ticker] = combined.totalDV;
       }
     }
-    if (h.summary) summaryMap[h.ticker] = h.summary;
+    if (h.summary) {
+      summaryMap[h.ticker] = h.summary;
+      if (h.descSource) summarySourceMap[h.ticker] = h.descSource;
+    }
     if (h.news && h.news.length > 0) newsMap[h.ticker] = h.news;
   }
 
@@ -351,6 +448,13 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
     const dvDeltaStr = dvDelta == null ? '' : (dvDelta > 0 ? '↑ +' : dvDelta < 0 ? '↓ ' : '') + dvDelta.toFixed(0);
     const dvDeltaVal = dvDelta != null ? dvDelta : -1e9;
 
+    const cl = clusterByTicker[h.ticker];
+    const clusterId = cl && cl.cluster ? cl.cluster : null;
+    const clusterVal = cl && cl.strength != null ? cl.strength : -2;
+    const clusterCell = clusterId
+      ? `<td class="cluster-cell" data-ticker="${h.ticker}" data-v="${clusterVal}">${clusterChipHtml(clusterId, cl.strength, cl.move)}</td>`
+      : `<td class="cluster-cell" data-ticker="${h.ticker}" data-v="-2" style="color:#555; font-size:0.82em;" title="Not clustered (insufficient history or stale data)">—</td>`;
+
 
     const noteText = (notes && notes[h.ticker]) ? notes[h.ticker] : '';
     const hasNote = !!noteText;
@@ -398,9 +502,10 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
       ? `Close ${lastCloseNum.toFixed(2)} → last ${latestPriceNum.toFixed(2)}`
       : 'Latest quoted price (includes extended hours)';
 
-    return `<tr ${hasChart ? `class="data-row" data-ticker="${h.ticker}"` : ''} data-tags="${tagsAttr}" style="${inlineStyle}">
+    return `<tr ${hasChart ? `class="data-row" data-ticker="${h.ticker}"` : ''} data-tags="${tagsAttr}"${clusterId ? ` data-cluster="${clusterId}"` : ''} style="${inlineStyle}">
       <td style="text-align:center; width:44px; padding:4px; white-space:nowrap;"><span class="del-mark" data-ticker="${h.ticker}" style="cursor:pointer; font-size:0.95em; color:${isDeleted ? '#e53935' : '#555'};" title="${isDeleted ? 'Marked to delete (click to unmark)' : 'Mark to delete'}">✕</span></td>
-      <td data-v="${h.ticker}" style="font-weight:bold;">${h.ticker}${hasChart ? ' <span style="font-size:0.7em;color:#aaa;">▶</span>' : ''}${noteIndicator}${suggestedSet.has(h.ticker) ? ` <span style="font-size:0.68em; font-weight:600; color:#b48cff; border:1px solid #4a3a6a; background:#241f33; border-radius:4px; padding:1px 5px; vertical-align:middle;" title="Randomly drawn from the rebuild top 100 for this run">shuffle</span> <button class="add-screen-btn" data-ticker="${h.ticker}" style="font-size:0.72em; margin-left:4px; padding:1px 7px; border-radius:4px; border:1px solid #3a5a3a; background:#1e2b1e; color:#8fce8f; cursor:pointer; vertical-align:middle;" title="Permanently add ${h.ticker} to the screening list">＋ Add</button>` : ''}</td>
+      <td data-v="${h.ticker}" style="font-weight:bold;">${h.ticker}${hasChart ? ` <span style="font-size:0.7em;color:#aaa;">▶</span> <button class="flow-modal-btn" data-ticker="${h.ticker}" style="font-size:0.72em; margin-left:2px; padding:1px 6px; border-radius:4px; border:1px solid #3a4a6a; background:#1e2433; color:#8fa8d0; cursor:pointer; vertical-align:middle;" title="Open OTM flow &amp; net win modal">📊</button>` : ''}${noteIndicator}${suggestedSet.has(h.ticker) ? ` <span style="font-size:0.68em; font-weight:600; color:#b48cff; border:1px solid #4a3a6a; background:#241f33; border-radius:4px; padding:1px 5px; vertical-align:middle;" title="${(() => { const m = suggestedMeta[h.ticker]; return m ? `Most similar company to your list (cosine ${(m.similarity * 100).toFixed(1)}%)${m.sector ? ' · ' + m.sector : ''}${m.industry ? ' · ' + m.industry : ''}` : 'Suggested for this run'; })()}">similar</span> <button class="add-screen-btn" data-ticker="${h.ticker}" style="font-size:0.72em; margin-left:4px; padding:1px 7px; border-radius:4px; border:1px solid #3a5a3a; background:#1e2b1e; color:#8fce8f; cursor:pointer; vertical-align:middle;" title="Permanently add ${h.ticker} to the screening list">＋ Add</button>` : ''}</td>
+      ${clusterCell}
       <td data-v="${sec || 'zzz'}" style="font-size:0.82em; color:#888;">${sec || ''}</td>
       <td data-v="${tagsSortKey}" style="font-size:0.82em; max-width:240px;">${tagsCell}</td>
       <td data-v="${h.classification || 'zzz'}" style="color:${color}; font-weight:bold;">${label}</td>
@@ -418,19 +523,10 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
       <td data-v="${putSpreadVal}" style="text-align:right; color:rgba(245,101,101,0.7); font-size:0.88em;${leanBg('lvl','Put Spr',putSpreadRank)}">${putSpreadStr}</td>
     </tr>
     <tr class="chart-row" data-chart-for="${h.ticker}" style="display:none;">
-      <td colspan="17" style="padding:0; background:#1a1d23;">
+      <td colspan="18" style="padding:0; background:#1a1d23;">
         <div style="display:flex; gap:12px; align-items:stretch; margin:12px 20px 8px;">
-          <div id="summary-${h.ticker}" style="flex:0 1 78ch; padding:14px 18px; background:#262a33; border-left:3px solid #4a5a8a; border-radius:6px; color:#cdd5e0; font-size:0.98em; line-height:1.65; max-height:200px; overflow-y:auto;"></div>
-          <div style="flex:1 1 0; min-width:280px; height:200px; background:#262a33; border-radius:6px; padding:6px 10px;">
-            <canvas id="dv-iv-chart-${h.ticker}"></canvas>
-          </div>
-        </div>
-        <div id="dv-iv-strike-wrap-${h.ticker}" style="display:none; margin:0 20px 8px; padding:10px 14px; background:#262a33; border-left:3px solid #7aa2c7; border-radius:6px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-            <span id="dv-iv-strike-title-${h.ticker}" style="color:#cdd5e0; font-size:0.92em;"></span>
-            <button type="button" data-strike-close="${h.ticker}" style="background:transparent; color:#888; border:1px solid #444; border-radius:3px; padding:2px 8px; font-size:0.8em; cursor:pointer;">close</button>
-          </div>
-          <div id="dv-iv-strike-body-${h.ticker}"></div>
+          <div id="summary-${h.ticker}" style="flex:1 1 120ch; padding:14px 18px; background:#262a33; border-left:3px solid #4a5a8a; border-radius:6px; color:#cdd5e0; font-size:0.98em; line-height:1.65; max-height:280px; overflow-y:auto;"></div>
+          <div id="events-${h.ticker}" style="flex:0 1 250px; min-width:200px; max-height:280px; overflow-y:auto; background:#262a33; border-radius:6px; padding:10px 14px; color:#cdd5e0; font-size:0.88em; line-height:1.5;"></div>
         </div>
         <div style="padding:6px 20px 8px; display:flex; gap:8px; align-items:flex-start;">
           <label style="color:#aaa; font-size:0.82em; padding-top:6px; min-width:48px;">Notes</label>
@@ -441,6 +537,9 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
           <canvas id="chart-${h.ticker}"></canvas>
         </div>
         <div id="opts-wrap-${h.ticker}" style="display:none; padding:8px 16px 4px;">
+          <div style="display:flex; justify-content:flex-end; padding:0 4px 2px;">
+            <button id="opts-vol-toggle-${h.ticker}" type="button" style="background:transparent; color:#7aa2c7; border:1px solid #445; border-radius:3px; padding:2px 10px; font-size:0.8em; cursor:pointer;" title="Switch $Vol bars between 6-day accumulated and latest day only">$Vol: 6d accumulated</button>
+          </div>
           <div style="display:flex; gap:8px;">
             <div style="flex:1; min-width:0;">
               <div id="opts-iv-label-0-${h.ticker}" style="color:#aaa; font-size:0.82em; padding:2px 4px; cursor:pointer; user-select:none;" title="Click for historical weighted IV"></div>
@@ -498,8 +597,27 @@ function generateScreeningHTML(allTickers, totalTickers, config, ivHistoryData =
   [style*="color:#bbb"] { color: #5a6680 !important; }
   #fav-toast { position:fixed; bottom:20px; right:20px; padding:8px 16px; border-radius:6px; font-size:0.9em; color:#fff; opacity:0; transition:opacity 0.3s; pointer-events:none; z-index:9999; }
   #fav-toast.show { opacity:1; }
+  .flow-modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:9000; display:none; align-items:center; justify-content:center; }
+  .flow-modal-backdrop.open { display:flex; }
+  .flow-modal { width:min(1200px, 94vw); height:min(86vh, 900px); background:#262a33; border:1px solid #3a4150; border-radius:12px; box-shadow:0 8px 40px rgba(0,0,0,0.6); display:flex; flex-direction:column; overflow:hidden; }
+  .flow-modal-head { display:flex; align-items:baseline; gap:14px; padding:14px 18px 8px; }
+  .flow-modal-title { font-weight:700; font-size:1.05em; color:#eaeaea; white-space:nowrap; }
+  .flow-modal-meta { color:#8a96b0; font-size:0.85em; flex:1; }
+  .flow-modal-close { background:transparent; border:1px solid #444; color:#aaa; border-radius:4px; padding:2px 10px; cursor:pointer; font-size:0.95em; }
+  .flow-modal-close:hover { color:#fff; border-color:#888; }
+  .flow-modal-body { flex:1; padding:4px 14px 14px; min-height:0; }
 </style></head><body>
 <div id="fav-toast"></div>
+<div id="flow-modal" class="flow-modal-backdrop">
+  <div class="flow-modal" role="dialog" aria-modal="true">
+    <div class="flow-modal-head">
+      <span class="flow-modal-title" id="flow-modal-title"></span>
+      <span class="flow-modal-meta" id="flow-modal-meta"></span>
+      <button type="button" class="flow-modal-close" id="flow-modal-close" title="Close (Esc)">✕ close</button>
+    </div>
+    <div class="flow-modal-body"><canvas id="flow-modal-chart"></canvas></div>
+  </div>
+</div>
 <h1>Ticker Screening Results</h1>
 <p class="summary">${hitCount} hit${hitCount !== 1 ? 's' : ''} out of ${totalTickers} tickers screened &mdash; ${config.screenLookbackDays}d lookback, p${config.screenPercentileThreshold} threshold</p>
 ${(() => {
@@ -542,136 +660,62 @@ ${ivTickers.length > 0 ? `<div style="margin-bottom:14px; padding:10px 14px; bac
   <span style="color:rgba(72,187,120,0.7); font-weight:bold; margin-left:10px;">Call ${avgAtmCallIV.toFixed(1)}%</span>
   <span style="color:rgba(245,101,101,0.7); font-weight:bold; margin-left:10px;">Put ${avgAtmPutIV.toFixed(1)}%</span>
 </div>` : ''}
-${(() => {
-  const order = [
-    ['surprising_positive', 'Surprising +', '#4caf50'],
-    ['positive_anticipated', 'Anticipated +', '#8bc34a'],
-    ['negative_anticipated', 'Anticipated -', '#ff9800'],
-    ['surprising_negative', 'Surprising -', '#f44336'],
-  ];
-  const any = order.some(([k]) => preEventStats[k] && preEventStats[k].n > 0);
-  if (!any) return '';
-  // Percentile rank, range 0–100, neutral = 50 (OTM IV rank and spread rank, calls & puts).
-  const fmtRank = (v, n) => {
-    if (v == null || !n) return '<span style="color:#bbb;">—</span>';
-    let color = '#666';
-    if (v >= 70) color = '#d32f2f';
-    else if (v >= 60) color = '#ef6c00';
-    else if (v <= 30) color = '#1565c0';
-    else if (v <= 40) color = '#0277bd';
-    return `<span style="color:${color}; font-weight:600;">${v.toFixed(0)}</span> <span style="color:#aaa; font-size:0.85em;">(${n})</span>`;
-  };
-  const binColor = (center) => {
-    if (center >= 70) return '#d32f2f';
-    if (center >= 60) return '#ef6c00';
-    if (center <= 30) return '#1565c0';
-    if (center <= 40) return '#0277bd';
-    return '#9e9e9e';
-  };
-  const MAXH = 56; // px, tallest bar
-  const renderHist = (counts, mean, n, hMin, hBinW, hN) => {
-    if (!n || !counts) return '<div style="color:#bbb; font-size:0.85em; padding:8px 0;">—</div>';
-    const maxC = Math.max(1, ...counts);
-    const bars = counts.map((c, i) => {
-      const lo = hMin + i * hBinW;
-      const center = lo + hBinW / 2;
-      const h = c === 0 ? 0 : Math.max(2, Math.round((c / maxC) * MAXH));
-      return `<div title="[${lo}, ${lo + hBinW}) — ${c}" style="flex:1; display:flex; flex-direction:column; justify-content:flex-end;">
-        <div style="height:${h}px; background:${binColor(center)}; border-radius:1px 1px 0 0;"></div></div>`;
-    }).join('');
-    const meanPct = ((mean - hMin) / (hBinW * hN)) * 100;
-    return `<div style="position:relative; min-width:200px;">
-      <div style="display:flex; align-items:flex-end; gap:1px; height:${MAXH}px; border-bottom:1px solid #ddd;">${bars}</div>
-      <div style="position:absolute; left:50%; top:0; bottom:18px; border-left:1px dashed #ccc;"></div>
-      <div title="mean ${mean == null ? '—' : mean.toFixed(1)}" style="position:absolute; left:${meanPct}%; top:-4px; bottom:18px; border-left:2px solid #111; transform:translateX(-1px);"></div>
-      <div style="display:flex; justify-content:space-between; color:#aaa; font-size:0.72em; margin-top:2px;"><span>0</span><span>50</span><span>100</span></div>
-      <div style="color:#888; font-size:0.78em; margin-top:1px;">mean <b>${mean == null ? '—' : mean.toFixed(1)}</b> · n=${n}</div>
-    </div>`;
-  };
-  const histCell = (lab, counts, mean, nn, s) => `<div><div style="color:#888; font-size:0.78em; margin-bottom:2px;">${lab}</div>${renderHist(counts, mean, nn, s.histMin, s.histBinW, s.histNBins)}</div>`;
-  // #2 Anticipation trajectory: point-in-time rank by trading days before the event.
-  const trajCell = (st) => (st && st.mean != null && st.n)
-    ? `<td style="padding:3px 10px; text-align:right;">${fmtRank(st.mean, st.n)}</td>`
-    : '<td style="padding:3px 10px; text-align:right; color:#bbb;">—</td>';
-  const trajRow = (lab, tr) => {
-    const slope = (tr && tr.t1.mean != null && tr.t3.mean != null) ? tr.t1.mean - tr.t3.mean : null;
-    const slopeCell = slope == null
-      ? '<td style="padding:3px 10px; text-align:right; color:#bbb;">—</td>'
-      : `<td style="padding:3px 10px; text-align:right; font-weight:600; color:${slope >= 8 ? '#d32f2f' : slope <= -8 ? '#1565c0' : '#666'};">${slope >= 0 ? '+' : ''}${slope.toFixed(0)}</td>`;
-    return `<tr><td style="padding:3px 10px; color:#888;">${lab}</td>${trajCell(tr && tr.t3)}${trajCell(tr && tr.t2)}${trajCell(tr && tr.t1)}${slopeCell}</tr>`;
-  };
-  const trajTable = (s) => {
-    if (!s.traj) return '';
-    const ms = [['callOtm', 'Call OTM'], ['callAtm', 'Call ATM'], ['callSpr', 'Call Spr'], ['putOtm', 'Put OTM'], ['putAtm', 'Put ATM'], ['putSpr', 'Put Spr']];
-    const body = ms.map(([m, l]) => trajRow(l, s.traj[m])).join('');
-    return `<div style="margin-top:12px;">
-      <div style="color:#888; font-size:0.78em; margin-bottom:3px;">Anticipation trajectory — point-in-time rank by trading days before the event (slope = T-1 − T-3; &gt;0 = IV ramping into the event, &lt;0 = bleeding off)</div>
-      <table style="border-collapse:collapse; font-size:0.9em;">
-        <thead><tr style="color:#999; font-size:0.78em; text-transform:uppercase;">
-          <th style="padding:3px 10px; text-align:left;">Metric</th>
-          <th style="padding:3px 10px; text-align:right;">T-3</th>
-          <th style="padding:3px 10px; text-align:right;">T-2</th>
-          <th style="padding:3px 10px; text-align:right;">T-1</th>
-          <th style="padding:3px 10px; text-align:right;">Slope</th>
-        </tr></thead><tbody>${body}</tbody>
-      </table></div>`;
-  };
-  const rows = order.map(([k, label, color]) => {
-    const s = preEventStats[k] || {};
-    const n = s.n || 0;
-    if (n === 0) {
-      return `<tr style="color:#bbb;">
-        <td style="padding:6px 10px 6px 24px; font-weight:bold; color:${color};">${label}</td>
-        <td style="padding:6px 10px; text-align:right;">—</td>
-        <td style="padding:6px 10px; text-align:right;">—</td>
-        <td style="padding:6px 10px; text-align:right;">—</td>
-        <td style="padding:6px 10px; text-align:right;">—</td>
-        <td style="padding:6px 10px; text-align:right;">—</td>
-        <td style="padding:6px 10px; text-align:right;">—</td>
-      </tr>`;
-    }
-    const toggle = `var d=document.getElementById('pe-d-${k}');var o=d.style.display==='none';d.style.display=o?'':'none';this.querySelector('.pe-caret').textContent=o?'▾':'▸';`;
-    return `<tr style="cursor:pointer;" onclick="${toggle}" title="Click to show the distributions">
-      <td style="padding:6px 10px; font-weight:bold; color:${color};"><span class="pe-caret" style="display:inline-block; width:14px; color:#999;">▸</span>${label}</td>
-      <td style="padding:6px 10px; text-align:right;">${fmtRank(s.callOtmMean, s.callOtmN)}</td>
-      <td style="padding:6px 10px; text-align:right;">${fmtRank(s.callAtmMean, s.callAtmN)}</td>
-      <td style="padding:6px 10px; text-align:right;">${fmtRank(s.callSprMean, s.callSprN)}</td>
-      <td style="padding:6px 10px; text-align:right;">${fmtRank(s.putOtmMean, s.putOtmN)}</td>
-      <td style="padding:6px 10px; text-align:right;">${fmtRank(s.putAtmMean, s.putAtmN)}</td>
-      <td style="padding:6px 10px; text-align:right;">${fmtRank(s.putSprMean, s.putSprN)}</td>
-    </tr>
-    <tr id="pe-d-${k}" style="display:none;">
-      <td colspan="7" style="padding:4px 10px 12px 24px; background:#fafafa;">
-        <div style="display:flex; gap:24px; flex-wrap:wrap;">
-          ${histCell('Call OTM IV rank', s.callOtmHist, s.callOtmMean, s.callOtmN, s)}
-          ${histCell('Call ATM IV rank', s.callAtmHist, s.callAtmMean, s.callAtmN, s)}
-          ${histCell('Call spread rank', s.callSprHist, s.callSprMean, s.callSprN, s)}
-          ${histCell('Put OTM IV rank', s.putOtmHist, s.putOtmMean, s.putOtmN, s)}
-          ${histCell('Put ATM IV rank', s.putAtmHist, s.putAtmMean, s.putAtmN, s)}
-          ${histCell('Put spread rank', s.putSprHist, s.putSprMean, s.putSprN, s)}
-        </div>
-        <div style="color:#aaa; font-size:0.72em; margin-top:6px;">x-axis 0…100, 50 = neutral · dashed line = 50 · black line = mean</div>
-        ${trajTable(s)}
-      </td>
-    </tr>`;
-  }).join('');
-  return `<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.92em;">
-    <div style="color:#666; font-weight:600; margin-bottom:4px;">Pre-Event IV Profile <span style="color:#999; font-weight:normal; font-size:0.9em;">(per-event weighted-OTM-IV, weighted-ATM-IV and IV-spread percentile ranks within that ticker's own point-in-time history, denoised by averaging the last ≤3 contiguous daily snapshots before the event then averaged across events; range 0–100, 50 = neutral, &gt;60 = elevated, &lt;40 = suppressed)</span></div>
-    <div style="color:#aaa; font-size:0.78em; margin-bottom:6px;">Requires ≥10 history records before the event date. Headline = per-event mean of the last ≤3 contiguous daily snapshots before the event. (n) = events contributing. Click a row for distributions and the pre-event anticipation trajectory.</div>
-    <table style="border-collapse:collapse;">
-      <thead><tr style="color:#888; font-size:0.8em; text-transform:uppercase;">
-        <th style="padding:4px 10px; text-align:left;">Classification</th>
-        <th style="padding:4px 10px; text-align:right;">Call OTM</th>
-        <th style="padding:4px 10px; text-align:right;">Call ATM</th>
-        <th style="padding:4px 10px; text-align:right;">Call Spr</th>
-        <th style="padding:4px 10px; text-align:right;">Put OTM</th>
-        <th style="padding:4px 10px; text-align:right;">Put ATM</th>
-        <th style="padding:4px 10px; text-align:right;">Put Spr</th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-  </div>`;
-})()}
+<div id="portfolio-corr-box" style="margin-bottom:14px; padding:12px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.95em;">
+  <div style="color:#666; font-weight:600; margin-bottom:6px;">Portfolio Correlation Check</div>
+  <div style="display:flex; align-items:center; gap:10px;">
+    <input id="portfolio-corr-input" type="text" placeholder="e.g. AAPL, MSFT, NVDA" style="flex:1; padding:7px 10px; border:1px solid #ddd; border-radius:6px; font-size:0.95em; outline:none;" />
+    <button id="portfolio-corr-btn" style="padding:7px 16px; border:none; border-radius:6px; background:#5b8cb8; color:#fff; font-size:0.9em; cursor:pointer;">Check</button>
+  </div>
+  <div id="portfolio-corr-result" style="margin-top:8px;"></div>
+</div>
+${clusterPanelHtml}
+${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.93em;">
+  <div style="color:#444; font-weight:700; margin-bottom:8px;">
+    Package Suggestion
+    <span style="color:#999; font-weight:normal; font-size:0.85em; margin-left:8px;">(best 3-ticker combo: max avg call spread, min pairwise correlation &mdash; 2-snapshot avg)</span>
+  </div>
+  <div style="display:flex; gap:24px; align-items:center; flex-wrap:wrap;">
+    ${bestCombo.tickers.map((t, i) => `<div style="background:#f7f9fc; border-radius:6px; padding:8px 14px; min-width:120px;">
+        <div style="font-weight:bold; font-size:1.05em; color:#333;">${t}</div>
+        <div style="color:rgba(72,187,120,0.85); font-size:0.88em; margin-top:2px;">Avg C Spr: ${bestCombo.spreads[i] >= 0 ? '+' : ''}${bestCombo.spreads[i].toFixed(1)}</div>
+      </div>`).join('')}
+    <div style="color:#888; font-size:0.85em; line-height:1.6;">
+      <div>Avg |corr|: <span style="color:${bestCombo.avgCorr < 0.3 ? '#4caf50' : bestCombo.avgCorr < 0.6 ? '#ff9800' : '#f44336'}; font-weight:600;">${bestCombo.avgCorr.toFixed(2)}</span></div>
+      <div>Avg Call Spread: <span style="color:rgba(72,187,120,0.9); font-weight:600;">${bestCombo.avgSpread >= 0 ? '+' : ''}${bestCombo.avgSpread.toFixed(1)}</span></div>
+      <div style="font-size:0.82em; color:#bbb;">Corr: ${bestCombo.tickers[0]}/${bestCombo.tickers[1]}=${bestCombo.corrs.r12.toFixed(2)}, ${bestCombo.tickers[0]}/${bestCombo.tickers[2]}=${bestCombo.corrs.r13.toFixed(2)}, ${bestCombo.tickers[1]}/${bestCombo.tickers[2]}=${bestCombo.corrs.r23.toFixed(2)}</div>
+    </div>
+  </div>
+</div>` : ''}
+<div id="tag-filter-bar" style="margin:8px 0 6px; min-height:22px; font-size:0.82em; color:#888; display:none;">
+  Filter: <span id="tag-filter-active"></span>
+  <a href="#" id="tag-filter-clear" style="margin-left:8px; color:#7aa2c7; text-decoration:none;">clear</a>
+</div>
+<div style="font-size:0.78em; color:#999; margin:4px 0 6px;">Cell background tint = which eventual-event direction this value leans toward, per the Pre-Event IV → Outcome Contrast (green = positive, red = negative; deeper = stronger effect).</div>
+${clusterMeta ? `<div style="font-size:0.78em; color:#999; margin:4px 0 6px;">Cluster = group of tickers whose options posture (IV smile + dollar-volume across moneyness) shows the same unusual change vs their own 60-day baseline. Chip reading: <b>C2⁶</b> = cluster with 6 members (superscript) — chip color intensity = the cluster's average move strength, so pale chips are near-quiet clusters. ·σN = this ticker's move strength (SD-norm of the change). ·N = membership strength (silhouette, higher = more central member); hover a chip for the cluster's separation and signature. Click a chip to filter; see the cluster panel above the table.</div>` : ''}
+<table id="screen-table">
+<thead><tr>
+  <th style="width:44px; text-align:center; padding:4px;"><span class="sort-arrow"></span></th>
+  <th>Ticker<span class="sort-arrow"></span></th>
+  <th title="Delta-shape options cluster: tickers whose IV smile + DV distribution across moneyness moved the same unusual way vs their own 60-day baseline (clusters defined by the manual cluster universe when set, else the full universe; k fixed, cosine distance). ·σN = move strength (SD-norm of the change). ·N = membership strength (silhouette, higher = more central member). Click a chip to filter the table.">Cluster<span class="sort-arrow"></span></th>
+  <th>Sector<span class="sort-arrow"></span></th>
+  <th>Tags<span class="sort-arrow"></span></th>
+  <th>Classification<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="TimesFM 3.0 next-day event probability">Event Prob<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="TimesFM 3.0 probability of a positive return tomorrow, the next trading day (options-only covariates)">P(up→1d)<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Latest quoted price, including pre-market and after-hours when the regular session is closed. % is the move vs the last regular close.">Last (ext)<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Mkt Cap<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Opt $ Vol<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Pre-event slope of total option dollar-volume percentile rank within the ticker's own history, across the same window as the IV Δ columns: rank(T-1) − rank(T-oldest), in rank points (-100..+100). >0 = flow building into the event.">$Vol Δrank<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Call IV<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Weighted OTM IV minus ATM IV. (pN) = self-history rank, [sN] = sector rank, {tN} = top-tag cohort rank">C Spr<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Pre-event slope of ATM call IV percentile rank: rank(T-1) − rank(T-oldest) over the ~3 snapshots before the event. >0 = ramping in.">ATM C Δ<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Pre-event slope of call OTM−ATM spread percentile rank: rank(T-1) − rank(T-oldest) over the ~3 snapshots before the event. >0 = ramping in.">C Spr Δ<span class="sort-arrow"></span></th>
+  <th style="text-align:right;">Put IV<span class="sort-arrow"></span></th>
+  <th style="text-align:right;" title="Weighted OTM IV minus ATM IV. (pN) = self-history rank, [sN] = sector rank, {tN} = top-tag cohort rank">P Spr<span class="sort-arrow"></span></th>
+</tr></thead>
+<tbody>${rows}</tbody>
+</table>
+
 ${(() => {
   const C = preEventContrast;
   const card = (inner) => `<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.92em;">${inner}</div>`;
@@ -709,105 +753,16 @@ ${(() => {
 
   return card(`${head}${uniTable}`);
 })()}
-${(() => {
-  if (!preEventByReturnBucket) return '';
-  const fmtRet = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
-  const fmtRank = (v, n) => {
-    if (v == null || !n) return '<span style="color:#bbb;">—</span>';
-    let color = '#666';
-    if (v >= 30) color = '#d32f2f';
-    else if (v >= 15) color = '#ef6c00';
-    else if (v <= -30) color = '#1565c0';
-    else if (v <= -15) color = '#0277bd';
-    return `<span style="color:${color}; font-weight:600;">${v.toFixed(0)}</span> <span style="color:#aaa; font-size:0.85em;">(${n})</span>`;
-  };
-  const bLabel = (label, b) => `${label} <span style="color:#999; font-weight:normal; font-size:0.85em;">[${fmtRet(b.minReturn)} … ${fmtRet(b.maxReturn)}]</span> <span style="color:#aaa; font-size:0.85em;">n=${b.n}</span>`;
-  const buckets = [
-    ['Low Returns', '#1565c0', 'low'],
-    ['High Returns', '#d32f2f', 'high'],
-  ];
 
-  // Original: Call/Put Δrank = R(OTM) - R(spread), averaged per bucket.
-  const rows1 = buckets.map(([label, color, k]) => {
-    const b = preEventByReturnBucket[k];
-    return `<tr>
-      <td style="padding:6px 10px; font-weight:bold; color:${color};">${bLabel(label, b)}</td>
-      <td style="padding:6px 10px; text-align:right;">${fmtRank(b.callAvgRank, b.nCallAvg)}</td>
-      <td style="padding:6px 10px; text-align:right;">${fmtRank(b.putAvgRank, b.nPutAvg)}</td>
-    </tr>`;
-  }).join('');
-
-  return `<div style="margin-bottom:14px; padding:10px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.92em;">
-    <div style="color:#666; font-weight:600; margin-bottom:4px;">IV Profile by Daily Return Bucket <span style="color:#999; font-weight:normal; font-size:0.9em;">(median split on next-day return; per-day weighted-OTM-IV rank minus spread rank from the day before, averaged across the bucket — range -100 to +100, 0 = neutral; tests if high rank precedes high vs low next-day return)</span></div>
-    <table style="border-collapse:collapse;">
-      <thead><tr style="color:#888; font-size:0.8em; text-transform:uppercase;">
-        <th style="padding:4px 10px; text-align:left;">Bucket</th>
-        <th style="padding:4px 10px; text-align:right;">Call &Delta;rank</th>
-        <th style="padding:4px 10px; text-align:right;">Put &Delta;rank</th>
-      </tr></thead>
-      <tbody>${rows1}</tbody>
-    </table>
-  </div>`;
-})()}
-<div id="portfolio-corr-box" style="margin-bottom:14px; padding:12px 14px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.95em;">
-  <div style="color:#666; font-weight:600; margin-bottom:6px;">Portfolio Correlation Check</div>
-  <div style="display:flex; align-items:center; gap:10px;">
-    <input id="portfolio-corr-input" type="text" placeholder="e.g. AAPL, MSFT, NVDA" style="flex:1; padding:7px 10px; border:1px solid #ddd; border-radius:6px; font-size:0.95em; outline:none;" />
-    <button id="portfolio-corr-btn" style="padding:7px 16px; border:none; border-radius:6px; background:#5b8cb8; color:#fff; font-size:0.9em; cursor:pointer;">Check</button>
-  </div>
-  <div id="portfolio-corr-result" style="margin-top:8px;"></div>
-</div>
-${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.93em;">
-  <div style="color:#444; font-weight:700; margin-bottom:8px;">
-    Package Suggestion
-    <span style="color:#999; font-weight:normal; font-size:0.85em; margin-left:8px;">(best 3-ticker combo: max avg call spread, min pairwise correlation &mdash; 2-snapshot avg)</span>
-  </div>
-  <div style="display:flex; gap:24px; align-items:center; flex-wrap:wrap;">
-    ${bestCombo.tickers.map((t, i) => `<div style="background:#f7f9fc; border-radius:6px; padding:8px 14px; min-width:120px;">
-        <div style="font-weight:bold; font-size:1.05em; color:#333;">${t}</div>
-        <div style="color:rgba(72,187,120,0.85); font-size:0.88em; margin-top:2px;">Avg C Spr: ${bestCombo.spreads[i] >= 0 ? '+' : ''}${bestCombo.spreads[i].toFixed(1)}</div>
-      </div>`).join('')}
-    <div style="color:#888; font-size:0.85em; line-height:1.6;">
-      <div>Avg |corr|: <span style="color:${bestCombo.avgCorr < 0.3 ? '#4caf50' : bestCombo.avgCorr < 0.6 ? '#ff9800' : '#f44336'}; font-weight:600;">${bestCombo.avgCorr.toFixed(2)}</span></div>
-      <div>Avg Call Spread: <span style="color:rgba(72,187,120,0.9); font-weight:600;">${bestCombo.avgSpread >= 0 ? '+' : ''}${bestCombo.avgSpread.toFixed(1)}</span></div>
-      <div style="font-size:0.82em; color:#bbb;">Corr: ${bestCombo.tickers[0]}/${bestCombo.tickers[1]}=${bestCombo.corrs.r12.toFixed(2)}, ${bestCombo.tickers[0]}/${bestCombo.tickers[2]}=${bestCombo.corrs.r13.toFixed(2)}, ${bestCombo.tickers[1]}/${bestCombo.tickers[2]}=${bestCombo.corrs.r23.toFixed(2)}</div>
-    </div>
-  </div>
-</div>` : ''}
-<div id="tag-filter-bar" style="margin:8px 0 6px; min-height:22px; font-size:0.82em; color:#888; display:none;">
-  Filter: <span id="tag-filter-active"></span>
-  <a href="#" id="tag-filter-clear" style="margin-left:8px; color:#7aa2c7; text-decoration:none;">clear</a>
-</div>
-<div style="font-size:0.78em; color:#999; margin:4px 0 6px;">Cell background tint = which eventual-event direction this value leans toward, per the Pre-Event IV → Outcome Contrast (green = positive, red = negative; deeper = stronger effect).</div>
-<table id="screen-table">
-<thead><tr>
-  <th style="width:44px; text-align:center; padding:4px;"><span class="sort-arrow"></span></th>
-  <th>Ticker<span class="sort-arrow"></span></th>
-  <th>Sector<span class="sort-arrow"></span></th>
-  <th>Tags<span class="sort-arrow"></span></th>
-  <th>Classification<span class="sort-arrow"></span></th>
-  <th style="text-align:right;" title="TimesFM 3.0 next-day event probability">Event Prob<span class="sort-arrow"></span></th>
-  <th style="text-align:right;" title="TimesFM 3.0 probability of a positive return tomorrow, the next trading day (options-only covariates)">P(up→1d)<span class="sort-arrow"></span></th>
-  <th style="text-align:right;" title="Latest quoted price, including pre-market and after-hours when the regular session is closed. % is the move vs the last regular close.">Last (ext)<span class="sort-arrow"></span></th>
-  <th style="text-align:right;">Mkt Cap<span class="sort-arrow"></span></th>
-  <th style="text-align:right;">Opt $ Vol<span class="sort-arrow"></span></th>
-  <th style="text-align:right;" title="Pre-event slope of total option dollar-volume percentile rank within the ticker's own history, across the same window as the IV Δ columns: rank(T-1) − rank(T-oldest), in rank points (-100..+100). >0 = flow building into the event.">$Vol Δrank<span class="sort-arrow"></span></th>
-  <th style="text-align:right;">Call IV<span class="sort-arrow"></span></th>
-  <th style="text-align:right;" title="Weighted OTM IV minus ATM IV. (pN) = self-history rank, [sN] = sector rank, {tN} = top-tag cohort rank">C Spr<span class="sort-arrow"></span></th>
-  <th style="text-align:right;" title="Pre-event slope of ATM call IV percentile rank: rank(T-1) − rank(T-oldest) over the ~3 snapshots before the event. >0 = ramping in.">ATM C Δ<span class="sort-arrow"></span></th>
-  <th style="text-align:right;" title="Pre-event slope of call OTM−ATM spread percentile rank: rank(T-1) − rank(T-oldest) over the ~3 snapshots before the event. >0 = ramping in.">C Spr Δ<span class="sort-arrow"></span></th>
-  <th style="text-align:right;">Put IV<span class="sort-arrow"></span></th>
-  <th style="text-align:right;" title="Weighted OTM IV minus ATM IV. (pN) = self-history rank, [sN] = sector rank, {tN} = top-tag cohort rank">P Spr<span class="sort-arrow"></span></th>
-</tr></thead>
-<tbody>${rows}</tbody>
-</table>
 
 <script>
 (function() {
   const chartDataMap = ${JSON.stringify(chartDataMap)};
   const summaryMap = ${JSON.stringify(summaryMap)};
+  const summarySourceMap = ${JSON.stringify(summarySourceMap)};
   const newsMap = ${JSON.stringify(newsMap)};
   const ivHistoryMap = ${JSON.stringify(ivHistoryData)};
+  const eventsMap = ${JSON.stringify(eventsByTicker)};
   // Combine IV from a saved history record (exp1/exp2/exp3), weighted by dv if available.
   // Single-pool combine of a history record across expirations;
   // old records fall back to legacy combined DV + single-strike ATM.
@@ -915,23 +870,30 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
     ta.addEventListener('click', (e) => e.stopPropagation());
   });
 
-  // ── Event-tag filter ──
-  // Click any tag chip to filter rows; only data-rows whose data-tags contains
-  // the active tag remain visible (their chart-row sibling is hidden too).
+  // ── Event-tag + cluster filters ──
+  // Click any tag chip or cluster chip to filter rows; active filters AND
+  // together. Only matching data-rows stay visible (their chart-row sibling is
+  // hidden too).
   let activeTagFilter = null;
+  let activeClusterFilter = null;
   function applyTagFilter() {
     const bar = document.getElementById('tag-filter-bar');
     const activeEl = document.getElementById('tag-filter-active');
-    if (activeTagFilter) {
+    const parts = [];
+    if (activeClusterFilter) parts.push(activeClusterFilter + ' (cluster)');
+    if (activeTagFilter) parts.push(activeTagFilter + ' (tag)');
+    if (parts.length > 0) {
       bar.style.display = '';
-      activeEl.textContent = activeTagFilter;
+      activeEl.textContent = parts.join(' · ');
     } else {
       bar.style.display = 'none';
       activeEl.textContent = '';
     }
     document.querySelectorAll('tr.data-row').forEach(row => {
       const tags = (row.getAttribute('data-tags') || '').split(' ').filter(Boolean);
-      const show = !activeTagFilter || tags.includes(activeTagFilter);
+      const clusterOk = !activeClusterFilter || row.getAttribute('data-cluster') === activeClusterFilter;
+      const tagOk = !activeTagFilter || tags.includes(activeTagFilter);
+      const show = clusterOk && tagOk;
       row.style.display = show ? '' : 'none';
       const ticker = row.getAttribute('data-ticker');
       const chartRow = document.querySelector('tr.chart-row[data-chart-for="' + ticker + '"]');
@@ -939,6 +901,14 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
     });
     document.querySelectorAll('.event-tag').forEach(chip => {
       chip.style.outline = (chip.getAttribute('data-tag') === activeTagFilter) ? '2px solid #7aa2c7' : '';
+    });
+    document.querySelectorAll('.cluster-chip').forEach(chip => {
+      chip.style.outline = (chip.getAttribute('data-cluster') === activeClusterFilter) ? '2px solid #7aa2c7' : '';
+    });
+    document.querySelectorAll('.cluster-dot').forEach(dot => {
+      const active = dot.getAttribute('data-cluster') === activeClusterFilter;
+      dot.setAttribute('stroke', active ? '#7aa2c7' : dot.getAttribute('fill'));
+      dot.setAttribute('stroke-width', active ? '2.5' : '1');
     });
   }
   document.querySelectorAll('.event-tag').forEach(chip => {
@@ -949,10 +919,19 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
       applyTagFilter();
     });
   });
+  document.querySelectorAll('.cluster-chip, .cluster-dot').forEach(chip => {
+    chip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = chip.getAttribute('data-cluster');
+      activeClusterFilter = (activeClusterFilter === id) ? null : id;
+      applyTagFilter();
+    });
+  });
   const clearLink = document.getElementById('tag-filter-clear');
   if (clearLink) clearLink.addEventListener('click', (e) => {
     e.preventDefault();
     activeTagFilter = null;
+    activeClusterFilter = null;
     applyTagFilter();
   });
 
@@ -978,56 +957,6 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
         showFavToast('Failed to update ' + ticker, false);
       }
       delete mark.dataset.busy;
-    });
-  });
-
-  document.querySelectorAll('.add-screen-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const ticker = btn.getAttribute('data-ticker');
-      if (!ticker || !window.electronAPI || !window.electronAPI.addScreenTicker) return;
-      if (btn.dataset.busy) return;
-      btn.dataset.busy = '1';
-      try {
-        const result = await window.electronAPI.addScreenTicker(ticker);
-        if (result && result.success) {
-          btn.disabled = true;
-          btn.textContent = 'Added ✓';
-          btn.style.cursor = 'default';
-          btn.style.opacity = '0.7';
-          showFavToast(result.alreadyPresent ? ticker + ' already in screening list' : ticker + ' added to screening list', true);
-        } else {
-          showFavToast('Failed to add ' + ticker + (result && result.error ? ': ' + result.error : ''), false);
-        }
-      } catch (err) {
-        showFavToast('Failed to add ' + ticker, false);
-      }
-      delete btn.dataset.busy;
-    });
-  });
-
-  document.querySelectorAll('.add-screen-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const ticker = btn.getAttribute('data-ticker');
-      if (!ticker || !window.electronAPI || !window.electronAPI.addScreenTicker) return;
-      if (btn.dataset.busy) return;
-      btn.dataset.busy = '1';
-      try {
-        const result = await window.electronAPI.addScreenTicker(ticker);
-        if (result && result.success) {
-          btn.disabled = true;
-          btn.textContent = 'Added ✓';
-          btn.style.cursor = 'default';
-          btn.style.opacity = '0.7';
-          showFavToast(result.alreadyPresent ? ticker + ' already in screening list' : ticker + ' added to screening list', true);
-        } else {
-          showFavToast('Failed to add ' + ticker + (result && result.error ? ': ' + result.error : ''), false);
-        }
-      } catch (err) {
-        showFavToast('Failed to add ' + ticker, false);
-      }
-      delete btn.dataset.busy;
     });
   });
 
@@ -1276,10 +1205,21 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
               title: { display: true, text: ticker + ' Price with Events', color: '#b0b0b0' },
               legend: { labels: { color: '#909090', boxWidth: 12, font: { size: 11 } } },
               tooltip: {
+                mode: 'index',
+                intersect: false,
+                filter: function(item) { return item.dataset.label === 'Volume' || item.dataset.label === ticker + ' Close'; },
                 callbacks: {
-                  title: function(items) { return items[0] ? dates[items[0].parsed.x] || '' : ''; }
+                  title: function(items) { return items[0] ? dates[items[0].parsed.x] || '' : ''; },
+                  label: function(item) {
+                    if (item.dataset.label === 'Volume') {
+                      const v = item.parsed.y;
+                      return ' Volume: ' + (v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? (v / 1e3).toFixed(1) + 'K' : Math.round(v).toLocaleString());
+                    }
+                    return ' Price: $' + item.parsed.y.toFixed(2);
+                  }
                 }
               },
+              interaction: { mode: 'index', intersect: false },
             },
             scales: {
               x: {
@@ -1310,180 +1250,43 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
           },
         });
 
-        // Populate company summary
+        // Populate company summary with a source tag (EDGAR / Yahoo / Wikipedia,
+        // combined when the merged description drew from several)
         const sumEl = document.getElementById('summary-' + ticker);
         if (sumEl && summaryMap[ticker]) {
-          sumEl.textContent = summaryMap[ticker];
+          const sourceLabels = { edgar: 'SEC EDGAR · 10-K Item 1', yahoo: 'Yahoo Finance', wiki: 'Wikipedia' };
+          const src = summarySourceMap[ticker];
+          const srcList = Array.isArray(src) ? src : (src ? [src] : []);
+          const srcTag = srcList.length
+            ? '<div style="display:inline-block; margin-bottom:8px; padding:1px 8px; border:1px solid #3a4a6a; border-radius:4px; background:#1e2433; color:#8fa8d0; font-size:0.78em; font-weight:600;">' + srcList.map((s) => sourceLabels[s] || s).join(' + ') + '</div>'
+            : '';
+          const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          sumEl.innerHTML = srcTag + '<div>' + esc(summaryMap[ticker]) + '</div>';
         }
 
-        // Render last-5-day DV (bars) + average IV (line) mini-chart next to summary
-        const dvIvCanvas = document.getElementById('dv-iv-chart-' + ticker);
-        const dvIvHist = ivHistoryMap[ticker];
-        if (dvIvCanvas && Array.isArray(dvIvHist) && dvIvHist.length > 0) {
-          const recent = dvIvHist.slice(-5);
-          const labels = recent.map(r => (r.date || '').slice(5));
-          const dvSeries = recent.map(r => {
-            let dv = 0;
-            for (const k of ['exp1', 'exp2', 'exp3']) {
-              const e = r[k];
-              if (!e) continue;
-              dv += (e.callDV || 0) + (e.putDV || 0);
+        // Populate the upcoming-events panel (next earnings, etc.)
+        const eventsEl = document.getElementById('events-' + ticker);
+        if (eventsEl) {
+          const ev = eventsMap[ticker];
+          let htmlOut = '<div style="color:#8fa8d0; font-weight:600; font-size:0.95em; margin-bottom:6px;">Upcoming Events</div>';
+          if (ev && (ev.date || ev.label)) {
+            const daysStr = (ev.daysUntil != null)
+              ? (ev.daysUntil <= 0 ? 'today' : 'in ' + ev.daysUntil + ' day' + (ev.daysUntil === 1 ? '' : 's'))
+              : null;
+            const urgency = ev.daysUntil != null && ev.daysUntil <= 7 ? '#f5b450' : '#cdd5e0';
+            htmlOut += '<div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;">' +
+              '<span style="color:#aaa;">Next earnings</span>' +
+              '<span style="font-weight:600; color:' + urgency + '; font-size:1.05em;">' + ev.label + (daysStr ? ' &middot; ' + daysStr : '') + '</span>' +
+            '</div>';
+            if (ev.url) {
+              htmlOut += '<div style="text-align:right;"><a href="' + ev.url + '" target="_blank" rel="noopener" style="color:#7aa2c7; font-size:0.82em; text-decoration:none;">source: ' + (ev.source || 'link') + ' &#8599;</a></div>';
             }
-            return dv;
-          });
-          const ivSeries = recent.map(r => {
-            const c = combineHist(r);
-            if (!c) return null;
-            const vals = [];
-            if (c.callIV > 0) vals.push(c.callIV);
-            if (c.putIV > 0) vals.push(c.putIV);
-            if (!vals.length) return null;
-            return vals.reduce((s, v) => s + v, 0) / vals.length;
-          });
-
-          const dvIvDateMap = recent.map(r => r.date);
-          const renderStrikeBreakdown = (dateStr) => {
-            const rec = (ivHistoryMap[ticker] || []).find(r => r.date === dateStr);
-            const wrap = document.getElementById('dv-iv-strike-wrap-' + ticker);
-            const title = document.getElementById('dv-iv-strike-title-' + ticker);
-            const body = document.getElementById('dv-iv-strike-body-' + ticker);
-            if (!rec || !wrap || !body) return;
-            const exps = ['exp1', 'exp2', 'exp3'].map(k => rec[k]).filter(e => e && (e.calls || e.puts));
-            if (!exps.length) {
-              body.innerHTML = '<div style="color:#888; font-size:0.85em; padding:8px 0;">No per-strike data for ' + dateStr + ' (older snapshots stored aggregates only — newer dates will populate).</div>';
-              if (title) title.textContent = ticker + ' — ' + dateStr;
-              wrap.style.display = 'block';
-              return;
-            }
-            if (title) title.textContent = ticker + ' — ' + dateStr;
-            body.innerHTML = exps.map((_, i) => '<div style="display:inline-block; width:48%; margin-right:1%; vertical-align:top;"><div style="height:300px;"><canvas id="strike-hist-' + ticker + '-' + dateStr + '-' + i + '"></canvas></div></div>').join('');
-            wrap.style.display = 'block';
-            exps.forEach((e, i) => {
-              const cv = document.getElementById('strike-hist-' + ticker + '-' + dateStr + '-' + i);
-              if (!cv) return;
-              const strikeSet = new Set();
-              (e.calls || []).forEach(c => strikeSet.add(c.strike));
-              (e.puts || []).forEach(p => strikeSet.add(p.strike));
-              const strikes = Array.from(strikeSet).sort((a, b) => a - b);
-              const cMap = {}, pMap = {};
-              (e.calls || []).forEach(c => { cMap[c.strike] = c; });
-              (e.puts || []).forEach(p => { pMap[p.strike] = p; });
-              new Chart(cv, {
-                data: {
-                  labels: strikes.map(s => '$' + s.toFixed(s >= 100 ? 0 : s >= 1 ? 1 : 2)),
-                  datasets: [
-                    { type: 'bar', label: 'Call $Vol', data: strikes.map(s => cMap[s] ? cMap[s].dv : 0), backgroundColor: 'rgba(72,187,120,0.55)', yAxisID: 'y' },
-                    { type: 'bar', label: 'Put $Vol', data: strikes.map(s => pMap[s] ? pMap[s].dv : 0), backgroundColor: 'rgba(245,101,101,0.55)', yAxisID: 'y' },
-                    { type: 'line', label: 'Call IV', data: strikes.map(s => cMap[s] && cMap[s].iv > 0 ? cMap[s].iv : null), borderColor: 'rgba(72,187,120,0.95)', backgroundColor: 'rgba(72,187,120,0.95)', borderWidth: 2, pointRadius: 2, spanGaps: true, yAxisID: 'y1' },
-                    { type: 'line', label: 'Put IV', data: strikes.map(s => pMap[s] && pMap[s].iv > 0 ? pMap[s].iv : null), borderColor: 'rgba(245,101,101,0.95)', backgroundColor: 'rgba(245,101,101,0.95)', borderWidth: 2, pointRadius: 2, spanGaps: true, yAxisID: 'y1' },
-                  ],
-                },
-                options: {
-                  responsive: true, maintainAspectRatio: false, animation: { duration: 200 },
-                  interaction: { mode: 'index', intersect: false },
-                  plugins: {
-                    title: { display: true, text: e.label || ('Exp ' + (i + 1)), color: '#b0b0b0', font: { size: 11 } },
-                    legend: { labels: { color: '#909090', boxWidth: 10, font: { size: 9 } } },
-                  },
-                  scales: {
-                    x: { ticks: { color: '#909090', font: { size: 9 }, maxRotation: 60, minRotation: 0 }, grid: { color: '#2a2a4a' } },
-                    y: { position: 'left', beginAtZero: true, title: { display: true, text: '$Vol', color: '#909090', font: { size: 9 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : (v / 1e3).toFixed(0) + 'K'; } }, grid: { color: '#2a2a4a' } },
-                    y1: { position: 'right', title: { display: true, text: 'IV %', color: '#909090', font: { size: 9 } }, ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } }, grid: { drawOnChartArea: false } },
-                  },
-                },
-              });
-            });
-          };
-
-          const closeBtn = document.querySelector('button[data-strike-close="' + ticker + '"]');
-          if (closeBtn) {
-            closeBtn.addEventListener('click', () => {
-              const wrap = document.getElementById('dv-iv-strike-wrap-' + ticker);
-              if (wrap) wrap.style.display = 'none';
-            });
+          } else {
+            htmlOut += '<div style="color:#777; font-size:0.88em;">No upcoming event data available.</div>';
           }
-
-          new Chart(dvIvCanvas, {
-            data: {
-              labels,
-              datasets: [
-                {
-                  type: 'bar',
-                  label: 'Option $Vol',
-                  data: dvSeries,
-                  backgroundColor: 'rgba(122,162,199,0.55)',
-                  borderColor: 'rgba(122,162,199,0.9)',
-                  borderWidth: 1,
-                  yAxisID: 'y',
-                  order: 1,
-                },
-                {
-                  type: 'line',
-                  label: 'Avg IV',
-                  data: ivSeries,
-                  borderColor: 'rgba(245,180,80,0.95)',
-                  backgroundColor: 'rgba(245,180,80,0.95)',
-                  borderWidth: 2,
-                  pointRadius: 3,
-                  spanGaps: true,
-                  tension: 0.2,
-                  yAxisID: 'y1',
-                  order: 0,
-                },
-              ],
-            },
-            options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              animation: { duration: 200 },
-              interaction: { mode: 'index', intersect: false },
-              onClick: (evt, els, chart) => {
-                let idx = els && els.length ? els[0].index : null;
-                if (idx == null) {
-                  const pts = chart.getElementsAtEventForMode(evt, 'index', { intersect: false }, true);
-                  if (pts && pts.length) idx = pts[0].index;
-                }
-                if (idx == null) return;
-                const dateStr = dvIvDateMap[idx];
-                if (dateStr) renderStrikeBreakdown(dateStr);
-              },
-              plugins: {
-                title: { display: true, text: 'Last 5d Option $Vol & Avg IV (click a day for strikes)', color: '#b0b0b0', font: { size: 11 } },
-                legend: { labels: { color: '#909090', boxWidth: 10, font: { size: 9 } } },
-                tooltip: {
-                  callbacks: {
-                    label: function(ctx) {
-                      const v = ctx.raw;
-                      if (v == null) return ctx.dataset.label + ': N/A';
-                      if (ctx.dataset.yAxisID === 'y1') return ctx.dataset.label + ': ' + v.toFixed(1) + '%';
-                      return ctx.dataset.label + ': $' + (v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : (v / 1e3).toFixed(0) + 'K');
-                    },
-                  },
-                },
-              },
-              scales: {
-                x: { ticks: { color: '#909090', font: { size: 9 } }, grid: { color: '#2a2a4a' } },
-                y: {
-                  position: 'left',
-                  beginAtZero: true,
-                  title: { display: true, text: '$Vol', color: '#909090', font: { size: 9 } },
-                  ticks: {
-                    color: '#909090', font: { size: 9 },
-                    callback: function(v) { return v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : (v / 1e3).toFixed(0) + 'K'; },
-                  },
-                  grid: { color: '#2a2a4a' },
-                },
-                y1: {
-                  position: 'right',
-                  title: { display: true, text: 'Avg IV %', color: '#909090', font: { size: 9 } },
-                  ticks: { color: '#909090', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '%'; } },
-                  grid: { drawOnChartArea: false },
-                },
-              },
-            },
-          });
+          htmlOut += '<div style="color:#666; font-size:0.78em; margin-top:8px; border-top:1px solid #333; padding-top:6px;">Earnings dates scraped per run; verify before trading.</div>';
+          eventsEl.innerHTML = htmlOut;
         }
-
         // Populate news headlines
         const newsEl = document.getElementById('news-' + ticker);
         const news = newsMap[ticker];
@@ -1528,6 +1331,7 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
             optsWrap.style.display = 'block';
             const fmtDollar = (v) => v >= 1e6 ? '$'+(v/1e6).toFixed(1)+'M' : v >= 1e3 ? '$'+(v/1e3).toFixed(0)+'K' : '$'+v.toFixed(0);
 
+            const expChartInfos = []; // per-expiration refs for the agg/latest $Vol toggle
             for (let ei = 0; ei < Math.min(3, od.length); ei++) {
               const exp = od[ei];
               const canvas = document.getElementById('opts-chart-' + ei + '-' + ticker);
@@ -1547,26 +1351,43 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
               let callDollarVol = strikes.map(s => callMap[s] ? callMap[s].dollarVol : 0);
               let putDollarVol = strikes.map(s => putMap[s] ? putMap[s].dollarVol : 0);
 
-              // Nearest expiration only: replace today's per-strike $Vol with the
-              // sum over the last 5 trading-day snapshots (matched by expiration
-              // label across exp1/exp2/exp3, since exp1 rolls after each expiry).
+              // Replace today's per-strike $Vol with the sum over the last 6
+              // trading-day snapshots (matched by expiration label across
+              // exp1/exp2/exp3, since exp1 rolls after each expiry).
               let volAggDays = 0;
-              if (ei === 0 && ivHistoryMap[ticker]) {
+              let volAggLatest = null; // newest matched snapshot — supplies the latest-day core bars
+              if (ivHistoryMap[ticker]) {
                 const recent = ivHistoryMap[ticker]
                   .filter(r => r && r.date)
                   .sort((a, b) => a.date.localeCompare(b.date))
-                  .slice(-5);
+                  .slice(-6);
                 const callAgg = {}, putAgg = {};
                 for (const rec of recent) {
                   const e = ['exp1', 'exp2', 'exp3'].map(k => rec[k]).find(x => x && x.label === exp.label);
                   if (!e || (!(e.calls || []).length && !(e.puts || []).length)) continue;
                   volAggDays++;
+                  volAggLatest = rec;
                   (e.calls || []).forEach(c => { callAgg[c.strike] = (callAgg[c.strike] || 0) + (c.dv || 0); });
                   (e.puts || []).forEach(p => { putAgg[p.strike] = (putAgg[p.strike] || 0) + (p.dv || 0); });
                 }
                 if (volAggDays > 0) {
                   callDollarVol = strikes.map(s => callAgg[s] || 0);
                   putDollarVol = strikes.map(s => putAgg[s] || 0);
+                }
+              }
+              // Latest trading day's slice of that aggregate — drawn as a narrow
+              // solid core inside each agg bar so fresh single-day flow is
+              // readable at a glance alongside the 6-day total.
+              let callDayVol = null, putDayVol = null, dayVolDate = null;
+              if (volAggLatest) {
+                const e = ['exp1', 'exp2', 'exp3'].map(k => volAggLatest[k]).find(x => x && x.label === exp.label);
+                if (e && ((e.calls || []).length || (e.puts || []).length)) {
+                  dayVolDate = volAggLatest.date;
+                  const dayCall = {}, dayPut = {};
+                  (e.calls || []).forEach(c => { dayCall[c.strike] = c.dv || 0; });
+                  (e.puts || []).forEach(p => { dayPut[p.strike] = p.dv || 0; });
+                  callDayVol = strikes.map(s => dayCall[s] || 0);
+                  putDayVol = strikes.map(s => dayPut[s] || 0);
                 }
               }
               const callDollarOI = strikes.map(s => callMap[s] ? callMap[s].dollarOI : 0);
@@ -1584,25 +1405,38 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
                 ivLabel.innerHTML = ivHtml;
               }
 
+              const strikeDatasets = [
+                { label: 'Call $ OI', data: callDollarOI, backgroundColor: 'rgba(72, 187, 120, 0.15)', borderColor: 'rgba(72, 187, 120, 0.3)', borderWidth: 1, yAxisID: 'yDollar', stack: 'call', order: 3, barPercentage: 0.95 },
+                { label: 'Put $ OI', data: putDollarOI, backgroundColor: 'rgba(245, 101, 101, 0.15)', borderColor: 'rgba(245, 101, 101, 0.3)', borderWidth: 1, yAxisID: 'yDollar', stack: 'put', order: 3, barPercentage: 0.95 },
+                { label: 'Call $ Vol', data: callDollarVol, backgroundColor: 'rgba(72, 187, 120, 0.6)', borderColor: 'rgba(72, 187, 120, 0.9)', borderWidth: 1, yAxisID: 'yDollar', stack: 'call', order: 2, barPercentage: 0.6 },
+                { label: 'Put $ Vol', data: putDollarVol, backgroundColor: 'rgba(245, 101, 101, 0.6)', borderColor: 'rgba(245, 101, 101, 0.9)', borderWidth: 1, yAxisID: 'yDollar', stack: 'put', order: 2, barPercentage: 0.6 },
+              ];
+              if (callDayVol && putDayVol) {
+                // Same stacks as the agg $Vol bars → same x slot; order 1.5 draws
+                // after them (order 2) but under the IV lines (order 1), so the
+                // solid bar renders as an inner core of the aggregate.
+                strikeDatasets.push(
+                  { label: 'Call 1d (' + dayVolDate.slice(5) + ')', data: callDayVol, backgroundColor: 'rgba(22, 101, 52, 1)', yAxisID: 'yDollar', stack: 'call', order: 1.5, barPercentage: 0.3 },
+                  { label: 'Put 1d (' + dayVolDate.slice(5) + ')', data: putDayVol, backgroundColor: 'rgba(153, 27, 27, 1)', yAxisID: 'yDollar', stack: 'put', order: 1.5, barPercentage: 0.3 },
+                );
+              }
+              strikeDatasets.push(
+                { label: 'Call IV', data: callIV, borderColor: 'rgba(72, 187, 120, 0.9)', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, type: 'line', yAxisID: 'yIV', order: 1, spanGaps: true },
+                { label: 'Put IV', data: putIV, borderColor: 'rgba(245, 101, 101, 0.9)', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, type: 'line', yAxisID: 'yIV', order: 1, spanGaps: true },
+              );
+
               new Chart(canvas, {
                 type: 'bar',
                 data: {
                   labels: strikeLabels,
-                  datasets: [
-                    { label: 'Call $ OI', data: callDollarOI, backgroundColor: 'rgba(72, 187, 120, 0.15)', borderColor: 'rgba(72, 187, 120, 0.3)', borderWidth: 1, yAxisID: 'yDollar', stack: 'call', order: 3, barPercentage: 0.95 },
-                    { label: 'Put $ OI', data: putDollarOI, backgroundColor: 'rgba(245, 101, 101, 0.15)', borderColor: 'rgba(245, 101, 101, 0.3)', borderWidth: 1, yAxisID: 'yDollar', stack: 'put', order: 3, barPercentage: 0.95 },
-                    { label: 'Call $ Vol', data: callDollarVol, backgroundColor: 'rgba(72, 187, 120, 0.6)', borderColor: 'rgba(72, 187, 120, 0.9)', borderWidth: 1, yAxisID: 'yDollar', stack: 'call', order: 2, barPercentage: 0.6 },
-                    { label: 'Put $ Vol', data: putDollarVol, backgroundColor: 'rgba(245, 101, 101, 0.6)', borderColor: 'rgba(245, 101, 101, 0.9)', borderWidth: 1, yAxisID: 'yDollar', stack: 'put', order: 2, barPercentage: 0.6 },
-                    { label: 'Call IV', data: callIV, borderColor: 'rgba(72, 187, 120, 0.9)', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, type: 'line', yAxisID: 'yIV', order: 1, spanGaps: true },
-                    { label: 'Put IV', data: putIV, borderColor: 'rgba(245, 101, 101, 0.9)', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, type: 'line', yAxisID: 'yIV', order: 1, spanGaps: true },
-                  ],
+                  datasets: strikeDatasets,
                 },
                 options: {
                   responsive: true,
                   maintainAspectRatio: false,
                   animation: { duration: 200 },
                   plugins: {
-                    title: { display: true, text: 'Exp: ' + exp.label + (volAggDays > 0 ? ' ($Vol = ' + volAggDays + 'd agg)' : ''), color: '#b0b0b0', font: { size: 11 } },
+                    title: { display: true, text: 'Exp: ' + exp.label + (volAggDays > 0 ? ' ($Vol = ' + volAggDays + 'd agg' + (dayVolDate ? ', core ' + dayVolDate.slice(5) + ')' : ')') : ''), color: '#b0b0b0', font: { size: 11 } },
                     legend: { display: false },
                     tooltip: {
                       callbacks: {
@@ -1630,6 +1464,43 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
                   },
                 },
               });
+              // new Chart(...) returns the instance in Chart.js ≥3; fall back to the registry lookup
+              const expChart = (typeof Chart !== 'undefined' && Chart.getChart) ? Chart.getChart(canvas) : null;
+              expChartInfos.push({
+                chart: expChart,
+                expLabel: exp.label,
+                aggCall: callDollarVol, aggPut: putDollarVol,
+                dayCall: callDayVol, dayPut: putDayVol, dayDate: dayVolDate,
+                aggDays: volAggDays,
+                titleAgg: 'Exp: ' + exp.label + (volAggDays > 0 ? ' ($Vol = ' + volAggDays + 'd agg' + (dayVolDate ? ', core ' + dayVolDate.slice(5) + ')' : ')') : ''),
+                titleLatest: 'Exp: ' + exp.label + (dayVolDate ? ' ($Vol = latest ' + dayVolDate.slice(5) + ')' : ''),
+              });
+            }
+
+            // $Vol toggle: switch between 6-day accumulated bars and latest-day-only bars.
+            // Chart.js re-fits the yDollar axis on update(), so the scale follows the data.
+            const volToggle = document.getElementById('opts-vol-toggle-' + ticker);
+            if (volToggle) {
+              const toggleable = expChartInfos.some(i => i.chart && i.aggDays > 0 && i.dayCall);
+              if (!toggleable) {
+                volToggle.style.display = 'none';
+              } else {
+                let latestMode = false;
+                volToggle.addEventListener('click', () => {
+                  latestMode = !latestMode;
+                  volToggle.textContent = latestMode ? '$Vol: latest day' : '$Vol: 6d accumulated';
+                  for (const info of expChartInfos) {
+                    if (!info.chart) continue;
+                    for (const ds of info.chart.data.datasets) {
+                      if (ds.label === 'Call $ Vol') { ds.data = latestMode && info.dayCall ? info.dayCall : info.aggCall; ds.barPercentage = latestMode ? 0.95 : 0.6; }
+                      if (ds.label === 'Put $ Vol') { ds.data = latestMode && info.dayPut ? info.dayPut : info.aggPut; ds.barPercentage = latestMode ? 0.95 : 0.6; }
+                      if (ds.label.indexOf(' 1d (') !== -1) ds.hidden = latestMode; // day core is redundant in latest mode
+                    }
+                    info.chart.options.plugins.title.text = latestMode ? info.titleLatest : info.titleAgg;
+                    info.chart.update();
+                  }
+                });
+              }
             }
 
             // IV history click handler — either label toggles the history chart
@@ -1694,6 +1565,250 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
     });
   });
 
+  // ── OTM flow modal: price vs daily OTM call/put $ volume + accumulated net win ──
+  // Net win model: each day's OTM flow implies a crowd bias
+  //   bias = (call$ − put$) / (call$ + put$)   ∈ [−1, +1]  (call-heavy = betting up)
+  // and scores it against that day's close-to-close % move:
+  //   netwin = bias × return — accumulated into the line. A falling price on
+  // call-heavy flow pushes the line down; on put-heavy flow it pushes it up.
+  const flowModalBackdrop = document.getElementById('flow-modal');
+  let flowModalChart = null;
+
+  function fmtDV(v) {
+    if (v == null) return 'N/A';
+    const a = Math.abs(v);
+    if (a >= 1e9) return '$' + (v / 1e9).toFixed(2) + 'B';
+    if (a >= 1e6) return '$' + (v / 1e6).toFixed(1) + 'M';
+    if (a >= 1e3) return '$' + (v / 1e3).toFixed(0) + 'K';
+    return '$' + v.toFixed(0);
+  }
+
+  function computeFlowSeries(ticker) {
+    const cd = chartDataMap[ticker];
+    if (!cd || !cd.dates || cd.dates.length === 0) return null;
+    const n = cd.dates.length;
+    const dateIdx = {};
+    for (let i = 0; i < n; i++) dateIdx[cd.dates[i]] = i;
+
+    // Daily OTM call/put DV summed across the tracked expirations (exp1..exp3).
+    // Legacy records without per-side DV can't be signed → skipped.
+    const callDV = new Array(n).fill(null);
+    const putDV = new Array(n).fill(null);
+    for (const r of (ivHistoryMap[ticker] || [])) {
+      const i = dateIdx[r.date];
+      if (i == null) continue;
+      let c = 0, p = 0, usable = false;
+      for (const key of ['exp1', 'exp2', 'exp3']) {
+        const e = r[key];
+        if (!e) continue;
+        if (typeof e.callDV === 'number' && typeof e.putDV === 'number') {
+          c += e.callDV; p += e.putDV; usable = true;
+        }
+      }
+      if (usable && c + p > 0) { callDV[i] = c; putDV[i] = p; }
+    }
+
+    const bias = new Array(n).fill(null);
+    const cum = new Array(n).fill(null);
+    let acc = 0, started = false, firstFlowIdx = -1, lastFlowIdx = -1, flowDays = 0;
+    for (let i = 0; i < n; i++) {
+      if (callDV[i] == null) { cum[i] = started ? acc : null; continue; }
+      let ret = null;
+      if (i > 0 && cd.closes[i - 1] > 0) {
+        ret = (cd.closes[i] - cd.closes[i - 1]) / cd.closes[i - 1] * 100;
+      }
+      if (ret != null) {
+        const b = (callDV[i] - putDV[i]) / (callDV[i] + putDV[i]);
+        bias[i] = b;
+        acc += b * ret;
+        started = true;
+        flowDays++;
+        lastFlowIdx = i;
+        if (firstFlowIdx < 0) firstFlowIdx = i;
+      }
+      cum[i] = started ? acc : null;
+    }
+    return { n, dates: cd.dates, closes: cd.closes, callDV, putDV, bias, cum, firstFlowIdx, lastFlowIdx, flowDays };
+  }
+
+  function biasLabel(b) {
+    if (b == null) return 'no flow';
+    if (b >= 0.15) return 'call-heavy';
+    if (b <= -0.15) return 'put-heavy';
+    return 'balanced';
+  }
+
+  function closeFlowModal() {
+    if (!flowModalBackdrop) return;
+    flowModalBackdrop.classList.remove('open');
+  }
+
+  function openFlowModal(ticker) {
+    if (!flowModalBackdrop) return;
+    const cd = chartDataMap[ticker];
+    if (!cd) return;
+    const s = computeFlowSeries(ticker);
+    const titleEl = document.getElementById('flow-modal-title');
+    const metaEl = document.getElementById('flow-modal-meta');
+    const canvas = document.getElementById('flow-modal-chart');
+    if (!canvas) return;
+
+    titleEl.textContent = ticker + ' — Price vs OTM Options Flow';
+
+    const pricePoints = cd.closes.map((v, i) => ({ x: i, y: v }));
+    const datasets = [{
+      label: ticker + ' Close',
+      data: pricePoints,
+      borderColor: 'rgba(136, 176, 136, 0.8)',
+      backgroundColor: 'rgba(136, 176, 136, 0.08)',
+      borderWidth: 1.5,
+      pointRadius: 0,
+      fill: true,
+      yAxisID: 'y',
+      order: 1,
+    }];
+
+    let metaText = 'No OTM options flow history for this ticker';
+    const maxDV = Math.max(...s.callDV.map(v => v == null ? 0 : v), ...s.putDV.map(v => v == null ? 0 : v));
+    if (s.flowDays > 0) {
+      const callPts = [], putPts = [], winPts = [];
+      for (let i = 0; i < s.n; i++) {
+        if (s.callDV[i] != null) callPts.push({ x: i, y: s.callDV[i] });
+        if (s.putDV[i] != null) putPts.push({ x: i, y: s.putDV[i] });
+        if (s.cum[i] != null) winPts.push({ x: i, y: s.cum[i] });
+      }
+      datasets.unshift(
+        {
+          label: 'OTM Call $',
+          data: callPts,
+          type: 'bar',
+          backgroundColor: 'rgba(72, 187, 120, 0.55)',
+          borderColor: 'rgba(72, 187, 120, 0.85)',
+          borderWidth: 1,
+          yAxisID: 'yDV',
+          order: 4,
+        },
+        {
+          label: 'OTM Put $',
+          data: putPts,
+          type: 'bar',
+          backgroundColor: 'rgba(245, 101, 101, 0.55)',
+          borderColor: 'rgba(245, 101, 101, 0.85)',
+          borderWidth: 1,
+          yAxisID: 'yDV',
+          order: 4,
+        },
+      );
+      datasets.push({
+        label: 'Net win (cum.)',
+        data: winPts,
+        borderColor: 'rgba(232, 193, 90, 0.95)',
+        backgroundColor: 'rgba(232, 193, 90, 0.95)',
+        borderWidth: 1.5,
+        borderDash: [5, 3],
+        pointRadius: 0,
+        type: 'line',
+        spanGaps: true,
+        yAxisID: 'yWin',
+        order: 2,
+      });
+
+      const fmtPts = v => (v >= 0 ? '+' : '') + v.toFixed(1) + ' pts';
+      const lastBias = s.bias[s.lastFlowIdx];
+      const lastBiasColor = lastBias >= 0.15 ? '#48bb78' : lastBias <= -0.15 ? '#f56565' : '#8a96b0';
+      metaText = 'Net win: <b style="color:' + (s.cum[s.lastFlowIdx] >= 0 ? '#48bb78' : '#f56565') + '">'
+        + fmtPts(s.cum[s.lastFlowIdx]) + '</b>'
+        + ' &middot; latest flow ' + s.dates[s.lastFlowIdx] + ': <b style="color:' + lastBiasColor + '">'
+        + biasLabel(lastBias) + ' (' + (lastBias >= 0 ? '+' : '') + lastBias.toFixed(2) + ')</b>'
+        + ' &middot; ' + s.flowDays + ' flow days &middot; bars: call$ vs put$';
+    }
+    metaEl.innerHTML = metaText;
+
+    if (flowModalChart) { flowModalChart.destroy(); flowModalChart = null; }
+    flowModalChart = new Chart(canvas, {
+      type: 'line',
+      data: { datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 200 },
+        interaction: { mode: 'nearest', axis: 'x', intersect: false },
+        plugins: {
+          legend: { labels: { color: '#909090', boxWidth: 12, font: { size: 11 } } },
+          tooltip: {
+            callbacks: {
+              title: function(items) { return items[0] ? s.dates[items[0].parsed.x] || '' : ''; },
+              label: function(ctx) {
+                const v = ctx.parsed.y;
+                if (v == null) return '';
+                if (ctx.dataset.yAxisID === 'yDV') return ctx.dataset.label + ': ' + fmtDV(v);
+                if (ctx.dataset.yAxisID === 'yWin') return ctx.dataset.label + ': ' + (v >= 0 ? '+' : '') + v.toFixed(2) + ' pts';
+                return ctx.dataset.label + ': $' + v.toFixed(2);
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            type: 'linear',
+            ticks: {
+              color: '#909090',
+              maxTicksLimit: 12,
+              font: { size: 10 },
+              callback: function(val) { return s.dates[val] || ''; },
+            },
+            grid: { color: '#2a2a4a' },
+            min: 0,
+            max: s.n - 1,
+          },
+          y: {
+            position: 'left',
+            title: { display: true, text: 'Price', color: '#909090', font: { size: 10 } },
+            ticks: { color: '#909090', font: { size: 10 } },
+            grid: { color: '#2a2a4a' },
+          },
+          yDV: {
+            position: 'right',
+            display: false,
+            beginAtZero: true,
+            max: maxDV * 4,
+            grid: { drawOnChartArea: false },
+          },
+          ...(s.flowDays > 0 ? {
+            yWin: {
+              position: 'right',
+              title: { display: true, text: 'Net win (pts)', color: '#909090', font: { size: 10 } },
+              ticks: {
+                color: '#e8c15a',
+                font: { size: 10 },
+                callback: function(v) { return (v >= 0 ? '+' : '') + v.toFixed(0); },
+              },
+              grid: { drawOnChartArea: false },
+            },
+          } : {}),
+        },
+      },
+    });
+
+    flowModalBackdrop.classList.add('open');
+  }
+
+  if (flowModalBackdrop) {
+    document.querySelectorAll('.flow-modal-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openFlowModal(btn.getAttribute('data-ticker'));
+      });
+    });
+    document.getElementById('flow-modal-close').addEventListener('click', closeFlowModal);
+    flowModalBackdrop.addEventListener('click', (e) => {
+      if (e.target === flowModalBackdrop) closeFlowModal();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeFlowModal();
+    });
+  }
+
   // Sorting — skip chart rows
   const table = document.getElementById('screen-table');
   const headers = table.querySelectorAll('th');
@@ -1750,6 +1865,18 @@ ${bestCombo ? `<div style="margin-bottom:14px; padding:12px 16px; background:#ff
       });
     });
   });
+
+  // Shape map starts hidden; the clustering itself is explored on the companion
+  // "cluster investigation" page (see clusterInvestigationHtml.js).
+  (function () {
+    const plotToggle = document.getElementById("cluster-plot-toggle");
+    const plotWrap = document.getElementById("cluster-plot-wrap");
+    if (plotToggle && plotWrap) plotToggle.addEventListener("click", () => {
+      const show = plotWrap.style.display === "none";
+      plotWrap.style.display = show ? "" : "none";
+      plotToggle.textContent = show ? "▾ Hide shape map (PC1/PC2)" : "▸ Show shape map (PC1/PC2)";
+    });
+  })();
 })();
 <\/script>
 </body></html>`;

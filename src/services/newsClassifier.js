@@ -1,7 +1,7 @@
 /**
  * NewsClassifier - Classifies news headlines using zero-shot anchor embeddings per sector.
  *
- * Uses EmbeddingGemma-300m cosine similarity against sector-specific
+ * Uses EmbeddingGemma cosine similarity against sector-specific
  * anchor texts to classify into:
  *   - Technical: Market analysis (charts, earnings, analyst ratings, valuations)
  *   - Fear: Specific near-term company-level threats
@@ -10,6 +10,9 @@
  *   - Macro Win: Abstract sector-wide tailwinds and positive forces
  *   - Mixed: Low-confidence fallback when top categories are too close
  */
+
+const fs = require('fs');
+const path = require('path');
 
 const embeddingService = require('./embeddings');
 const { EVENT_TAGS, tagApplies } = require('./eventTags');
@@ -619,7 +622,11 @@ const WIN_ANCHORS = {
   ],
 };
 
-const SIMILARITY_THRESHOLD = 0.015;
+// Minimum top-two similarity margin before committing to a category; below
+// this the headline is labeled 'mixed'. Calibrated for EmbeddingGemma 2,
+// whose top-two margins run ~0.65x those of the 300m model (sweep in
+// ci/check-classifier-calibration.js): 0.015 * 0.65 ≈ 0.010.
+const SIMILARITY_THRESHOLD = 0.010;
 
 // Module-level cache: { sector: Float64Array[] }
 let cachedTechnicalEmb = null;
@@ -628,16 +635,70 @@ let cachedWinEmb = {}; // keyed by sector
 let cachedMacroFearEmb = {}; // keyed by sector
 let cachedMacroWinEmb = {}; // keyed by sector
 
+// Anchor embeddings survive restarts on disk, keyed by model+dtype so a model
+// swap invalidates them automatically.
+const ANCHOR_CACHE_PATH = path.join(__dirname, '..', '..', 'ci', 'embedding-anchor-cache.json');
+let anchorCacheLoaded = false;
+let anchorCacheDirty = false;
+
+function loadAnchorCacheFromDisk() {
+  if (anchorCacheLoaded) return;
+  anchorCacheLoaded = true;
+  try {
+    if (!fs.existsSync(ANCHOR_CACHE_PATH)) return;
+    const raw = JSON.parse(fs.readFileSync(ANCHOR_CACHE_PATH, 'utf-8'));
+    if (raw.cacheKey !== embeddingService.getCacheKey()) {
+      console.log('[NewsClassifier] Anchor cache is from a different embedding model, recomputing');
+      return;
+    }
+    cachedTechnicalEmb = raw.technical || null;
+    cachedFearEmb = raw.fear || {};
+    cachedWinEmb = raw.win || {};
+    cachedMacroFearEmb = raw.macroFear || {};
+    cachedMacroWinEmb = raw.macroWin || {};
+    Object.assign(cachedTagAnchorEmb, raw.tags || {});
+    const sectorsLoaded = Object.keys(cachedFearEmb).length;
+    const tagsLoaded = Object.keys(cachedTagAnchorEmb).length;
+    console.log(`[NewsClassifier] Loaded anchor embeddings from disk cache ` +
+      `(technical: ${cachedTechnicalEmb ? 'yes' : 'no'}, ${sectorsLoaded} sectors, ${tagsLoaded} tags)`);
+  } catch (err) {
+    console.warn('[NewsClassifier] Anchor cache unreadable, recomputing:', err.message);
+  }
+}
+
+function saveAnchorCacheToDisk() {
+  if (!anchorCacheDirty) return;
+  try {
+    const payload = {
+      cacheKey: embeddingService.getCacheKey(),
+      technical: cachedTechnicalEmb,
+      fear: cachedFearEmb,
+      win: cachedWinEmb,
+      macroFear: cachedMacroFearEmb,
+      macroWin: cachedMacroWinEmb,
+      tags: cachedTagAnchorEmb,
+    };
+    fs.mkdirSync(path.dirname(ANCHOR_CACHE_PATH), { recursive: true });
+    fs.writeFileSync(ANCHOR_CACHE_PATH, JSON.stringify(payload), 'utf-8');
+    anchorCacheDirty = false;
+    console.log('[NewsClassifier] Anchor embeddings saved to disk cache');
+  } catch (err) {
+    console.warn('[NewsClassifier] Failed to save anchor cache:', err.message);
+  }
+}
+
 /**
  * Ensure technical anchor embeddings are loaded (one-time)
  */
 async function ensureTechnicalAnchors() {
+  loadAnchorCacheFromDisk();
   if (cachedTechnicalEmb) return cachedTechnicalEmb;
   console.log('[NewsClassifier] Computing technical anchor embeddings...');
   cachedTechnicalEmb = await embeddingService.embedBatch(
     TECHNICAL_ANCHORS.map(t => `title: technical analysis headline | text: ${t}`),
     { showProgress: false }
   );
+  anchorCacheDirty = true;
   return cachedTechnicalEmb;
 }
 
@@ -645,12 +706,14 @@ async function ensureTechnicalAnchors() {
  * Ensure fear anchor embeddings are loaded for a given sector
  */
 async function ensureFearAnchors(sector) {
+  loadAnchorCacheFromDisk();
   if (cachedFearEmb[sector]) return cachedFearEmb[sector];
   const anchors = FEAR_ANCHORS[sector] || FEAR_ANCHORS.general;
   cachedFearEmb[sector] = await embeddingService.embedBatch(
     anchors.map(t => `title: specific future risk headline | text: ${t}`),
     { showProgress: false }
   );
+  anchorCacheDirty = true;
   return cachedFearEmb[sector];
 }
 
@@ -658,12 +721,14 @@ async function ensureFearAnchors(sector) {
  * Ensure win anchor embeddings are loaded for a given sector
  */
 async function ensureWinAnchors(sector) {
+  loadAnchorCacheFromDisk();
   if (cachedWinEmb[sector]) return cachedWinEmb[sector];
   const anchors = WIN_ANCHORS[sector] || WIN_ANCHORS.general;
   cachedWinEmb[sector] = await embeddingService.embedBatch(
     anchors.map(t => `title: specific future catalyst headline | text: ${t}`),
     { showProgress: false }
   );
+  anchorCacheDirty = true;
   return cachedWinEmb[sector];
 }
 
@@ -671,12 +736,14 @@ async function ensureWinAnchors(sector) {
  * Ensure macro fear anchor embeddings are loaded for a given sector
  */
 async function ensureMacroFearAnchors(sector) {
+  loadAnchorCacheFromDisk();
   if (cachedMacroFearEmb[sector]) return cachedMacroFearEmb[sector];
   const anchors = MACRO_FEAR_ANCHORS[sector] || MACRO_FEAR_ANCHORS.general;
   cachedMacroFearEmb[sector] = await embeddingService.embedBatch(
     anchors.map(t => `title: macro industry headwind headline | text: ${t}`),
     { showProgress: false }
   );
+  anchorCacheDirty = true;
   return cachedMacroFearEmb[sector];
 }
 
@@ -684,12 +751,14 @@ async function ensureMacroFearAnchors(sector) {
  * Ensure macro win anchor embeddings are loaded for a given sector
  */
 async function ensureMacroWinAnchors(sector) {
+  loadAnchorCacheFromDisk();
   if (cachedMacroWinEmb[sector]) return cachedMacroWinEmb[sector];
   const anchors = MACRO_WIN_ANCHORS[sector] || MACRO_WIN_ANCHORS.general;
   cachedMacroWinEmb[sector] = await embeddingService.embedBatch(
     anchors.map(t => `title: macro industry tailwind headline | text: ${t}`),
     { showProgress: false }
   );
+  anchorCacheDirty = true;
   return cachedMacroWinEmb[sector];
 }
 
@@ -728,37 +797,62 @@ function classifySingle(headlineEmb, techAnchors, fearAnchors, winAnchors, macro
   return { category: sorted[0][0], confidence: diff, ...sims };
 }
 
+// ── Event tag embeddings ─────────────────────────────────────────────────
+// One embedding[] per tag id, computed lazily on first call.
+// NOTE: referenced by loadAnchorCacheFromDisk(); only called post-module-load.
+const cachedTagAnchorEmb = {};
+
+async function ensureTagAnchors(tag) {
+  loadAnchorCacheFromDisk();
+  if (cachedTagAnchorEmb[tag.id]) return cachedTagAnchorEmb[tag.id];
+  cachedTagAnchorEmb[tag.id] = await embeddingService.embedBatch(
+    tag.anchors.map(t => `title: news headline | text: ${t}`),
+    { showProgress: false }
+  );
+  anchorCacheDirty = true;
+  return cachedTagAnchorEmb[tag.id];
+}
+
 /**
- * Classify news headlines for all tickers after screening.
- * Uses headline text only (no article extraction).
- * Mutates each entry.news[] adding .category in place.
- *
- * @param {Array} allTickers - The allTickers array from screenTickers()
+ * Collect (tickerIdx, newsIdx, headline, sector) items for every headline.
  */
-async function classifyTickerNews(allTickers) {
-  // Collect all news items with their ticker context
-  const items = []; // { tickerIdx, newsIdx, headline, sector }
+function collectHeadlineItems(allTickers) {
+  const items = [];
   for (let ti = 0; ti < allTickers.length; ti++) {
     const entry = allTickers[ti];
     if (!entry.news || entry.news.length === 0) continue;
     const sector = SECTOR_MAP[entry.ticker] || 'general';
     for (let ni = 0; ni < entry.news.length; ni++) {
       const n = entry.news[ni];
-      if (n.headline) {
-        items.push({ tickerIdx: ti, newsIdx: ni, headline: n.headline, sector });
-      }
+      if (n.headline) items.push({ tickerIdx: ti, newsIdx: ni, headline: n.headline, sector });
     }
   }
+  return items;
+}
 
+/**
+ * Classify categories AND score event tags for all tickers after screening.
+ *
+ * Headlines are embedded exactly once and shared by both scoring passes
+ * (category classification and event tagging score the same texts).
+ * Uses headline text only (no article extraction).
+ *
+ * Mutates each entry in place, adding:
+ *   - entry.news[n].category: technical | fear | win | macro_fear | macro_win | mixed
+ *   - entry.eventTags: string[]                   (ordered by best score desc)
+ *   - entry.eventTagEvidence: {tagId: {headline, score}}
+ *
+ * @param {Array} allTickers - The allTickers array from screenTickers()
+ */
+async function classifyAndTagNews(allTickers) {
+  const items = collectHeadlineItems(allTickers);
   if (items.length === 0) return;
 
   const tickerCount = new Set(items.map(i => allTickers[i.tickerIdx].ticker)).size;
   console.log(`[NewsClassifier] Classifying ${items.length} headlines across ${tickerCount} tickers...`);
 
-  // Ensure technical anchors are loaded
+  // Ensure technical + per-sector anchors are loaded
   const techAnchors = await ensureTechnicalAnchors();
-
-  // Ensure per-sector anchors are loaded
   const sectors = [...new Set(items.map(i => i.sector))];
   console.log(`[NewsClassifier] Sectors: ${sectors.join(', ')}`);
   for (const sector of sectors) {
@@ -767,81 +861,33 @@ async function classifyTickerNews(allTickers) {
     await ensureMacroFearAnchors(sector);
     await ensureMacroWinAnchors(sector);
   }
+  // Pre-load all tag anchor embeddings up front.
+  for (const tag of EVENT_TAGS) await ensureTagAnchors(tag);
+  saveAnchorCacheToDisk();
 
-  // Embed all headlines
+  // Embed all headlines once — shared by both passes below.
   const embTexts = items.map(item => `title: news headline | text: ${item.headline}`);
   const embeddings = await embeddingService.embedBatch(embTexts, { showProgress: false });
 
-  // Classify each and write back
+  // Pass 1: 5-way category classification.
   let counts = { technical: 0, fear: 0, win: 0, macro_fear: 0, macro_win: 0, mixed: 0 };
   for (let i = 0; i < items.length; i++) {
     const { tickerIdx, newsIdx, sector } = items[i];
-    const fearAnchors = cachedFearEmb[sector];
-    const winAnchors = cachedWinEmb[sector];
-    const macroFearAnchors = cachedMacroFearEmb[sector];
-    const macroWinAnchors = cachedMacroWinEmb[sector];
-    const result = classifySingle(embeddings[i], techAnchors, fearAnchors, winAnchors, macroFearAnchors, macroWinAnchors);
+    const result = classifySingle(embeddings[i], techAnchors,
+      cachedFearEmb[sector], cachedWinEmb[sector], cachedMacroFearEmb[sector], cachedMacroWinEmb[sector]);
     allTickers[tickerIdx].news[newsIdx].category = result.category;
     counts[result.category]++;
   }
-
   console.log(`[NewsClassifier] Done: ${counts.technical} technical, ${counts.fear} fear, ${counts.win} win, ${counts.macro_fear} macro-fear, ${counts.macro_win} macro-win, ${counts.mixed} mixed`);
-}
 
-// ── Event tag embeddings ─────────────────────────────────────────────────
-// One Float64Array[] per tag id, computed lazily on first call.
-const cachedTagAnchorEmb = {};
-
-async function ensureTagAnchors(tag) {
-  if (cachedTagAnchorEmb[tag.id]) return cachedTagAnchorEmb[tag.id];
-  cachedTagAnchorEmb[tag.id] = await embeddingService.embedBatch(
-    tag.anchors.map(t => `title: news headline | text: ${t}`),
-    { showProgress: false }
-  );
-  return cachedTagAnchorEmb[tag.id];
-}
-
-/**
- * Score per-ticker event tags from headlines.
- *
- * For each ticker, embeds its headlines once and scores each headline against
- * every applicable tag's anchor set. A tag fires if any headline's max
- * cosine-similarity against that tag's anchors meets the tag threshold.
- *
- * Mutates each entry, adding:
- *   - entry.eventTags: string[]                   (ordered by best score desc)
- *   - entry.eventTagEvidence: {tagId: {headline, score}}
- *
- * @param {Array} allTickers
- */
-async function tagTickerEvents(allTickers) {
-  // Gather (ticker, headline) pairs.
-  const items = [];
-  for (let ti = 0; ti < allTickers.length; ti++) {
-    const entry = allTickers[ti];
-    if (!entry.news || entry.news.length === 0) continue;
-    for (let ni = 0; ni < entry.news.length; ni++) {
-      const h = entry.news[ni].headline;
-      if (h) items.push({ tickerIdx: ti, headline: h });
-    }
-  }
-  if (items.length === 0) return;
-
-  // Pre-load all tag anchor embeddings up front.
-  for (const tag of EVENT_TAGS) await ensureTagAnchors(tag);
-
-  // Embed all headlines in one batch.
-  const embTexts = items.map(it => `title: news headline | text: ${it.headline}`);
-  const embeddings = await embeddingService.embedBatch(embTexts, { showProgress: false });
-
-  // For each ticker, find tags whose any-headline score >= threshold.
-  // Best-headline tracked per (ticker, tag) so we can surface evidence.
+  // Pass 2: event tag scoring. For each ticker, find tags whose any-headline
+  // score >= threshold. Best-headline tracked per (ticker, tag) so we can
+  // surface evidence.
   const perTicker = new Map(); // tickerIdx -> { tagId: {score, headline} }
 
   for (let i = 0; i < items.length; i++) {
-    const { tickerIdx, headline } = items[i];
+    const { tickerIdx, headline, sector } = items[i];
     const emb = embeddings[i];
-    const sector = SECTOR_MAP[allTickers[tickerIdx].ticker] || 'general';
 
     for (const tag of EVENT_TAGS) {
       if (!tagApplies(tag, sector)) continue;
@@ -876,4 +922,35 @@ async function tagTickerEvents(allTickers) {
   console.log(`[NewsClassifier] Event tags: ${totalTags} fired across ${perTicker.size} tickers`);
 }
 
-module.exports = { classifyTickerNews, tagTickerEvents, SECTOR_MAP };
+/**
+ * Classify standalone headlines (no mutation, no event tagging).
+ * Exposed for calibration tooling: returns per-headline category plus the
+ * top-two margin and full similarity set so thresholds can be tuned offline.
+ *
+ * @param {Array<{headline: string, sector?: string}>} items
+ * @returns {Promise<Array<{category: string, confidence: number, sims: Object}>>}
+ */
+async function classifyHeadlines(items) {
+  if (!items || items.length === 0) return [];
+  const techAnchors = await ensureTechnicalAnchors();
+  const sectors = [...new Set(items.map(i => i.sector || 'general'))];
+  for (const sector of sectors) {
+    await ensureFearAnchors(sector);
+    await ensureWinAnchors(sector);
+    await ensureMacroFearAnchors(sector);
+    await ensureMacroWinAnchors(sector);
+  }
+  saveAnchorCacheToDisk();
+  const embeddings = await embeddingService.embedBatch(
+    items.map(i => `title: news headline | text: ${i.headline}`),
+    { showProgress: false }
+  );
+  return embeddings.map((emb, idx) => {
+    const sector = items[idx].sector || 'general';
+    return classifySingle(emb, techAnchors,
+      cachedFearEmb[sector], cachedWinEmb[sector],
+      cachedMacroFearEmb[sector], cachedMacroWinEmb[sector]);
+  });
+}
+
+module.exports = { classifyAndTagNews, classifyHeadlines, SECTOR_MAP };

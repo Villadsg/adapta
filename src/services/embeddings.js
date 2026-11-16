@@ -1,20 +1,42 @@
 /**
- * EmbeddingService - Generates semantic embeddings using google/embeddinggemma-300m
+ * EmbeddingService - Generates semantic embeddings using google/embeddinggemma-2
  *
- * This service uses the ONNX-converted EmbeddingGemma model via Transformers.js.
- * Model: onnx-community/embeddinggemma-300m-ONNX
+ * This service uses the ONNX-converted EmbeddingGemma 2 model via Transformers.js.
+ * Model: onnx-community/embeddinggemma-2-ONNX (text-only backbone, 270M params)
  * Embedding dimension: 768 (supports Matryoshka truncation to 512, 256, 128)
+ * Context window: 8192 tokens
  */
 class EmbeddingService {
   constructor() {
     this.model = null;
     this.pipeline = null;
     this.env = null;
-    // Using EmbeddingGemma-300m - state-of-the-art lightweight embedding model
-    this.modelName = 'onnx-community/embeddinggemma-300m-ONNX';
+    // EmbeddingGemma 2 text-only backbone (270M) — same 768-dim space conventions
+    // as the previous embeddinggemma-300m. Override via env for A/B testing.
+    this.modelName = process.env.EMBEDDING_MODEL || 'onnx-community/embeddinggemma-2-ONNX';
+    // q8 (~270MB) is quality-equivalent to fp32 on the classifier calibration
+    // set and 4x lighter. Never fp16 — EmbeddingGemma activations produce
+    // NaNs (both generations).
+    this.dtype = process.env.EMBEDDING_DTYPE || 'q8';
     this.embeddingDim = 768;
+    // embeddinggemma-2 supports 8K context; the 300m model only 2K, so respect
+    // the limit when the model is overridden back to it.
+    this.maxContextTokens = /embeddinggemma-300m/.test(this.modelName) ? 2048 : 8192;
+    // Batch inference bounds: headlines batch 16-at-a-time while long article
+    // bodies embed alone, keeping WASM memory usage predictable.
+    this.maxBatchSize = 16;
+    this.maxBatchChars = 12000;
     this.isLoading = false;
     this.loadPromise = null;
+  }
+
+  /**
+   * Stable identity of the loaded embedding space — used to key caches
+   * (anchor embeddings on disk, model version in the database).
+   * @returns {string}
+   */
+  getCacheKey() {
+    return `${this.modelName}|${this.dtype}`;
   }
 
   /**
@@ -56,32 +78,57 @@ class EmbeddingService {
       this.pipeline = transformers.pipeline;
       this.env = transformers.env;
 
-      // Configure Transformers.js - use WASM backend with Electron-safe settings
+      // Configure Transformers.js - conservative settings for Electron compatibility.
+      // (v4 no longer exposes numThreads/simd on the wasm env; guard so these
+      // still apply if running under v3.)
       this.env.allowLocalModels = false;
       this.env.useBrowserCache = false;
-
-      // IMPORTANT: Use single thread for Electron compatibility
-      // Multi-threading can cause SIGTRAP crashes in Electron's sandboxed environment
-      this.env.backends.onnx.wasm.numThreads = 1;
-
-      // Disable WASM SIMD if available (can cause crashes in some Electron versions)
-      this.env.backends.onnx.wasm.simd = false;
+      const wasm = this.env.backends?.onnx?.wasm;
+      if (wasm) {
+        if ('numThreads' in wasm) wasm.numThreads = 1;
+        if ('simd' in wasm) wasm.simd = false;
+      }
 
       // Create feature extraction pipeline
-      // NOTE: EmbeddingGemma activations don't support fp16 - use fp32, q8, or q4
-      // Using fp32 for maximum stability in Electron (larger but more reliable)
+      // NOTE: EmbeddingGemma activations don't support fp16 or derivatives — use fp32 or q8
       this.model = await this.pipeline('feature-extraction', this.modelName, {
-        dtype: 'fp32', // Use full precision for Electron stability
+        dtype: this.dtype,
       });
 
       const loadTime = ((Date.now() - startTime) / 1000).toFixed(2);
       console.log(`✓ Embedding model loaded in ${loadTime}s`);
-      console.log(`  Model: ${this.modelName}`);
+      console.log(`  Model: ${this.modelName} (dtype: ${this.dtype})`);
       console.log(`  Embedding dimension: ${this.embeddingDim}\n`);
     } catch (error) {
       console.error('❌ Failed to load embedding model:', error);
       throw new Error(`Failed to load embedding model: ${error.message}`);
     }
+  }
+
+  /**
+   * Format raw text into EmbeddingGemma's task-specific input format with truncation.
+   * @param {string} text - Raw input text
+   * @param {Object} options - Embedding options ({ task, title })
+   * @returns {string} Formatted and truncated input string
+   * @private
+   */
+  _formatInput(text, options = {}) {
+    let formattedText;
+    const { task, title } = options;
+
+    if (task === 'search_query') {
+      // Query format: "task: search result | query: {text}"
+      formattedText = `task: search result | query: ${text}`;
+    } else {
+      // Document format: "title: {title} | text: {text}"
+      const titleText = title || 'none';
+      formattedText = `title: ${titleText} | text: ${text}`;
+    }
+
+    const maxChars = this.maxContextTokens * 4; // Approximate chars per token
+    return formattedText.length > maxChars
+      ? formattedText.substring(0, maxChars)
+      : formattedText;
   }
 
   /**
@@ -100,24 +147,7 @@ class EmbeddingService {
     }
 
     try {
-      // Format input with task-specific prefix for EmbeddingGemma
-      let formattedText;
-      const { task, title } = options;
-
-      if (task === 'search_query') {
-        // Query format: "task: search result | query: {text}"
-        formattedText = `task: search result | query: ${text}`;
-      } else {
-        // Document format: "title: {title} | text: {text}"
-        const titleText = title || 'none';
-        formattedText = `title: ${titleText} | text: ${text}`;
-      }
-
-      // Truncate to max context length (EmbeddingGemma supports 2048 tokens)
-      const maxChars = 2048 * 4; // Approximate chars per token
-      const truncatedText = formattedText.length > maxChars
-        ? formattedText.substring(0, maxChars)
-        : formattedText;
+      const truncatedText = this._formatInput(text, options);
 
       // Generate embedding with mean pooling and normalization
       const output = await this.model(truncatedText, {
@@ -137,6 +167,11 @@ class EmbeddingService {
 
   /**
    * Generate embeddings for multiple texts in batch
+   *
+   * Texts are formatted up front, then grouped into inference batches bounded
+   * by both count and total length (short headlines run 16-at-a-time through
+   * a single tokenized session run; long article bodies run alone).
+   *
    * @param {string[]} texts - Array of texts to embed
    * @param {Object} options - Batch processing options
    * @param {string} options.task - Task type prefix
@@ -151,7 +186,6 @@ class EmbeddingService {
       return [];
     }
 
-    const embeddings = [];
     const { onProgress, showProgress = true } = options;
     const startTime = Date.now();
 
@@ -159,17 +193,45 @@ class EmbeddingService {
       console.log(`\n🔄 Generating embeddings for ${texts.length} chunks...`);
     }
 
-    for (let i = 0; i < texts.length; i++) {
-      const embedding = await this.embed(texts[i], options);
-      embeddings.push(embedding);
+    const formatted = texts.map(t => {
+      if (!t || t.trim().length === 0) {
+        throw new Error('Cannot generate embedding for empty text');
+      }
+      return this._formatInput(t, options);
+    });
+    const embeddings = new Array(formatted.length);
 
-      if (onProgress) {
-        onProgress(i + 1, texts.length);
+    let i = 0;
+    while (i < formatted.length) {
+      // Grow the batch until either bound is hit
+      const batch = [formatted[i]];
+      let batchChars = formatted[i].length;
+      let j = i + 1;
+      while (j < formatted.length && batch.length < this.maxBatchSize) {
+        const nextChars = batchChars + formatted[j].length;
+        if (nextChars > this.maxBatchChars) break;
+        batch.push(formatted[j]);
+        batchChars = nextChars;
+        j++;
       }
 
-      if (showProgress && (i + 1) % 10 === 0) {
+      const output = await this.model(batch, {
+        pooling: 'mean',
+        normalize: true,
+      });
+      const rows = output.tolist();
+      for (let b = 0; b < batch.length; b++) {
+        embeddings[i + b] = rows[b];
+        if (onProgress) {
+          onProgress(i + b + 1, texts.length);
+        }
+      }
+
+      i = j;
+
+      if (showProgress && i % 10 === 0 && i < formatted.length) {
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        console.log(`   Progress: ${i + 1}/${texts.length} (${elapsed}s)`);
+        console.log(`   Progress: ${i}/${texts.length} (${elapsed}s)`);
       }
     }
 

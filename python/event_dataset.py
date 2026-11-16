@@ -167,6 +167,64 @@ FULL2_LEGACY_CHANNELS = [
     "options_missing",
 ]
 
+# Universe-wide market regime channels. Computed once per date from the whole
+# stock_prices cross-section (no index/VIX series is stored in the DB), then
+# merged into every ticker's frame by date, so on a given day every ticker
+# sees the same values. These give the per-series forecaster context the
+# single-name options channels cannot: what the market as a whole is doing.
+# All are scaled ×100 so their magnitude is comparable to the centred rank
+# channels (which run ±50).
+MARKET_CHANNELS = [
+    "market_return_pc",      # equal-weight mean daily log return, %
+    "market_vol_20_pc",      # 20-day rolling std of the market return, %
+    "market_breadth_5d",     # % of tickers with a positive trailing 5-day return
+    "market_breadth_ma20",   # % of tickers trading above their 20-day average
+]
+
+
+def load_market_features(con: duckdb.DuckDBPyConnection,
+                         min_tickers: int = 20) -> pd.DataFrame:
+    """Build daily market regime features from the stock_prices cross-section.
+
+    The DB stores only single-name bars, so the "market" is the equal-weight
+    universe: the cross-sectional mean daily log return, its 20-day volatility,
+    and breadth (share of tickers up over 5 days / above their 20-day MA).
+    Dates listing fewer than `min_tickers` tickers get NaN breadth/return (the
+    early backfill tail) — build_ticker_features forward-fills then zero-fills
+    them like the options block.
+
+    Same-day values use only that day's close, which the forecast scripts see
+    anyway (the forecast day's own features are the outcome row, not context).
+    """
+    raw = con.execute(
+        "SELECT ticker, date, close FROM stock_prices ORDER BY ticker, date"
+    ).fetch_df()
+    if raw.empty:
+        return pd.DataFrame()
+    raw["date"] = pd.to_datetime(raw["date"]).dt.date
+    close = raw.pivot_table(index="date", columns="ticker", values="close", aggfunc="last")
+    close = close.sort_index()
+    n_listed = close.notna().sum(axis=1)
+
+    log_ret = np.log(close.replace(0, np.nan)).diff()
+    market_return = log_ret.mean(axis=1).where(n_listed >= min_tickers)
+    market_vol = market_return.rolling(20, min_periods=5).std()
+
+    ret5 = close.replace(0, np.nan).pct_change(5)
+    breadth_5d = (ret5 > 0).sum(axis=1) / ret5.notna().sum(axis=1).replace(0, np.nan)
+    ma20 = close.rolling(20, min_periods=10).mean()
+    breadth_ma20 = (close > ma20).sum(axis=1) / ma20.notna().sum(axis=1).replace(0, np.nan)
+
+    out = pd.DataFrame({
+        "date": close.index,
+        "market_return_pc": (market_return * 100.0).values,
+        "market_vol_20_pc": (market_vol * 100.0).values,
+        "market_breadth_5d": (breadth_5d * 100.0).values,
+        "market_breadth_ma20": (breadth_ma20 * 100.0).values,
+    }).reset_index(drop=True)
+    return out
+
+
 # Target definition
 EVENT_QUANTILE = 0.92  # a ticker's own top 8% of days are "events" — relative, not global
 CONTEXT_LENGTH = 36    # divisible by TTM-R3 patch_length = 9
@@ -589,8 +647,14 @@ def compute_event_magnitude(row) -> float:
     return float(vol) * abs(float(ret))
 
 
-def build_ticker_features(df: pd.DataFrame, opts_df: pd.DataFrame = None) -> pd.DataFrame:
-    """Add engineered features for a single ticker's price bars."""
+def build_ticker_features(df: pd.DataFrame, opts_df: pd.DataFrame = None,
+                          market_df: pd.DataFrame = None) -> pd.DataFrame:
+    """Add engineered features for a single ticker's price bars.
+
+    `market_df` (from load_market_features) adds the universe-wide regime
+    channels; without it those channels are fill values, matching how the
+    options block behaves when options history is absent.
+    """
     df = df.copy().sort_values("date").reset_index(drop=True)
 
     # Basic returns
@@ -635,6 +699,20 @@ def build_ticker_features(df: pd.DataFrame, opts_df: pd.DataFrame = None) -> pd.
         for col in ALL_OPTION_CHANNELS + FULL2_EXTRA_CHANNELS:
             df[col] = 0.0
         df["options_missing"] = 1.0
+
+    # Market regime channels: same values for every ticker on a date, merged
+    # by date only. Forward-fill up to 5 days like the options block so thin
+    # early-backfill dates don't zero out immediately.
+    if market_df is not None and not market_df.empty:
+        df["date"] = pd.to_datetime(df["date"]).dt.date
+        df = df.merge(market_df, on="date", how="left")
+        for col in MARKET_CHANNELS:
+            if col not in df.columns:
+                df[col] = np.nan
+            df[col] = df[col].ffill(limit=5).fillna(0.0).astype(float)
+    else:
+        for col in MARKET_CHANNELS:
+            df[col] = 0.0
 
     # Replace NaNs with 0 so TTM does not see missing numerics.
     for col in ["return", "gap", "range", "volatility", "log_volume", "log_close", "event_magnitude", "log_event_magnitude"]:

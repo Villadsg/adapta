@@ -40,8 +40,11 @@ class ArticleDatabase {
 
         // Create tables
         this.createTables()
-          .then(() => {
+          .then(async () => {
             console.log('Database initialized successfully');
+            // Fire-and-forget: re-embeds stored vectors if the embedding model
+            // changed since they were written (does not block startup).
+            this.checkEmbeddingModelVersion();
             resolve();
           })
           .catch(reject);
@@ -1413,6 +1416,101 @@ class ArticleDatabase {
   }
 
   /**
+   * Re-embed stored articles when the embedding model changes.
+   *
+   * Vectors from different models live in different spaces even at equal
+   * dimension (768 for both EmbeddingGemma generations), so the dimension
+   * check in searchBySimilarity cannot catch a model swap — stale vectors
+   * would silently corrupt semantic search and uniqueness scoring. Gating on
+   * a stored model identifier (model name + dtype) keeps them meaningful.
+   *
+   * Kicks off the re-embed in the background; resolves immediately.
+   */
+  async checkEmbeddingModelVersion() {
+    try {
+      const embeddingService = require('./embeddings');
+      const currentKey = embeddingService.getCacheKey();
+      const storedKey = await this.getSetting('embedding_model', null);
+      if (storedKey === currentKey) return;
+
+      const rows = await new Promise((resolve, reject) => {
+        this.connection.all(
+          'SELECT COUNT(*) as count FROM articles WHERE embedding IS NOT NULL',
+          (err, r) => {
+            if (err) reject(err);
+            else resolve(Number(r[0]?.count || 0));
+          }
+        );
+      });
+      if (rows === 0) {
+        await this.setSetting('embedding_model', currentKey);
+        return;
+      }
+
+      console.log(`[DB] Embedding model changed (${storedKey || 'unknown'} → ${currentKey}); ` +
+        `re-embedding ${rows} articles in the background`);
+      this.reembedAllArticles()
+        .catch(err => console.error('[DB] Background re-embed failed:', err.message));
+    } catch (err) {
+      console.error('[DB] Embedding model version check failed:', err.message);
+    }
+  }
+
+  /**
+   * Re-embed every article that has a stored vector, using the active model.
+   * Idempotent: if interrupted, the next boot restarts it from scratch.
+   * @returns {Promise<void>}
+   */
+  async reembedAllArticles() {
+    const embeddingService = require('./embeddings');
+
+    const articles = await new Promise((resolve, reject) => {
+      this.connection.all(
+        'SELECT id, title, content FROM articles WHERE embedding IS NOT NULL',
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows || []);
+        }
+      );
+    });
+
+    const startTime = Date.now();
+    let done = 0;
+    let failed = 0;
+    for (const article of articles) {
+      try {
+        const embedding = article.content
+          ? await embeddingService.embed(article.content, {
+              task: 'search_document',
+              title: article.title
+            })
+          : null;
+        const embeddingValue = embedding ? `[${embedding.join(',')}]` : null;
+        await new Promise((resolve, reject) => {
+          this.connection.run(
+            'UPDATE articles SET embedding = ?::FLOAT[] WHERE id = ?',
+            embeddingValue,
+            article.id,
+            (err) => (err ? reject(err) : resolve())
+          );
+        });
+        done++;
+        if (done % 25 === 0) {
+          console.log(`[DB] Re-embed progress: ${done}/${articles.length}`);
+        }
+      } catch (err) {
+        failed++;
+        console.warn(`[DB] Re-embed failed for article ${article.id}: ${err.message}`);
+      }
+    }
+
+    await this.setSetting('embedding_model', embeddingService.getCacheKey());
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+    console.log(`[DB] Re-embedded ${done}/${articles.length} articles in ${elapsed}s` +
+      (failed ? ` (${failed} failed)` : ''));
+  }
+
+  /**
    * Clear comparison data only (good/not_good categories)
    * Does NOT delete scraped news articles
    */
@@ -1779,6 +1877,40 @@ class ArticleDatabase {
           });
         }
       );
+    });
+  }
+
+  /**
+   * Bulk upsert of daily bars for one ticker — one round trip instead of one
+   * awaited INSERT per bar, which dominated screening wall time when persisting
+   * a full window (~100 bars) per ticker.
+   * @param {string} ticker
+   * @param {Array<{date: string, open, high, low, close, volume}>} bars
+   * @param {string} source
+   */
+  async saveStockPrices(ticker, bars, source = 'marketdata') {
+    if (!bars || bars.length === 0) return;
+    const upper = ticker.toUpperCase();
+    const rows = [];
+    const params = [];
+    for (const b of bars) {
+      const base = params.length;
+      rows.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8})`);
+      params.push(upper, b.date, b.open, b.high, b.low, b.close, b.volume, source);
+    }
+    const sql = `
+      INSERT INTO stock_prices (ticker, date, open, high, low, close, volume, source)
+      VALUES ${rows.join(', ')}
+      ON CONFLICT (ticker, date, source) DO UPDATE SET
+        open = excluded.open,
+        high = excluded.high,
+        low = excluded.low,
+        close = excluded.close,
+        volume = excluded.volume,
+        fetched_at = now()
+    `;
+    await new Promise((resolve, reject) => {
+      this.connection.run(sql, ...params, (err) => (err ? reject(err) : resolve()));
     });
   }
 
@@ -2255,6 +2387,42 @@ class ArticleDatabase {
       close: r.close == null ? null : Number(r.close),
       volume: r.volume == null ? null : Number(r.volume),
     }));
+  }
+
+  /**
+   * Closing prices for many tickers at once, newest row per (ticker, date) —
+   * the same dedupe rule as getDailyBars. Used by the delta-shape clustering,
+   * which needs a spot for every history record date but must not issue one
+   * query per ticker.
+   * @param {string[]} tickers
+   * @param {string} fromDate - YYYY-MM-DD, inclusive
+   * @returns {Promise<Object>} {ticker: {date: close}}
+   */
+  async getCloseMapForTickers(tickers, fromDate) {
+    const list = (tickers || []).filter(Boolean).map(t => String(t).toUpperCase());
+    if (list.length === 0) return {};
+    const sql = `
+      SELECT ticker, date, close FROM (
+        SELECT ticker, date, close,
+          ROW_NUMBER() OVER (PARTITION BY ticker, date ORDER BY fetched_at DESC) AS rn
+        FROM stock_prices
+        WHERE ticker IN (${list.map(() => '?').join(',')}) AND date >= ?
+      ) WHERE rn = 1
+    `;
+    const rows = await new Promise((resolve, reject) => {
+      this.connection.all(sql, ...list, fromDate, (err, r) => {
+        if (err) reject(err);
+        else resolve(r || []);
+      });
+    });
+    const out = {};
+    for (const r of rows) {
+      if (r.close == null) continue;
+      const date = r.date instanceof Date ? r.date.toISOString().slice(0, 10) : String(r.date).split('T')[0].split(' ')[0];
+      if (!out[r.ticker]) out[r.ticker] = {};
+      out[r.ticker][date] = Number(r.close);
+    }
+    return out;
   }
 
   /**

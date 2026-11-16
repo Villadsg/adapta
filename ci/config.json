@@ -20,16 +20,13 @@
     "NVO",
     "NOW",
     "SMCI",
-    "VOYG",
-    "DELL",
-    "AMD",
-    "INTC",
-    "IBRX"
+    "GMAB"
   ],
   "screenDays": 100,
   "screenLookbackDays": 5,
   "screenPercentileThreshold": 92,
   "screenDelayMs": 1000,
+  "screenConcurrency": 3,
   "screenMaxTickers": 0,
   "fixedTickers": [
     "AVAV",
@@ -39,13 +36,6 @@
     "NOW",
     "SMCI"
   ],
-  "lastShuffleDraw": [
-    "AUR",
-    "PONY",
-    "TSHA",
-    "NVDA",
-    "ARX"
-  ],
   "excludeTickers": [
     "ATAI",
     "CRNX",
@@ -54,5 +44,11 @@
     "PSLV",
     "STUB",
     "PHYS"
+  ],
+  "lastSuggested": [
+    "ADI",
+    "ALAB",
+    "PANW",
+    "DDOG"
   ]
 }

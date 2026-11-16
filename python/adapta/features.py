@@ -14,5 +14,6 @@ from event_dataset import (
     PRICE_CHANNELS,
     FULL2_LEGACY_CHANNELS,
     DIRECTION_CHANNELS,
+    MARKET_CHANNELS,
 )
-from event_dataset import build_ticker_features
+from event_dataset import build_ticker_features, load_market_features

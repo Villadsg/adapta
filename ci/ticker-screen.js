@@ -4,11 +4,12 @@
  * Pre-screens a large list of tickers for significant price events.
  * Prices and options chains come from MarketData.app (MARKET_DATA_API_KEY).
  *
- * Fundamentals (sector, industry, market cap, business summary, and the
- * revenue/equity/leverage inputs to reviseTickers) still come from Yahoo
- * Finance via the injected `createYF` factory — MarketData serves market
- * data only and has no fundamentals endpoints. Screening works without it;
- * those fields are simply left blank.
+ * Fundamentals (sector, industry, market cap, and the revenue/equity/leverage
+ * inputs to reviseTickers) still come from Yahoo Finance via the injected
+ * `createYF` factory — MarketData serves market data only and has no
+ * fundamentals endpoints. Business summaries additionally fall back to SEC
+ * EDGAR 10-Ks and Wikipedia via src/services/companyDescriptions.js. Screening
+ * works without `createYF`; those fields are simply left blank.
  *
  * Algorithm: volume × |gap%| with 95th percentile threshold,
  * checked over the last 5 trading days.
@@ -17,6 +18,7 @@
 const OptionsAnalysisService = require('../src/services/optionsAnalysis');
 const IBOptionsProvider = require('../src/services/ibOptionsProvider');
 const MarketDataProvider = require('../src/services/marketDataProvider');
+const companyDescriptions = require('../src/services/companyDescriptions');
 
 /**
  * Simple linear regression: y = mx + b
@@ -268,6 +270,7 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
     screenLookbackDays = 5,
     screenPercentileThreshold = 95,
     screenDelayMs = 2500,
+    screenConcurrency = 3,
     screenMaxTickers = 0,
     benchmark = 'SPY',
     isCancelled = null,
@@ -337,18 +340,14 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
   const optSvc = new OptionsAnalysisService(null, ibProvider, screenQuoteProvider);
 
   let cancelled = false;
-  for (let i = 0; i < list.length; i++) {
-    if (isCancelled && isCancelled()) {
-      console.log(`[Screen] Cancelled after ${i}/${list.length} tickers`);
-      cancelled = true;
-      break;
-    }
-    const ticker = list[i];
+  let nextIndex = 0;
 
-    if (i > 0) {
-      await sleep(screenDelayMs);
-    }
-
+  // Per-ticker pipeline: bars → events → DB persist → description/quote →
+  // option chains. Independent across tickers, so the loop below runs these
+  // through a bounded worker pool (screenConcurrency). The pool keeps each
+  // worker pacing with screenDelayMs, so per-slot request spacing to
+  // MarketData/Yahoo is preserved while wall time drops by ~the pool size.
+  const processTicker = async (ticker, i) => {
     try {
       const bars = await priceTracker.fetchHistoricalPrices(ticker, {
         period1, period2, interval: '1d',
@@ -358,7 +357,7 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
         console.log(`  [Screen] ${ticker}: skipped (only ${bars?.length ?? 0} bars)`);
         allTickers.push({ ticker, skipped: true });
         archiver?.recordTicker(run, ticker, { status: 'skipped', bars: bars?.length ?? 0 });
-        continue;
+        return;
       }
 
       // Filter out bars with null values
@@ -370,7 +369,7 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
         console.log(`  [Screen] ${ticker}: skipped (only ${validBars.length} valid bars)`);
         allTickers.push({ ticker, skipped: true });
         archiver?.recordTicker(run, ticker, { status: 'skipped', bars: validBars.length });
-        continue;
+        return;
       }
 
       archiver?.recordBars(run, ticker, validBars);
@@ -380,7 +379,7 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
       const { rSquared, threshold, chartDates, chartCloses, chartVolumes, chartEvents, dbEvents } = ev;
       if (ev.products.length === 0) {
         allTickers.push({ ticker, rSquared, skipped: true });
-        continue;
+        return;
       }
       const products = ev.products;
       const sorted = products
@@ -395,17 +394,17 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
       if (database) {
         try {
           console.log(`  [Screen] ${ticker}: persisting ${products.length} bars + ${dbEvents.length} events to DB...`);
-          for (const p of products) {
+          const priceRows = products.map((p) => {
             const dStr = (p.bar.date instanceof Date
               ? p.bar.date.toISOString() : new Date(p.bar.date).toISOString()
             ).split('T')[0];
-            await database.saveStockPrice(
-              ticker,
-              dStr,
-              { open: p.bar.open, high: p.bar.high, low: p.bar.low, close: p.bar.close, volume: p.bar.volume },
-              'screening'
-            );
-          }
+            return {
+              date: dStr,
+              open: p.bar.open, high: p.bar.high, low: p.bar.low,
+              close: p.bar.close, volume: p.bar.volume,
+            };
+          });
+          await database.saveStockPrices(ticker, priceRows, 'screening');
           const startDate = chartDates[0];
           const endDate = chartDates[chartDates.length - 1];
           await database.saveStockEvents(ticker, dbEvents, benchmark, startDate, endDate);
@@ -468,22 +467,33 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
         }
       }
 
-      // Company summary + market cap + sector/industry — Yahoo-only (MarketData
-      // has no fundamentals). Optional: left blank when createYF is not supplied.
+      // Company summary + market cap + sector/industry. Multi-source via the
+      // shared description service: EDGAR 10-K Item 1 → Yahoo → Wikipedia for
+      // US names, Yahoo → Wikipedia for non-US. Yahoo (when createYF is
+      // supplied) still fills marketCap/sector/industry around the winning
+      // text. Served from ci/description-cache.json when fresh. MarketData
+      // has no fundamentals, hence the chain.
       let summary = '';
       let marketCap = 0;
       let sector = '';
       let industry = '';
-      if (createYF) {
-        try {
-          const yf = createYF();
-          const profile = await yf.quoteSummary(ticker, { modules: ['assetProfile', 'summaryDetail'] });
-          summary = (profile.assetProfile && profile.assetProfile.longBusinessSummary) || '';
-          marketCap = (profile.summaryDetail && profile.summaryDetail.marketCap) || 0;
-          sector = (profile.assetProfile && profile.assetProfile.sector) || '';
-          industry = (profile.assetProfile && profile.assetProfile.industry) || '';
-        } catch (_) { /* ignore — summary is optional */ }
-      }
+      let descSource = '';
+      // Company description and the live quote come from different services
+      // (EDGAR/Yahoo/Wikipedia vs MarketData) — fetch them concurrently.
+      const [descRes, quoteRes] = await Promise.allSettled([
+        companyDescriptions.getDescription(ticker, { createYF }),
+        screenQuoteProvider.client.fetchQuote(ticker),
+      ]);
+      if (descRes.status === 'fulfilled') {
+        const profile = descRes.value;
+        summary = profile.summary || '';
+        marketCap = profile.marketCap || 0;
+        sector = profile.sector || '';
+        industry = profile.industry || '';
+        descSource = (Array.isArray(profile.sources) && profile.sources.length
+          ? profile.sources
+          : (profile.source ? [profile.source] : []));
+      } /* else — summary is optional */
 
       // Fetch per-strike options data for disagreement chart (nearest 3 expirations)
       // Uses OptionsAnalysisService.fetchOptionsChain, which is backed by
@@ -497,7 +507,7 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
       let liveQuoteForEntry = null;
       let liveQuotePrevClose = null;
       try {
-        const q = await screenQuoteProvider.client.fetchQuote(ticker);
+        const q = quoteRes.status === 'fulfilled' ? quoteRes.value : null;
         const px = q?.last ?? q?.mid ?? null;
         if (typeof px === 'number' && px > 0) {
           liveQuoteForEntry = px;
@@ -612,10 +622,18 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
               results.push(buildExpResult(firstMetrics, expirationDates[0]));
             }
 
-            // Remaining expirations (use optSvc.fetchOptionsChainWithSource for IB fallback + source attribution)
-            for (let ei = 1; ei < maxExp; ei++) {
+            // Remaining expirations (use optSvc.fetchOptionsChainWithSource for IB fallback + source attribution).
+            // Fetched concurrently — each is an independent MarketData request.
+            const restResults = await Promise.allSettled(
+              Array.from({ length: maxExp - 1 }, (_, k) => k + 1).map((ei) =>
+                optSvc.fetchOptionsChainWithSource(ticker, optSvc.formatDate(expirationDates[ei]))
+                  .then((fetched) => ({ ei, fetched }))
+              )
+            );
+            for (const r of restResults) {
+              if (r.status !== 'fulfilled') continue; // skip this expiration
               try {
-                const fetched = await optSvc.fetchOptionsChainWithSource(ticker, optSvc.formatDate(expirationDates[ei]));
+                const { ei, fetched } = r.value;
                 const chain = fetched?.chain;
                 const source = fetched?.source;
                 if (chain) {
@@ -656,9 +674,9 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
         : (typeof currentPriceForEntry === 'number' ? currentPriceForEntry : null);
       let entry;
       if (bestHit) {
-        entry = { ...bestHit, chartData, summary, marketCap, sector, industry, lastClose, latestPrice };
+        entry = { ...bestHit, chartData, summary, descSource, marketCap, sector, industry, lastClose, latestPrice };
       } else {
-        entry = { ticker, rSquared, date: null, gap: 0, percentile: 0, classification: '', volume: 0, chartData, summary, marketCap, sector, industry, lastClose, latestPrice };
+        entry = { ticker, rSquared, date: null, gap: 0, percentile: 0, classification: '', volume: 0, chartData, summary, descSource, marketCap, sector, industry, lastClose, latestPrice };
       }
       allTickers.push(entry);
       archiver?.recordTicker(run, ticker, {
@@ -676,7 +694,27 @@ async function screenTickers(priceTracker, config = {}, createYF = null, onTicke
       archiver?.recordTicker(run, ticker, { status: 'errored', error: err.message });
       if (onTickerDone) onTickerDone(entry);
     }
+  };
+
+  const poolSize = Math.max(1, Math.min(screenConcurrency, list.length));
+  if (poolSize > 1) {
+    console.log(`[Screen] Running ${poolSize} tickers in parallel (screenConcurrency=${screenConcurrency}, ${screenDelayMs}ms pacing per worker)`);
   }
+  const worker = async () => {
+    while (!cancelled) {
+      const i = nextIndex++;
+      if (i >= list.length) return;
+      if (i > 0) {
+        await sleep(screenDelayMs);
+      }
+      await processTicker(list[i], i);
+      if (isCancelled && isCancelled()) {
+        console.log(`[Screen] Cancelled after ${i + 1}/${list.length} tickers`);
+        cancelled = true;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: poolSize }, () => worker()));
 
   // Clean up the shared IB connection if the fallback opened it
   ibProvider.disconnect();

@@ -10,10 +10,12 @@
  * phase D's long sequential query loops can't delay renderer queries that share
  * the primary connection.
  *
- * Phase A (candles) runs first for the requested tickers so phase C has
- * marketdata-sourced bars to drive its fetch list — coverage classifies
- * "pending" tickers from any price bars, but chains can only be requested for
- * days that exist as marketdata candles. Phase C is incremental and resumable:
+ * Phase A (candles) always runs first so phase C has marketdata-sourced bars
+ * to drive its fetch list — without it, trading days the daily cron missed
+ * (machine off) are invisible: the estimate says "up to date" while data is
+ * missing. Symbols already current through the last closed session are
+ * skipped, so a re-click when nothing is stale costs no credits. Phase C is
+ * incremental and resumable:
  * already-present (ticker, date) pairs are skipped, no-data days are remembered
  * in ci/backfill-state.json, and tickers confirmed options-less in
  * ci/options-coverage.json are never asked for. Phase D re-derives
@@ -27,7 +29,7 @@ const fs = require('fs');
 const MarketDataClient = require('./marketDataClient');
 const {
   phaseA, phaseC, phaseD, loadState, getBackfillTickers, loadBars,
-  BENCHMARK, CHAIN_SKIP, LOOKBACK_DAYS,
+  lastClosedSession, BENCHMARK, CHAIN_SKIP, LOOKBACK_DAYS,
 } = require('../../ci/backfill-marketdata');
 
 const COVERAGE_PATH = path.join(__dirname, '..', '..', 'ci', 'options-coverage.json');
@@ -103,6 +105,12 @@ class OptionsBackfillService {
    * with no stored chain, minus known no-data days and vendor-confirmed
    * options-less tickers. Same filters as phase C's task list — including the
    * already-stored (ticker, date) skip, which is what keeps this honest.
+   *
+   * Also counts tickers whose candles end before the last closed session
+   * (staleCandles). Phase A refreshes those first, which typically exposes new
+   * chain-days — gapDays approximates them as weekday distance from the newest
+   * bar to the last closed session, and feeds the credit estimate alongside
+   * the stale-candle requests themselves.
    */
   async estimate() {
     const state = loadState();
@@ -116,9 +124,27 @@ class OptionsBackfillService {
       const tickers = (await getBackfillTickers(dbProxy, null)).filter(
         (t) => t !== BENCHMARK && !CHAIN_SKIP.has(t) && !confirmedMissing.has(t)
       );
+      const ref = lastClosedSession();
       const missing = new Map(); // ticker -> day count
+      let staleCandles = 0;
+      let gapDays = 0;
       for (const ticker of tickers) {
         const bars = await loadBars(dbProxy, ticker, 'marketdata');
+        if (bars.length === 0 || bars[bars.length - 1].date < ref) {
+          // Weekdays in (newest bar, last closed session] — the chain-days the
+          // candle refresh will expose. Barless (new-universe) tickers assume
+          // the full lookback window. US holidays slightly overcount;
+          // estimate-only.
+          const end = new Date(ref + 'T12:00:00Z');
+          const from = bars.length
+            ? new Date(bars[bars.length - 1].date + 'T12:00:00Z')
+            : new Date(end.getTime() - LOOKBACK_DAYS * 86400000);
+          for (let d = new Date(from.getTime() + 86400000); d <= end; d = new Date(d.getTime() + 86400000)) {
+            const dow = d.getUTCDay();
+            if (dow !== 0 && dow !== 6) gapDays++;
+          }
+          staleCandles++;
+        }
         for (const b of bars) {
           const key = `${ticker}|${b.date}`;
           if (!existing.has(key) && !noData.has(key)) {
@@ -132,7 +158,9 @@ class OptionsBackfillService {
         success: true,
         tickers: missing.size,
         missingDays,
-        creditsEstimate: Math.round(missingDays * CREDITS_PER_TICKER_DAY),
+        staleCandles,
+        gapDays,
+        creditsEstimate: Math.round(missingDays * CREDITS_PER_TICKER_DAY + gapDays * CREDITS_PER_TICKER_DAY + staleCandles),
       };
     } catch (err) {
       return { success: false, error: err.message };
@@ -182,27 +210,25 @@ class OptionsBackfillService {
     try {
       const confirmedMissing = this._loadConfirmedMissing();
 
-      // Full-universe runs mirror the CLI's `--phase=C`: no candle refresh,
-      // the stored marketdata bars already define the gap to fill. Explicit
-      // ticker subsets keep phase A so freshly added tickers get bars first.
-      let a = { totalBars: 0 };
+      // Phase A always runs first (never the benchmark): phase C builds its
+      // fetch list from marketdata-sourced bars, so trading days the daily
+      // cron missed (machine off) or tickers whose candles only exist as
+      // another source (e.g. 'screening') would otherwise be invisible — the
+      // estimate reports "up to date" while data is missing. Candles are one
+      // request per ticker and symbols already current through the last
+      // closed session are skipped inside phase A; the creditCap below still
+      // governs the chains.
       let scope = tickers;
       if (tickers === null) {
         scope = (await getBackfillTickers(dbProxy, null)).filter(
           (t) => t !== BENCHMARK && !CHAIN_SKIP.has(t) && !confirmedMissing.has(t)
         );
-      } else {
-        // Phase A first, for exactly the requested tickers (never the benchmark):
-        // phase C builds its fetch list from marketdata-sourced bars, so a ticker
-        // whose candles only exist as another source (e.g. 'screening') would
-        // yield zero tasks and stay "pending" forever. Candles are cheap (one
-        // request per ticker); the creditCap below still governs the chains.
-        this._emit({ phase: 'A', ticker: null, done: 0, total: scope.length }, true);
-        a = await phaseA(client, dbProxy, scope, LOOKBACK_DAYS, {
-          includeBenchmark: false,
-          onProgress: (info) => this._emit({ phase: 'A', ticker: info.ticker, done: info.done, total: info.total }),
-        });
       }
+      this._emit({ phase: 'A', ticker: null, done: 0, total: scope.length }, true);
+      const a = await phaseA(client, dbProxy, scope, LOOKBACK_DAYS, {
+        includeBenchmark: false,
+        onProgress: (info) => this._emit({ phase: 'A', ticker: info.ticker, done: info.done, total: info.total }),
+      });
 
       const c = await phaseC(client, dbProxy, scope, state, confirmedMissing, {
         creditCap,

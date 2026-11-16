@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Cluster Investigation — 2026-11-16</title>
+<style>
+  body { margin: 0; background: #12141a; color: #d4dae3; font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 24px 28px 48px; }
+  h1 { font-size: 1.3em; margin: 0 0 4px; }
+  .meta { color: #9aa5b4; font-size: 0.85em; margin-bottom: 18px; }
+  .card { background: #1a1d25; border: 1px solid #2a3040; border-radius: 10px; padding: 14px 16px; }
+  .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+  .controls label { font-size: 0.85em; color: #9aa5b4; }
+  .controls input { width: 60px; padding: 4px 8px; background: #12141a; color: #d4dae3; border: 1px solid #2a3040; border-radius: 6px; }
+  button { padding: 4px 14px; border-radius: 6px; cursor: pointer; font-size: 0.88em; }
+  .btn-primary { border: 1px solid #5b9bd5; background: #5b9bd5; color: #fff; }
+  .btn-ghost { border: 1px solid #2a3040; background: #1a1d25; color: #9aa5b4; }
+  #cluster-status { color: #9aa5b4; font-size: 0.85em; }
+  .layout { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+  .plot-card { flex: 0 1 680px; }
+  .clusters-card { flex: 1 1 380px; min-width: 340px; }
+  .card h2 { font-size: 0.95em; margin: 0 0 10px; color: #9aa5b4; font-weight: 600; }
+  #cluster-rows { display: flex; flex-direction: column; gap: 8px; }
+  .cluster-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding: 6px 8px; background: #12141a; border: 1px solid #232837; border-radius: 8px; }
+  .cluster-row .stats { color: #9aa5b4; font-size: 0.8em; white-space: nowrap; }
+  .cluster-row .sig { color: #d4dae3; font-size: 0.84em; flex: 1 1 240px; }
+  .cluster-row .members { color: #6b7a8d; font-size: 0.8em; flex: 1 1 100%; }
+  .cluster-chip { display: inline-block; margin: 1px 2px; padding: 1px 8px; border-radius: 10px; font-size: 0.8em; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .hint { color: #6b7a8d; font-size: 0.82em; }
+  .section { margin-top: 20px; }
+  svg text { font-family: inherit; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Cluster Investigation</h1>
+  <div class="meta">as of 2026-11-16 · screening list (8 with options history) · 8 tickers · run k=2 auto · silhouette 0.145 (weak structure)</div>
+
+  <div class="controls card">
+    <label for="cluster-k">clusters k</label>
+    <input id="cluster-k" type="number" min="2" max="7" step="1" value="2">
+    <button id="cluster-apply" class="btn-primary" type="button">Cluster</button>
+    <button id="cluster-reset" class="btn-ghost" type="button">Reset view</button>
+    <span id="cluster-status">Pre-cluster view — pick k and press Cluster.</span>
+  </div>
+
+  <div class="layout">
+    <div class="card plot-card">
+      <h2>Shape map — PC1/PC2 (top-2 principal components of today's delta shapes)</h2>
+      <div id="plot-mount"></div>
+      <div class="hint" style="margin-top:8px;">Nearby dots = similar-shaped moves (distance ≈ cosine; only ~PC1+PC2 variance is shown, so distant dots are suggestive, nearby dots are meaningful). Dot size = move strength σ. Click a dot to highlight its cluster below.</div>
+    </div>
+    <div class="card clusters-card">
+      <h2>Clusters</h2>
+      <div id="cluster-rows"><div class="hint">Press Cluster to compute clusters for the chosen k.</div></div>
+    </div>
+  </div>
+
+  <div class="card section" id="cluster-dev-space">
+    <h2>Notes</h2>
+    <div class="hint">This page is the working space for cluster analysis on this run's data (shape rows are embedded — everything recomputes locally). Further per-cluster diagnostics can be added here.</div>
+  </div>
+</div>
+<script>// Browser-safe core of the delta-shape clustering: the pure math that must
+// behave identically in the Electron main process (optionsClusters.js) and in
+// the generated screening report's inline script (screeningHtml.js embeds this
+// file's source verbatim). UMD-ish: CommonJS when required, window.ClusterCore
+// when injected into a page. No Node APIs, no app state — math only.
+
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.ClusterCore = factory();
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+
+  // Moneyness bucket edges as distance from spot (see optionsClusters.js).
+  const BUCKET_EDGES = [0, 0.025, 0.05, 0.075, 0.10, 0.125, 0.15, 0.175, 0.20, 0.225, 0.25, 0.275, 0.30];
+  const N_BUCKETS = BUCKET_EDGES.length; // 13 — last index is the >30% tail
+  const N_DIMS = 4 * N_BUCKETS;
+
+  function bucketLabel(i) {
+    if (i === N_BUCKETS - 1) return '30%+ OTM';
+    const lo = BUCKET_EDGES[i] * 100, hi = BUCKET_EDGES[i + 1] * 100;
+    const fmt = (v) => (v % 1 === 0 ? v.toFixed(0) : v.toFixed(1));
+    return `${fmt(lo)}–${fmt(hi)}% OTM`;
+  }
+
+  // Dim labels used for human-readable cluster signatures.
+  const DIM_LABELS = [];
+  for (const kind of ['IV', 'DV']) {
+    for (const side of ['put', 'call']) {
+      for (let b = 0; b < N_BUCKETS; b++) {
+        DIM_LABELS.push({ side, kind, bucket: b, label: `${side} ${kind === 'IV' ? 'IV' : 'DV'} @ ${bucketLabel(b)}` });
+      }
+    }
+  }
+
+  // Deterministic RNG so a given input always yields the same clustering.
+  function mulberry32(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function distSq(a, b) {
+    let s = 0;
+    for (let j = 0; j < a.length; j++) { const d = a[j] - b[j]; s += d * d; }
+    return s;
+  }
+
+  function kmeansOnce(X, k, rng) {
+    const n = X.length, p = X[0].length;
+    // k-means++ seeding
+    const centers = [X[Math.floor(rng() * n)].slice()];
+    const closest = new Array(n).fill(Infinity);
+    while (centers.length < k) {
+      const c = centers[centers.length - 1];
+      let sum = 0;
+      for (let i = 0; i < n; i++) {
+        const d = Math.min(closest[i], distSq(X[i], c));
+        closest[i] = d; sum += d;
+      }
+      if (sum <= 1e-12) { // all points identical/near — fill with duplicates
+        centers.push(X[Math.floor(rng() * n)].slice());
+        continue;
+      }
+      let r = rng() * sum, pick = n - 1;
+      for (let i = 0; i < n; i++) { r -= closest[i]; if (r <= 0) { pick = i; break; } }
+      centers.push(X[pick].slice());
+    }
+    const assign = new Array(n).fill(-1);
+    let inertia = 0;
+    for (let iter = 0; iter < 100; iter++) {
+      inertia = 0;
+      for (let i = 0; i < n; i++) {
+        let best = 0, bd = Infinity;
+        for (let c = 0; c < k; c++) {
+          const d = distSq(X[i], centers[c]);
+          if (d < bd) { bd = d; best = c; }
+        }
+        assign[i] = best; inertia += bd;
+      }
+      const sums = Array.from({ length: k }, () => new Array(p).fill(0));
+      const counts = new Array(k).fill(0);
+      for (let i = 0; i < n; i++) {
+        counts[assign[i]]++;
+        for (let j = 0; j < p; j++) sums[assign[i]][j] += X[i][j];
+      }
+      let shift = 0;
+      for (let c = 0; c < k; c++) {
+        if (counts[c] === 0) {
+          // Empty cluster: reseed at the point farthest from its center.
+          let far = 0, fd = -1;
+          for (let i = 0; i < n; i++) {
+            const d = distSq(X[i], centers[assign[i]]);
+            if (d > fd) { fd = d; far = i; }
+          }
+          centers[c] = X[far].slice();
+          shift = Infinity;
+          continue;
+        }
+        for (let j = 0; j < p; j++) {
+          const nv = sums[c][j] / counts[c];
+          shift += Math.abs(nv - centers[c][j]);
+          centers[c][j] = nv;
+        }
+      }
+      if (shift < 1e-6) break;
+    }
+    return { assign, inertia };
+  }
+
+  function kmeansBest(X, k, opts) {
+    let best = null;
+    for (let r = 0; r < opts.restarts; r++) {
+      const run = kmeansOnce(X, k, mulberry32(opts.seed + r * 7919 + k * 104729));
+      if (!best || run.inertia < best.inertia) best = run;
+    }
+    return best;
+  }
+
+  // Pairwise Euclidean distance matrix (symmetric, zero diagonal).
+  function distanceMatrix(Z) {
+    const n = Z.length;
+    const D = Array.from({ length: n }, () => new Array(n).fill(0));
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        D[i][j] = D[j][i] = Math.sqrt(distSq(Z[i], Z[j]));
+      }
+    }
+    return D;
+  }
+
+  // Per-sample silhouette coefficients from a precomputed distance matrix.
+  // Singleton clusters score 0 by convention.
+  function silhouette(D, assign) {
+    const n = D.length;
+    const ids = [...new Set(assign)];
+    const members = {};
+    for (const c of ids) members[c] = [];
+    for (let i = 0; i < n; i++) members[assign[i]].push(i);
+    const out = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const own = members[assign[i]];
+      if (own.length === 1) { out[i] = 0; continue; }
+      let a = 0;
+      for (const j of own) a += D[i][j];
+      a /= (own.length - 1);
+      let b = Infinity;
+      for (const c of ids) {
+        if (c === assign[i]) continue;
+        let m = 0;
+        for (const j of members[c]) m += D[i][j];
+        m /= members[c].length;
+        if (m < b) b = m;
+      }
+      // max(a,b) === 0 happens between identical points (e.g. two all-quiet
+      // tickers with zero deltas) — undefined by the formula, score them 0.
+      out[i] = (b === Infinity || Math.max(a, b) === 0) ? 0 : (b - a) / Math.max(a, b);
+    }
+    return out;
+  }
+
+  // Human-readable signature: the dims where this cluster's standardized centroid
+  // separates most, described in raw delta units (vol points / DV-share points).
+  function clusterSignature(zCentroid, rawCentroid) {
+    const parts = [];
+    const idx = DIM_LABELS.map((_, i) => i).sort((a, b) => Math.abs(zCentroid[b]) - Math.abs(zCentroid[a]));
+    for (const i of idx) {
+      if (parts.length >= 3) break;
+      if (Math.abs(zCentroid[i]) < 0.3) break;
+      const L = DIM_LABELS[i];
+      const v = rawCentroid[i] || 0;
+      const mag = L.kind === 'IV'
+        ? `${v >= 0 ? '+' : ''}${v.toFixed(1)} vol`
+        : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(0)}pp`;
+      parts.push(`${L.label} ${mag}`);
+    }
+    return parts.length > 0 ? parts.join(' · ') : 'flat / no distinctive move';
+  }
+
+  // Turn a raw k-means assignment into the report-shaped output: clusters
+  // relabeled C1..Cn by size descending, with per-cluster signature, average
+  // move/strength and members, plus the per-ticker map. Shared so the main
+  // process and the report's inline script produce identical structures.
+  function assembleClusters({ rows, Z, moves, rowTickers, assign, sil }) {
+    const n = rowTickers.length;
+    const sizeByOld = {};
+    for (const c of assign) sizeByOld[c] = (sizeByOld[c] || 0) + 1;
+    const remap = {};
+    Object.keys(sizeByOld)
+      .sort((a, b) => sizeByOld[b] - sizeByOld[a])
+      .forEach((old, i) => { remap[old] = `C${i + 1}`; });
+    const relabeled = assign.map(c => remap[c]);
+
+    const clusterIds = [...new Set(relabeled)];
+    const clusters = clusterIds.map((id) => {
+      const idxs = [];
+      for (let i = 0; i < n; i++) if (relabeled[i] === id) idxs.push(i);
+      const rawCentroid = new Array(N_DIMS).fill(0);
+      const zCentroid = new Array(N_DIMS).fill(0);
+      for (const i of idxs) {
+        for (let d = 0; d < N_DIMS; d++) {
+          rawCentroid[d] += rows[i][d];
+          zCentroid[d] += Z[i][d];
+        }
+      }
+      for (let d = 0; d < N_DIMS; d++) { rawCentroid[d] /= idxs.length; zCentroid[d] /= idxs.length; }
+      const strengths = idxs.map(i => sil[i]);
+      const avgMove = idxs.reduce((s, i) => s + moves[i], 0) / idxs.length;
+      return {
+        id,
+        size: idxs.length,
+        avgStrength: strengths.reduce((s, x) => s + x, 0) / idxs.length,
+        avgMove: Math.round(avgMove * 10) / 10,
+        signature: clusterSignature(zCentroid, rawCentroid),
+        members: idxs.map(i => rowTickers[i]).sort(),
+      };
+    });
+
+    const byTicker = {};
+    for (let i = 0; i < n; i++) {
+      byTicker[rowTickers[i]] = {
+        cluster: relabeled[i],
+        strength: Math.round(sil[i] * 100) / 100,
+        move: Math.round(moves[i] * 10) / 10,
+      };
+    }
+    return { byTicker, clusters };
+  }
+
+  return {
+    N_DIMS, DIM_LABELS,
+    mulberry32, distSq, kmeansOnce, kmeansBest,
+    distanceMatrix, silhouette, clusterSignature, assembleClusters,
+  };
+});
+</script>
+<script>
+window.__CLUSTER_DATA__ = {"tickers":["AVAV","AXSM","DDOG","GMAB","NOW","NVO","QCOM","SMCI"],"rows":[[100.6163,17.2825,26.997,32.1406,47.2291,3.1804,0,0,0,0,0,0,0,15.1626,10.5364,8.3256,8.3892,19.6258,10.4174,0,0,0,0,0,0,0,0.1709,-0.1342,0.5636,0.2405,0.158,0.0251,0,0,0,0,0,0,0,-0.1232,0.3756,0.3485,-0.1228,0.4547,0.3225,0.0173,0,0,0,0,0,0],[0,0,0,14.613,6.1281,0,0,0,0,0,0,0,0,-7.4992,0,-7.6392,20.9748,0,-8.2103,-3.0207,0,0,0,0,0,0,0,0,0,-0.2329,1.4381,0,0,0,0,0,0,0,0,0.0185,0,0.3138,-0.1828,0.8922,0.6753,0.0246,0,0,0,0,0,0],[16.1119,27.1556,55.0747,33.86,39.1085,11.6751,12.2911,16.1877,29.933,48.6394,8.7396,-41.4981,-25.246,51.6147,48.1535,10.0701,40.0867,6.8477,-4.7187,9.893,45.2573,0.6359,-22.6719,-12.6714,45.7648,102.5482,0.0111,0.0534,0.3151,0.3011,0.1022,0.001,0.0728,0.0299,-0.001,0.007,0.002,-0.0004,-0.0009,-0.0702,-0.0748,0.4652,-0.1508,0.1639,0.1637,0.0453,-0.0065,0.0164,0.0645,0.0122,0.0023,0.0323],[0,-20.7447,0,0,6.3998,0,0,0,0,0,0,0,0,0,1.3929,8.5963,0,0,0,0,0,0,0,0,0,0,0,0.4644,0,0,-1.9883,0,0,0,0,0,0,0,0,0,0.1641,0.0924,0,0,0,0,0,0,0,0,0,0],[26.2462,34.847,17.2505,3.0819,1.6473,-2.8988,0.3269,0,0,0,0,0,0,5.7037,12.1449,9.6992,9.4437,7.9227,14.6714,0,0,0,0,0,0,0,0.5784,0.0888,0.0836,-0.1088,-0.0208,-0.0214,-0.0016,0,0,0,0,0,0,0.0671,0.637,-0.3512,0.0658,-0.0288,-0.0359,0,0,0,0,0,0,0],[25.5727,29.6178,35.0602,43.4775,59.3124,16.9716,0,0,0,0,0,0,0,11.5831,6.2947,9.583,-2.4282,-5.7125,-1.6512,0,0,0,0,0,0,0,0.8266,-0.4264,-0.1676,-0.0141,0.0148,0.0034,0,0,0,0,0,0,0,0.1282,-0.4695,0.3515,0.2161,-0.0388,-0.0049,0,0,0,0,0,0,0],[-1.5707,11.6502,9.6321,6.0874,12.5882,1.3214,0,0,0,0,0,0,0,0,-1.0153,-2.7385,-7.8189,-6.6365,-6.3605,-2.509,0,0,0,0,0,0,-0.1861,-0.3116,0.485,0.2204,0.0486,0.3813,-0.0041,0,0,0,0,0,0,0,0.2833,0.2881,0.1256,0.0704,-0.002,-0.0005,0,0,0,0,0,0],[0,20.038,22.5877,20.2669,27.7621,35.0388,0,0,0,0,0,0,0,3.2941,18.4286,16.6094,14.6223,9.0402,8.7525,6.2986,0,0,0,0,0,0,0,-0.1365,0.8368,-0.1221,0.2524,0.1062,0,0,0,0,0,0,0,-0.2789,0.2963,0.096,-0.0681,0.5785,-0.0039,0.0016,0,0,0,0,0,0]],"Z":[[2.3238,0.127,0.3318,0.8088,1.026,-0.3904,-0.3642,-0.3536,-0.3536,-0.3536,-0.3536,0.3536,0.3536,0.2839,-0.0905,0.2255,-0.1327,1.8048,1.0291,-0.2993,-0.3536,-0.3536,0.3536,0.3536,-0.3536,-0.3536,-0.0121,-0.3074,0.8698,1.0471,0.1683,-0.2738,-0.3218,-0.3536,0.3536,-0.3536,-0.3536,0.3536,0.3536,-0.7221,0.6695,0.5757,-0.7625,0.563,0.7364,0.3732,0.3536,-0.3536,-0.3536,-0.3536,-0.3536,-0.3536],[-0.6082,-0.8265,-1.1195,-0.2859,-0.8729,-0.6396,-0.3642,-0.3536,-0.3536,-0.3536,-0.3536,0.3536,0.3536,-0.9581,-0.746,-1.8171,0.6944,-0.4456,-1.1481,-0.9778,-0.3536,-0.3536,0.3536,0.3536,-0.3536,-0.3536,-0.5066,0.1841,-0.7695,-1.3715,1.5369,-0.4598,-0.3218,-0.3536,0.3536,-0.3536,-0.3536,0.3536,0.3536,0.4037,-0.4527,0.4409,-1.1849,1.8378,2.1554,0.8042,0.3536,-0.3536,-0.3536,-0.3536,-0.3536,-0.3536],[-0.1387,0.6717,1.8411,0.9162,0.6508,0.2754,2.474,2.4749,2.4749,2.4749,2.4749,-2.4749,-2.4749,2.2816,2.2494,0.4487,1.9505,0.3396,-0.74,1.9227,2.4749,2.4749,-2.4749,-2.4749,2.4749,2.4749,-0.4744,0.3798,0.147,1.357,0.1086,-0.4523,2.471,2.4749,-2.4749,2.4749,2.4749,-2.4749,-2.4749,-0.3011,-0.6761,1.0298,-0.9597,-0.2844,0.0979,2.0349,-2.4749,2.4749,2.4749,2.4749,2.4749,2.4749],[-0.6082,-1.971,-1.1195,-1.1987,-0.8603,-0.6396,-0.3642,-0.3536,-0.3536,-0.3536,-0.3536,0.3536,0.3536,-0.5471,-0.6593,0.2601,-0.6841,-0.4456,-0.1885,-0.2993,-0.3536,-0.3536,0.3536,0.3536,-0.3536,-0.3536,-0.5066,1.8851,-0.7695,-0.1815,-2.1265,-0.4598,-0.3218,-0.3536,0.3536,-0.3536,-0.3536,0.3536,0.3536,0.2567,0.0377,-0.4209,0.1032,-0.762,-0.5605,-0.6556,0.3536,-0.3536,-0.3536,-0.3536,-0.3536,-0.3536],[0.1566,1.096,-0.1922,-1.0062,-1.0799,-0.8668,-0.2887,-0.3536,-0.3536,-0.3536,-0.3536,0.3536,0.3536,-0.2345,0.0095,0.4012,-0.0634,0.4629,1.5263,-0.2993,-0.3536,-0.3536,0.3536,0.3536,-0.3536,-0.3536,1.1666,0.5094,-0.5262,-0.7371,-0.0229,-0.6183,-0.3827,-0.3536,0.3536,-0.3536,-0.3536,0.3536,0.3536,0.7901,1.4505,-2.147,0.567,-0.8458,-0.7047,-0.6556,0.3536,-0.3536,-0.3536,-0.3536,-0.3536,-0.3536],[0.137,0.8075,0.7652,1.5169,1.5842,0.6905,-0.3642,-0.3536,-0.3536,-0.3536,-0.3536,0.3536,0.3536,0.0877,-0.3544,0.3864,-0.8437,-1.1006,-0.3815,-0.2993,-0.3536,-0.3536,0.3536,0.3536,-0.3536,-0.3536,1.8847,-1.3778,-1.257,-0.2535,0.0151,-0.4347,-0.3218,-0.3536,0.3536,-0.3536,-0.3536,0.3536,0.3536,1.2759,-1.8553,0.5875,1.6258,-0.875,-0.5801,-0.6556,0.3536,-0.3536,-0.3536,-0.3536,-0.3536,-0.3536],[-0.654,-0.1837,-0.6017,-0.8184,-0.5744,-0.5361,-0.3642,-0.3536,-0.3536,-0.3536,-0.3536,0.3536,0.3536,-0.5471,-0.8091,-1.1901,-1.198,-1.2065,-0.9319,-0.8629,-0.3536,-0.3536,0.3536,0.3536,-0.3536,-0.3536,-1.0449,-0.9572,0.6411,0.9447,0.0513,2.3704,-0.4792,-0.3536,0.3536,-0.3536,-0.3536,0.3536,0.3536,0.2567,0.3939,0.3407,0.988,-0.557,-0.5684,-0.6868,0.3536,-0.3536,-0.3536,-0.3536,-0.3536,-0.3536],[-0.6082,0.279,0.0947,0.0672,0.1266,2.1066,-0.3642,-0.3536,-0.3536,-0.3536,-0.3536,0.3536,0.3536,-0.3665,0.4004,1.2853,0.2769,0.591,0.8345,1.1154,-0.3536,-0.3536,0.3536,0.3536,-0.3536,-0.3536,-0.5066,-0.316,1.6642,-0.8052,0.2692,0.3282,-0.3218,-0.3536,0.3536,-0.3536,-0.3536,0.3536,0.3536,-1.9599,0.4326,-0.4067,-0.3768,0.9235,-0.5761,-0.5589,0.3536,-0.3536,-0.3536,-0.3536,-0.3536,-0.3536]],"points":[{"ticker":"AVAV","x":0.289,"y":0.633},{"ticker":"AXSM","x":-0.189,"y":-0.326},{"ticker":"DDOG","x":1.066,"y":-0.534},{"ticker":"GMAB","x":-0.553,"y":-0.289},{"ticker":"NOW","x":-0.34,"y":0.238},{"ticker":"NVO","x":0.008,"y":-0.057},{"ticker":"QCOM","x":-0.458,"y":-0.294},{"ticker":"SMCI","x":0.177,"y":0.63}],"varExplained":[0.253,0.187],"restarts":5,"seed":42,"weakSilhouette":0.15,"kAuto":2,"kMax":7,"colors":["#5b9bd5","#c79bd5","#5bbd8a","#d5a15b","#d57b9b","#8fce6f","#5bd0d5","#b5a8e0"],"asOf":"2026-11-16","universe":"screening list (8 with options history)"};
+(function () {
+  const DATA = window.__CLUSTER_DATA__;
+  if (!DATA || !window.ClusterCore) return;
+  const Core = window.ClusterCore;
+  const mount = document.getElementById('plot-mount');
+  const rowsEl = document.getElementById('cluster-rows');
+  const kInput = document.getElementById('cluster-k');
+  const applyBtn = document.getElementById('cluster-apply');
+  const resetBtn = document.getElementById('cluster-reset');
+  const statusEl = document.getElementById('cluster-status');
+
+  const colorOf = (id) => {
+    const n = parseInt(String(id).replace(/^C/, ''), 10);
+    return Number.isFinite(n) ? DATA.colors[(n - 1) % DATA.colors.length] : '#999';
+  };
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const l2 = (v) => { let s = 0; for (let j = 0; j < v.length; j++) s += v[j] * v[j]; return Math.sqrt(s); };
+  const moves = DATA.Z.map(l2);
+  const Zn = DATA.Z.map((v, i) => moves[i] > 1e-12 ? v.map(x => x / moves[i]) : v.slice());
+  const Dmat = Core.distanceMatrix(Zn);
+
+  // ── plot (square SVG, dark, drawn client-side from the embedded points) ──
+  const S = 620, PAD = 44;
+  const xs = DATA.points.map(p => p.x), ys = DATA.points.map(p => p.y);
+  let x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs);
+  let y0 = Math.min.apply(null, ys), y1 = Math.max.apply(null, ys);
+  if (x1 - x0 < 1e-9) { x0 -= 1; x1 += 1; }
+  if (y1 - y0 < 1e-9) { y0 -= 1; y1 += 1; }
+  const sx = (v) => PAD + (v - x0) / (x1 - x0) * (S - 2 * PAD);
+  const sy = (v) => S - PAD - (v - y0) / (y1 - y0) * (S - 2 * PAD);
+  const maxMove = Math.max.apply(null, [1e-9].concat(DATA.points.map(p => p.move || 0)));
+  const dotR = (p) => 3.5 + 8 * Math.min(1, (p.move || 0) / maxMove);
+  const ve = DATA.varExplained || [];
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 ' + S + ' ' + S);
+  svg.setAttribute('style', 'width:100%; height:auto; display:block;');
+  const axis = (x1a, y1a, x2a, y2a) => {
+    const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    l.setAttribute('x1', x1a); l.setAttribute('y1', y1a); l.setAttribute('x2', x2a); l.setAttribute('y2', y2a);
+    l.setAttribute('stroke', '#2e333d'); svg.appendChild(l);
+  };
+  axis(PAD, S - PAD, S - PAD, S - PAD); axis(PAD, PAD, PAD, S - PAD);
+  const axisLabel = (txt, xa, ya, anchor) => {
+    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    t.setAttribute('x', xa); t.setAttribute('y', ya); t.setAttribute('font-size', '11');
+    t.setAttribute('fill', '#9aa5b4'); if (anchor) t.setAttribute('text-anchor', anchor);
+    t.textContent = txt; svg.appendChild(t);
+  };
+  axisLabel('PC1 ' + (ve[0] != null ? (ve[0] * 100).toFixed(0) + '%' : ''), S - PAD, S - 14, 'end');
+  axisLabel('PC2 ' + (ve[1] != null ? (ve[1] * 100).toFixed(0) + '%' : ''), PAD + 4, 18);
+  const dotsById = {};
+  for (const p of DATA.points) {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('class', 'cluster-dot');
+    c.setAttribute('data-ticker', p.ticker);
+    c.setAttribute('cx', sx(p.x).toFixed(1)); c.setAttribute('cy', sy(p.y).toFixed(1));
+    c.setAttribute('r', dotR(p).toFixed(1));
+    c.setAttribute('fill', '#93a1b3'); c.setAttribute('fill-opacity', '0.72');
+    c.setAttribute('stroke', '#93a1b3'); c.setAttribute('stroke-width', '1');
+    c.style.cursor = 'pointer';
+    const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+    title.textContent = p.ticker + ' — move σ=' + p.move + ' (uncolored: pre-cluster view)';
+    c.appendChild(title);
+    const tx = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    tx.setAttribute('x', (+sx(p.x) + dotR(p) + 3).toFixed(1));
+    tx.setAttribute('y', (+sy(p.y) + 3).toFixed(1));
+    tx.setAttribute('font-size', '10'); tx.setAttribute('fill', '#9aa5b4');
+    tx.style.pointerEvents = 'none'; tx.textContent = p.ticker;
+    g.appendChild(c); g.appendChild(tx);
+    svg.appendChild(g);
+    dotsById[p.ticker] = c;
+  }
+  mount.appendChild(svg);
+
+  // ── clustering (same math as the main process: clusterCore.js) ──
+  const runK = (k) => {
+    const kk = Math.max(2, Math.min(DATA.kMax, k | 0));
+    const run = Core.kmeansBest(Zn, kk, { restarts: DATA.restarts, seed: DATA.seed });
+    const sil = Core.silhouette(Dmat, run.assign);
+    const meanSil = sil.reduce((s, x) => s + x, 0) / sil.length;
+    const assembled = Core.assembleClusters({ rows: DATA.rows, Z: DATA.Z, moves: moves, rowTickers: DATA.tickers, assign: run.assign, sil: sil });
+    return { k: kk, meanSil: meanSil, clusters: assembled.clusters, byTicker: assembled.byTicker };
+  };
+  const clusterById = {};
+  let moveMax = 1e-9;
+  let activeCluster = null;
+  const tintOf = (id) => {
+    const c = clusterById[id];
+    if (!c) return '#12141a';
+    const alpha = Math.round((0.10 + 0.50 * Math.min(1, (c.avgMove || 0) / moveMax)) * 255);
+    return colorOf(id) + alpha.toString(16).padStart(2, '0');
+  };
+  const chipHtml = (id) => {
+    const c = clusterById[id];
+    const tip = c ? id + ' — n=' + c.size + ' · avg move σ=' + c.avgMove + ' · sil=' + c.avgStrength.toFixed(2) + ' · ' + c.signature : id;
+    return '<span class="cluster-chip" data-cluster="' + id + '" title="' + esc(tip) + '" style="background:' + tintOf(id) + '; color:' + colorOf(id) + '; border:1px solid ' + colorOf(id) + ';">' + id + '</span>';
+  };
+  const rowHtml = (c) => '<div class="cluster-row" data-cluster="' + c.id + '">' +
+    chipHtml(c.id) +
+    '<span class="stats">n=' + c.size + ' · σ ' + c.avgMove.toFixed(1) + ' · sil ' + c.avgStrength.toFixed(2) + '</span>' +
+    '<span class="sig">' + esc(c.signature) + '</span>' +
+    '<span class="members">' + c.members.join(' ') + '</span></div>';
+  const highlight = () => {
+    rowsEl.querySelectorAll('.cluster-row').forEach(r => {
+      r.style.outline = r.getAttribute('data-cluster') === activeCluster ? '2px solid #7aa2c7' : 'none';
+    });
+    Object.keys(dotsById).forEach(t => {
+      const dot = dotsById[t];
+      const active = activeCluster != null && dot.getAttribute('data-cluster') === activeCluster;
+      dot.setAttribute('stroke', active ? '#e8eef7' : (dot.getAttribute('data-cluster') ? colorOf(dot.getAttribute('data-cluster')) : '#93a1b3'));
+      dot.setAttribute('stroke-width', active ? '2.5' : '1');
+    });
+  };
+  const applyClustering = (k) => {
+    const res = runK(k);
+    moveMax = Math.max.apply(null, [1e-9].concat(res.clusters.map(c => c.avgMove || 0)));
+    for (const c of res.clusters) clusterById[c.id] = c;
+    Object.keys(dotsById).forEach(t => {
+      const dot = dotsById[t];
+      const bt = res.byTicker[t];
+      if (!bt) return;
+      dot.setAttribute('data-cluster', bt.cluster);
+      dot.setAttribute('fill', colorOf(bt.cluster));
+      dot.setAttribute('stroke', colorOf(bt.cluster));
+      const title = dot.querySelector('title');
+      if (title) title.textContent = t + ' — ' + bt.cluster + ' · move σ=' + bt.move + ' · sil ' + bt.strength.toFixed(2);
+    });
+    rowsEl.innerHTML = res.clusters.map(rowHtml).join('');
+    rowsEl.querySelectorAll('.cluster-row').forEach(r => r.addEventListener('click', () => {
+      const id = r.getAttribute('data-cluster');
+      activeCluster = (activeCluster === id) ? null : id;
+      highlight();
+    }));
+    activeCluster = null;
+    highlight();
+    statusEl.textContent = 'k=' + res.k + ' · silhouette ' + res.meanSil.toFixed(2) + (res.meanSil < DATA.weakSilhouette ? ' · weak structure' : '');
+  };
+  const neutralizeDots = () => {
+    Object.keys(dotsById).forEach(t => {
+      const dot = dotsById[t];
+      dot.removeAttribute('data-cluster');
+      dot.setAttribute('fill', '#93a1b3');
+      dot.setAttribute('stroke', '#93a1b3');
+      const title = dot.querySelector('title');
+      if (title) title.textContent = t + ' — move σ (uncolored: pre-cluster view)';
+    });
+  };
+  let applied = false;
+  applyBtn.addEventListener('click', () => {
+    applied = true;
+    applyClustering(parseInt(kInput.value, 10) || DATA.kAuto);
+  });
+  kInput.addEventListener('change', () => {
+    if (applied) applyClustering(parseInt(kInput.value, 10) || DATA.kAuto);
+  });
+  resetBtn.addEventListener('click', () => {
+    applied = false;
+    kInput.value = DATA.kAuto;
+    applyClustering(DATA.kAuto);
+    neutralizeDots();
+    activeCluster = null;
+    highlight();
+    rowsEl.innerHTML = '<div class="hint">Press Cluster to compute clusters for the chosen k.</div>';
+    statusEl.textContent = 'Pre-cluster view — pick k and press Cluster.';
+  });
+})();
+</script>
+</body>
+</html>

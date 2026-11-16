@@ -88,6 +88,22 @@ function today() {
   return new Date().toISOString().split('T')[0];
 }
 
+/**
+ * Most recent US session that has certainly closed by now. The 16:00 ET close
+ * is 21:00-22:00 in Europe; 23:00 local is safely past both, so only then may
+ * today count. Weekday walk only — US holidays are not excluded, so the day
+ * after a holiday a fetch simply returns nothing new. Used as the fetch `to`
+ * bound so intraday runs never store a partial candle for the live session.
+ */
+function lastClosedSession(now = new Date()) {
+  const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const isWeekday = (d) => d.getDay() !== 0 && d.getDay() !== 6;
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (now.getHours() >= 23 && isWeekday(d)) return fmt(d);
+  do { d.setDate(d.getDate() - 1); } while (!isWeekday(d));
+  return fmt(d);
+}
+
 // --- DB helpers (read side; writes go through database.js methods) ---
 
 function dbAll(database, sql, ...params) {
@@ -134,17 +150,34 @@ async function loadBars(database, ticker, source) {
 
 async function phaseA(client, database, tickers, lookbackDays = LOOKBACK_DAYS, opts = {}) {
   console.log(`\n=== Phase A: daily candles (${Math.round(lookbackDays / 7)}w) → stock_prices (source=marketdata) ===`);
+  // Never fetch past the last closed session — an intraday `to=today()` would
+  // save the live session's partial candle (and phase C would then fetch a
+  // mid-session chain for that day).
+  const to = lastClosedSession();
   const from = dateNDaysAgo(lookbackDays);
-  const to = today();
   // Gap-fill runs (in-app backfill) pass includeBenchmark:false — SPY candles
   // already exist there and the point is to backfill the requested tickers.
   const symbols = opts.includeBenchmark === false
     ? tickers.filter(t => t !== BENCHMARK)
     : [BENCHMARK, ...tickers.filter(t => t !== BENCHMARK)];
 
+  // Symbols whose candles already cover `to` are skipped — re-running when the
+  // data is current costs no credits and no per-symbol request.
+  const newest = new Map((await dbAll(database,
+    "SELECT ticker, MAX(date)::TEXT AS d FROM stock_prices WHERE source = 'marketdata' GROUP BY ticker"
+  )).map(r => [r.ticker, String(r.d).split(' ')[0]]));
+
   let totalBars = 0;
+  let skipped = 0;
   for (let i = 0; i < symbols.length; i++) {
     const sym = symbols[i];
+    if ((newest.get(sym) || '') >= to) {
+      skipped++;
+      if (opts.onProgress) {
+        opts.onProgress({ ticker: sym, done: i + 1, total: symbols.length, bars: totalBars });
+      }
+      continue;
+    }
     try {
       const bars = await client.fetchDailyCandles(sym, from, to);
       for (const b of bars) {
@@ -162,8 +195,8 @@ async function phaseA(client, database, tickers, lookbackDays = LOOKBACK_DAYS, o
     }
     await sleep(100);
   }
-  console.log(`[A] Done. ${totalBars} bars, ~${client.creditsUsed} credits used so far.`);
-  return { totalBars };
+  console.log(`[A] Done. ${totalBars} bars, ${skipped} skipped (current through ${to}), ~${client.creditsUsed} credits used so far.`);
+  return { totalBars, skipped };
 }
 
 async function phaseB(database, tickers) {
@@ -627,7 +660,7 @@ async function main() {
 module.exports = {
   phaseA, phaseB, phaseC, phaseD, deriveDailyIVRows,
   loadState, saveState, getBackfillTickers, loadBars, excludedTickers,
-  BENCHMARK, CHAIN_SKIP, LOOKBACK_DAYS,
+  lastClosedSession, BENCHMARK, CHAIN_SKIP, LOOKBACK_DAYS,
 };
 
 if (require.main === module) {

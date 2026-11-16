@@ -232,18 +232,26 @@ class LabInsightsService {
   // ---- shared ------------------------------------------------------------
 
   async _generate(userPrompt, maxNewTokens) {
-    if (this.busy) throw new Error('An insight request is already running');
-    this.busy = true;
+    return this.runPrompt(SYSTEM_PROMPT, userPrompt, maxNewTokens);
+  }
+
+  /**
+   * Prompt the LLM with an arbitrary system prompt (used by the Lab views
+   * and by other services such as companyDescriptions). Prefers llama.cpp,
+   * falls back to the CPU model. Returns null when no backend produced text.
+   */
+  async runPrompt(systemPrompt, userPrompt, maxNewTokens) {
     try {
-      try {
-        const text = await this._llamaGenerate(SYSTEM_PROMPT, userPrompt, maxNewTokens);
-        if (text) return text;
-      } catch (err) {
-        console.error(`[Insights] llama.cpp route failed, falling back to CPU model: ${err.message}`);
-      }
-      return await this._transformersGenerate(SYSTEM_PROMPT, userPrompt, maxNewTokens);
-    } finally {
-      this.busy = false;
+      const text = await this._llamaGenerate(systemPrompt, userPrompt, maxNewTokens);
+      if (text) return text;
+    } catch (err) {
+      console.error(`[Insights] llama.cpp route failed, falling back to CPU model: ${err.message}`);
+    }
+    try {
+      return await this._transformersGenerate(systemPrompt, userPrompt, maxNewTokens);
+    } catch (err) {
+      console.error(`[Insights] CPU fallback failed too: ${err.message}`);
+      return null;
     }
   }
 

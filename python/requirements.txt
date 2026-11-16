@@ -3,7 +3,12 @@ numpy>=2.0.0
 pandas>=2.0.0
 duckdb>=1.4.0
 safetensors>=0.4.0
+# Provides the `timesfm3` module (TimesFM3Evaluator, ModelConfig) used by the
+# event/direction forecast scripts.
+timesfm[torch]
 # Install granite-tsfm from source because PyPI package (0.0.0) is a placeholder.
 # Requires Python >=3.11, <3.14.
 git+https://github.com/ibm-granite/granite-tsfm.git
 chronos-forecasting
+# Timestral-209M trial (python/timestral_forecast.py, python/timestral_trial.py).
+git+https://github.com/mistralai/timestral.git

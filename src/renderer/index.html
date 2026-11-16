@@ -66,6 +66,10 @@
                 <label for="screen-percentile">Percentile Threshold</label>
                 <input type="number" id="screen-percentile" value="92" min="50" max="99" />
               </div>
+              <div class="form-field">
+                <label for="screen-cluster-k" title="Number of options delta-shape clusters in the report. Auto scales k to the universe size; a number (2–8) bakes in a manual choice — e.g. after exploring k interactively in a previous report.">Clusters k</label>
+                <input type="number" id="screen-cluster-k" placeholder="auto" min="2" max="8" />
+              </div>
             </div>
             <div style="margin-top: 10px;">
               <label for="screen-override-tickers" style="font-size: 0.85em;">Override tickers <span style="color: #999;">(optional — comma-separated, bypasses saved list)</span></label>
@@ -75,10 +79,6 @@
               <label class="toggle-pill" title="Slower — scrapes Finviz per ticker">
                 <input type="checkbox" id="screen-fetch-news" />
                 <span>Fetch news</span>
-              </label>
-              <label class="toggle-pill" title="Local LLM derives what OTM call buyers appear to be betting on, per ticker plus a cluster synthesis (adds a minute or so)">
-                <input type="checkbox" id="screen-implied-thesis" checked />
-                <span>Implied thesis</span>
               </label>
             </div>
           </div>
@@ -120,10 +120,10 @@
     <div class="modal-content" style="max-width: 540px;">
       <h2 style="margin-top: 0;">Backfill Options Data</h2>
       <p style="font-size: 0.86em; color: #9aa5b4; margin-top: -6px; line-height: 1.5;">
-        Fetches all missing historical option chains from MarketData.app (every ticker), then re-derives the per-day IV history used by the screening table and the per-ticker OTM-flow modal. Already-stored days are skipped, so it picks up where the last run left off. Run it with the app open; no separate script needed.
+        Fetches every missing options day for all tickers from MarketData.app, then re-derives the IV history. Stored days are skipped, so it resumes where the last run stopped.
       </p>
       <div class="modal-form">
-        <div id="backfill-estimate" style="font-size: 0.9em; color: #9aa5b4;">Estimating remaining work…</div>
+        <div id="backfill-estimate" style="font-size: 0.9em; color: #9aa5b4;">Estimating…</div>
       </div>
       <div class="modal-buttons">
         <button id="backfill-cancel" class="btn-modal btn-cancel">Cancel</button>

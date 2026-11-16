@@ -562,20 +562,25 @@ async function refreshBackfillCoverage() {
 
 async function refreshBackfillEstimate() {
   if (!backfillEstimate) return;
-  backfillEstimate.textContent = 'Estimating remaining work…';
+  backfillEstimate.textContent = 'Estimating…';
   try {
     const est = await window.electronAPI.backfillEstimate();
     if (!est.success) {
       backfillEstimate.textContent = 'Estimate unavailable (' + (est.error || 'error') + ')';
       return;
     }
-    if (est.missingDays === 0) {
-      backfillEstimate.textContent = 'Nothing to fetch — options data is up to date for all '
-        + est.tickers + ' tickers.';
+    if (est.missingDays === 0 && !est.staleCandles) {
+      backfillEstimate.textContent = 'Up to date — nothing to fetch.';
     } else {
-      backfillEstimate.textContent = est.missingDays.toLocaleString() + ' ticker-days missing across '
-        + est.tickers + ' tickers — roughly ' + fmtCredits(est.creditsEstimate) + ' credits. '
-        + 'Already-stored days are skipped; the run resumes where the last one stopped.';
+      const parts = [];
+      if (est.missingDays > 0) {
+        parts.push(est.missingDays.toLocaleString() + ' ticker-days missing across ' + est.tickers + ' tickers');
+      }
+      if (est.staleCandles > 0) {
+        parts.push('candle refresh for ' + est.staleCandles + ' ticker(s) (≈' + est.gapDays + ' new day(s) to check)');
+      }
+      backfillEstimate.textContent = parts.join(' · ') + ' · ≈' + fmtCredits(est.creditsEstimate) + ' credits.'
+        + ' Stored days are skipped; resumes where the last run stopped.';
     }
   } catch (err) {
     backfillEstimate.textContent = 'Estimate unavailable (' + err.message + ')';
@@ -632,11 +637,16 @@ backfillStartBtn?.addEventListener('click', async () => {
     if (result.cancelled) {
       showToast('Backfill Stopped', 'Kept ' + result.daysFetched + ' fetched day(s) across '
         + result.tickersFilled.length + ' ticker(s) — IV history re-derived', 'info', 8000);
+    } else if (result.quotaExhausted) {
+      showToast('Out of Credits', 'MarketData daily credits exhausted after '
+        + result.daysFetched + ' day(s) across ' + result.tickersFilled.length
+        + ' ticker(s) — run again once credits reset', 'error', 10000);
     } else if (result.creditCapped) {
       showToast('Backfill Paused', 'Credit cap hit (' + fmtCredits(result.creditsUsed) + ' credits) after '
         + result.daysFetched + ' day(s) — start it again later to continue', 'info', 10000);
     } else {
-      showToast('Backfill Complete', result.daysFetched + ' ticker-days fetched across '
+      showToast('Backfill Complete', (result.candlesBars ? result.candlesBars + ' new candle bar(s) · ' : '')
+        + result.daysFetched + ' ticker-days fetched across '
         + result.tickersFilled.length + ' ticker(s), ' + fmtCredits(result.creditsUsed)
         + ' credits — re-run the screening to fill the charts', 'success', 10000);
     }
@@ -651,6 +661,8 @@ window.electronAPI.onBackfillProgress?.((data) => {
   if (!el) return;
   if (data.phase === 'starting') {
     el.textContent = 'Building task list…';
+  } else if (data.phase === 'A') {
+    el.textContent = 'Phase A: refreshing candles ' + data.done + '/' + data.total + ' — ' + (data.ticker || '');
   } else if (data.phase === 'C') {
     el.textContent = 'Phase C: ' + data.done + '/' + data.total + ' days — ' + (data.ticker || '')
       + ' · ' + fmtCredits(data.creditsUsed) + ' credits';
@@ -1025,12 +1037,14 @@ screenRun.addEventListener('click', async () => {
   const period = parseInt(screenPeriod.value, 10) || 100;
   const lookbackDays = parseInt(screenLookbackDays.value, 10) || 5;
   const percentileThreshold = parseInt(screenPercentile.value, 10) || 92;
+  // Empty / invalid → 'auto' (main process scales k to the universe size).
+  const clusterKRaw = parseInt(document.getElementById('screen-cluster-k').value, 10);
+  const clusterK = Number.isInteger(clusterKRaw) && clusterKRaw >= 2 && clusterKRaw <= 8 ? clusterKRaw : 'auto';
   const overrideRaw = document.getElementById('screen-override-tickers').value.trim();
   const overrideTickers = overrideRaw
     ? overrideRaw.split(/[,\s]+/).map(t => t.trim().toUpperCase()).filter(Boolean)
     : null;
   const fetchNews = document.getElementById('screen-fetch-news').checked;
-  const impliedThesis = document.getElementById('screen-implied-thesis').checked;
 
   screenModal.style.display = 'none';
   await window.electronAPI.hideModal();
@@ -1043,7 +1057,7 @@ screenRun.addEventListener('click', async () => {
   screeningActive = true;
 
   try {
-    const result = await window.electronAPI.screenTickers({ period, lookbackDays, percentileThreshold, overrideTickers, fetchNews, impliedThesis });
+    const result = await window.electronAPI.screenTickers({ period, lookbackDays, percentileThreshold, clusterK, overrideTickers, fetchNews });
 
     if (!result.success) {
       const isCancel = result.cancelled || /cancel/i.test(result.error || '');

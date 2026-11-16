@@ -685,6 +685,32 @@ body {
   color: #a0aec0;
 }
 
+/* Action buttons inside hand-built toasts (backfill progress / gap prompt) */
+.toast .toast-action {
+  background: #2f3540;
+  color: #d4dae3;
+  border: 1px solid #3a4150;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.toast .toast-action:hover {
+  background: #3a414d;
+}
+
+.toast .toast-action-primary {
+  background: #2a4a8a;
+  border-color: #3a5aa8;
+  color: #cfe0ff;
+}
+
+.toast .toast-action-primary:hover {
+  background: #3257a0;
+}
+
 .toast.hiding {
   animation: slideOut 0.3s ease-in forwards;
 }

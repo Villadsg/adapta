@@ -61,7 +61,9 @@ from adapta.features import (
     ALL_OPTION_CHANNELS,
     FULL2_EXTRA_CHANNELS,
     WEEKLY_OPTION_CHANNELS,
+    MARKET_CHANNELS,
     build_ticker_features,
+    load_market_features,
 )
 from adapta.options import (
     build_options_features,
@@ -90,9 +92,13 @@ FEATURE_POOL = list(dict.fromkeys([
     *ALL_OPTION_CHANNELS,
     *FULL2_EXTRA_CHANNELS,
     "options_missing",
+    *MARKET_CHANNELS,
 ]))
 
 DIRECTION_OPTIONS_COVARIATES = [*ALL_OPTION_CHANNELS, *FULL2_EXTRA_CHANNELS, "options_missing"]
+
+# Market-regime covariate block appended to each target's covariates.
+MARKET_COVARIATES = [*DIRECTION_OPTIONS_COVARIATES, *MARKET_CHANNELS]
 
 PRESETS = {
     "event": {
@@ -100,11 +106,15 @@ PRESETS = {
         "legacy_full2": FULL2_LEGACY_CHANNELS,
         "base": CHANNELS,
         "options_only": ["log_event_magnitude", *DIRECTION_OPTIONS_COVARIATES],
+        # full2 + the market regime channels (equal-weight universe return,
+        # vol, breadth) — the production set plus cross-sectional context.
+        "full2_market": ["log_event_magnitude", *DIRECTION_OPTIONS_COVARIATES, *MARKET_CHANNELS],
         "none": ["log_event_magnitude"],
     },
     "direction": {
         "full2": ["log_close", *[c for c in FULL2_CHANNELS if c != "log_close"]],
         "options": ["log_close", *DIRECTION_OPTIONS_COVARIATES],
+        "options_market": ["log_close", *MARKET_COVARIATES],
         "legacy_full2": ["log_close", "log_volume", "return", "gap", "range", "volatility",
                          *ALL_OPTION_CHANNELS, *FULL2_EXTRA_CHANNELS, "options_missing"],
         "none": ["log_close"],
@@ -124,6 +134,7 @@ CHANNEL_GROUPS = [
     ("Weekly patterns", list(WEEKLY_OPTION_CHANNELS)),
     ("Strike structure", [*SKEW_CHANNELS, *STRIKE_CHANNELS]),
     ("Status", ["options_missing"]),
+    ("Market regime", list(MARKET_CHANNELS)),
 ]
 
 CHANNEL_DESCRIPTIONS = {
@@ -175,6 +186,11 @@ CHANNEL_DESCRIPTIONS = {
     "eff_strikes_rank": "Effective number of active strikes (dollar-volume entropy), ranked — low = flow concentrated on a few strikes, high = spread across the chain.",
     "call_centroid_rank": "Dollar-volume-weighted distance of OTM call strikes from spot, ranked — high = call buying pushed far out of the money.",
     "put_centroid_rank": "Dollar-volume-weighted distance of OTM put strikes from spot, ranked — high = put buying pushed far out of the money.",
+    # Market regime channels (identical across tickers on a given day).
+    "market_return_pc": "Equal-weight mean daily return of the whole scanned universe, in % — what the market did today.",
+    "market_vol_20_pc": "20-day volatility of that universe return, in % — calm vs stressed market.",
+    "market_breadth_5d": "Share of universe tickers up over the last 5 trading days, in % — broad participation vs narrow tape.",
+    "market_breadth_ma20": "Share of universe tickers above their 20-day average price, in % — risk-on vs risk-off regime.",
 }
 
 
@@ -241,6 +257,7 @@ def build_samples(con, tickers, target, start, end, step, max_horizon):
     opts_history = load_options_history(con)
     opts_buckets = load_options_buckets(con)
     opts_strike = load_options_strike_stats(con)
+    market = load_market_features(con)
     samples = []
     for ticker in tickers:
         prices = load_ticker_prices(con, ticker)
@@ -260,7 +277,7 @@ def build_samples(con, tickers, target, start, end, step, max_horizon):
             )
             if not t_opts.empty:
                 ticker_opts = t_opts
-        feats = build_ticker_features(prices, ticker_opts)
+        feats = build_ticker_features(prices, ticker_opts, market_df=market)
         mags = feats["event_magnitude"].to_numpy(dtype=float) if target == "event" else None
 
         # Index of trading dates eligible as forecast start days.
@@ -401,6 +418,86 @@ def compute_metrics(probs, labels):
         "accuracy": round(float(accuracy_score(labels, preds)), 4),
         "brier": round(float(brier_score_loss(labels, probs)), 4),
     }
+
+
+def gbm_context_features(samples, pool=FEATURE_POOL):
+    """Flatten each sample's 36-day context into a GBM feature row.
+
+    Per channel: last value, mean, std, and last-minus-first (momentum).
+    NaNs are left in place — HistGradientBoostingClassifier splits on them
+    natively. Returns (X, feature_names) aligned with the sample order.
+    """
+    rows, names = [], []
+    for c in pool:
+        names += [f"{c}_last", f"{c}_mean", f"{c}_std", f"{c}_mom"]
+    for s in samples:
+        v = s["values"].astype(float)
+        rows.append(np.concatenate([
+            v[-1], np.nanmean(v, axis=0), np.nanstd(v, axis=0), v[-1] - v[0],
+        ]))
+    return np.asarray(rows, dtype=float), names
+
+
+def gbm_blend_runs(samples, config_probs, split_frac, blend_weights=(0.25, 0.5, 0.75)):
+    """Chronological-split GBM ensemble evaluation over already-scored configs.
+
+    Fits a HistGradientBoostingClassifier on the flattened context features
+    (labels from the same walk-forward samples TimesFM scored), trains on the
+    earliest `split_frac` of dates and predicts the remainder. Every metric is
+    computed on that same held-out slice, so TimesFM-alone, GBM-alone, and the
+    probability blends are directly comparable.
+
+    Returns (extra_runs, split_info): extra run dicts for the report and the
+    split description for the results log, or ([], {"skipped": reason}).
+    """
+    from sklearn.ensemble import HistGradientBoostingClassifier
+
+    dates = np.asarray([s["date"] for s in samples])
+    order = np.argsort(dates, kind="stable")
+    split_i = int(len(order) * split_frac)
+    train_idx, test_idx = order[:split_i], order[split_i:]
+    labels = np.asarray([s["label"] for s in samples], dtype=int)
+    info = {
+        "split_frac": split_frac,
+        "split_date": str(dates[order[split_i]]),
+        "train_n": int(len(train_idx)),
+        "test_n": int(len(test_idx)),
+    }
+    if len(train_idx) < 100 or len(test_idx) < 100 or \
+       labels[train_idx].sum() < 10 or labels[test_idx].sum() < 10:
+        return [], {"skipped": "not enough samples or positives on one side of the split", **info}
+
+    X, _ = gbm_context_features(samples)
+    clf = HistGradientBoostingClassifier(
+        max_iter=400, learning_rate=0.05, max_leaf_nodes=31,
+        min_samples_leaf=30, l2_regularization=1.0, random_state=0,
+    )
+    clf.fit(X[train_idx], labels[train_idx])
+    gbm_prob = clf.predict_proba(X)[:, 1]
+
+    runs = [{
+        "name": "gbm@test",
+        "channels": ["<gbm context features>"],
+        "n_channels": X.shape[1],
+        "metrics": compute_metrics(gbm_prob[test_idx], labels[test_idx]),
+    }]
+    for name, probs in config_probs:
+        p = np.asarray(probs, dtype=float)
+        runs.append({
+            "name": f"{name}@test",
+            "channels": None,
+            "n_channels": 0,
+            "metrics": compute_metrics(p[test_idx], labels[test_idx]),
+        })
+        for w in blend_weights:
+            runs.append({
+                "name": f"blend({w:g})|{name}@test",
+                "channels": None,
+                "n_channels": 0,
+                "metrics": compute_metrics(w * p[test_idx] + (1 - w) * gbm_prob[test_idx],
+                                           labels[test_idx]),
+            })
+    return runs, info
 
 
 def write_csv(rows, path):
@@ -833,6 +930,13 @@ def main():
                         help="AUROC a feature must add to earn its place in the search")
     parser.add_argument("--search-rounds", type=int, default=4,
                         help="Max leave-one-out pruning rounds per target in the search")
+    parser.add_argument("--gbm", action="store_true",
+                        help="Also fit a HistGradientBoosting classifier on the same samples "
+                             "(chronological train/test split) and report GBM-alone, each "
+                             "TimesFM config alone, and probability blends — all on the "
+                             "held-out slice, so the ensemble gain is directly readable.")
+    parser.add_argument("--gbm-split", type=float, default=0.75,
+                        help="Fraction of earliest samples (by date) used to train the GBM")
     parser.add_argument("--dump-channels", action="store_true",
                         help="Print the channel pool/presets/descriptions as JSON and exit "
                              "(used by the Model Lab UI; fast — no model load)")
@@ -950,6 +1054,22 @@ def main():
               f"brier={metrics['brier']}", flush=True)
     print(f"[lab] {len(specs)} config(s) scored in {time.time() - t_score:.1f}s", flush=True)
 
+    gbm_info = None
+    if args.gbm:
+        print(f"[lab] fitting GBM ensemble (chronological split at {args.gbm_split:.0%})...",
+              flush=True)
+        gbm_runs, gbm_info = gbm_blend_runs(
+            samples, [(name, probs) for (name, _), (probs, _r) in zip(specs, scored)],
+            args.gbm_split,
+        )
+        if "skipped" in gbm_info:
+            print(f"[lab] GBM ensemble skipped: {gbm_info['skipped']}", flush=True)
+        for r in gbm_runs:
+            runs.append(r)
+            m = r["metrics"]
+            print(f"[lab] {r['name']}: auroc={m['auroc']} acc={m['accuracy']} "
+                  f"brier={m['brier']}", flush=True)
+
     run_block = {
         "started": time.strftime("%Y-%m-%d %H:%M:%S"),
         "target": args.target,
@@ -964,6 +1084,7 @@ def main():
         "end": args.end,
         "runs": runs,
         "ablation": None,
+        "gbm": gbm_info,
     }
 
     if args.ablate == "loo" and not args.name:

@@ -209,11 +209,11 @@ def main():
                     use_symmetric_averaging=False,
                 )
             )
-        for j, out in enumerate(outputs):
-            i = start + j
-            q = np.asarray(out.quantiles, dtype=float)[0]
-            t_log = float(np.log1p(all_metas[i]["event_threshold"]))
-            all_probs[i] = prob_above_threshold(q, quantile_levels, t_log)
+            for j, out in enumerate(outputs):
+                i = start + j
+                q = np.asarray(out.quantiles, dtype=float)[0]
+                t_log = float(np.log1p(all_metas[i]["event_threshold"]))
+                all_probs[i] = prob_above_threshold(q, quantile_levels, t_log)
 
         results = [build_result(all_ok_tickers[i], all_probs[i],
                                 all_metas[i]["event_threshold"], all_metas[i])
