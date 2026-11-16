@@ -179,10 +179,35 @@ adapta/
 │       └── newsScraper.js           # Finviz headline scraping (optional)
 ```
 
-## Data Sources
+## Data Sources & Collection
 
-- **Yahoo Finance** (`yahoo-finance2`): Price history, options chains, fundamentals, company profiles
-- **Finviz** (Chromium scraping, optional): News headlines per ticker
+### Live data (runtime screening path)
+
+| Source | Used for | Notes |
+|--------|----------|-------|
+| **MarketData.app** (`src/services/marketDataClient.js`) | Daily candles, quotes, option expirations, current option chains | Primary provider; Bearer-token auth via `MARKET_DATA_API_KEY`. The *current* chain endpoint returns broker IV and greeks directly |
+| **Yahoo Finance** (`yahoo-finance2`) | Fundamentals (revision ranking), company profiles | Price/options paths have been migrated to MarketData.app |
+| **SEC EDGAR** (`src/services/companyDescriptions.js`) | Company descriptions from 10-K filings | Fair-access policy: requests identify with a contact email (`EDGAR_CONTACT_EMAIL`) |
+| **Finviz** (Chromium scraping, optional) | News headlines per ticker | Powers "Fetch news" in the screening modal |
+
+### Historical backfill (`ci/backfill-marketdata.js`)
+
+One-time (plus maintenance) backfill of the screening dataset to a full year via MarketData.app, in four phases:
+
+| Phase | What it does | Output table |
+|-------|--------------|--------------|
+| **A** | Daily candles for all DB tickers + SPY | `stock_prices` (source='marketdata') |
+| **B** | Recompute stock events over the full 1y window (shared algorithm with `ci/ticker-screen.js`) | `stock_events` |
+| **C** | Full historical options chains per ticker-day (incremental: already-downloaded (ticker, date) pairs and no-data days are skipped) | `options_chain_history` |
+| **D** | Derive IV (BSM-implied from raw prices — MarketData historical data has no IV/greeks) and regenerate history | `options_daily_iv`, `iv_history_records` |
+
+Cron recipes: daily `--phase=A,C --lookback=10` (refresh candles + new chain days), weekly `--maintenance` (full year + IV re-derive + coverage report). Note: historical options data is as-traded (not split/dividend adjusted) — fine for IV levels, careful comparing raw strikes across corporate actions.
+
+**In-app backfill** (`src/services/optionsBackfill.js`): the same phases A+C+D runnable from the Electron UI, for gap-filling when the app holds the DuckDB writer lock (the CLI must skip quietly in that case).
+
+### Options coverage (`ci/options-coverage.js`)
+
+Classifies every universe ticker as `covered` / `stale` / `confirmed_missing` / `pending_backfill` / `skipped` so universe pruning never runs on a data hole, and produces the skip list phase C uses to avoid re-asking the vendor about tickers it has already rejected. `config.excludeTickers` in `ci/config.json` is the permanent opt-out for delisted tickers.
 
 ## License
 
